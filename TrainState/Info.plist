@@ -3,8 +3,14 @@
 <plist version="1.0">
 <dict>
 	<key>UIBackgroundModes</key>
+	<array/>
+	<key>NSHealthShareUsageDescription</key>
+	<string>TrainState needs access to your health data to track your sleep, recovery, and stress levels.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>TrainState needs permission to update your health data for tracking sleep, recovery, and stress levels.</string>
+	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>remote-notification</string>
+		<string>healthkit</string>
 	</array>
 </dict>
 </plist>

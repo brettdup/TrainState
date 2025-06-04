@@ -1,0 +1,99 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# TrainState Project Structure and Navigation Guide
+
+TrainState is an iOS workout tracking app. The main entry point is [TrainStateApp.swift](mdc:TrainState/TrainStateApp.swift), which sets up the app and determines whether to show onboarding ([OnboardingView.swift](mdc:TrainState/Views/OnboardingView.swift)) or the main interface ([MainTabView.swift](mdc:TrainState/Views/MainTabView.swift)).
+
+## Key Directories and Files
+- **Models**: Data models such as [Workout.swift](mdc:TrainState/Models/Workout.swift) and [UserSettings.swift](mdc:TrainState/Models/UserSettings.swift)
+- **Views**: UI screens, including [WorkoutListView.swift](mdc:TrainState/Views/WorkoutListView.swift), [CalendarView.swift](mdc:TrainState/Views/CalendarView.swift), [SettingsView.swift](mdc:TrainState/Views/SettingsView.swift), and more
+- **Managers**: App logic and integrations, e.g., [HealthKitManager.swift](mdc:TrainState/Managers/HealthKitManager.swift), [NotificationManager.swift](mdc:TrainState/Managers/NotificationManager.swift)
+- **Extensions**: Utility extensions, e.g., [ColorExtensions.swift](mdc:TrainState/Extensions/ColorExtensions.swift)
+
+## Navigation
+- The app uses SwiftUI's navigation system, with [MainTabView.swift](mdc:TrainState/Views/MainTabView.swift) providing the main tab navigation.
+- Onboarding is handled by [OnboardingView.swift](mdc:TrainState/Views/OnboardingView.swift) and is shown on first launch or when reset.
+- The [SettingsView.swift](mdc:TrainState/Views/SettingsView.swift) provides access to app settings, category management, and developer options.
+
+## Data Persistence
+- Data is managed using SwiftData and models in the [Models](mdc:TrainState/Models) directory.
+
+For more details, see the [README.md](mdc:README.md).
+
+Whenever I ask for a SwiftUI interface or UI update, you should:
+	•	Follow Apple’s Human Interface Guidelines (HIG) for spacing, typography, and accessibility.
+	•	Use clean, modern SwiftUI design patterns (e.g., VStack, HStack, LazyVGrid, NavigationStack, etc.).
+	•	Apply rounded corners (.cornerRadius(12) or more) and subtle shadows (.shadow(radius: 4)) to make elements feel light and modern.
+	•	Use SF Symbols with appropriate weights and sizes (Image(systemName:)).
+	•	Always use adaptive layout with .padding(), .frame(maxWidth: .infinity) when necessary for responsiveness.
+	•	Use modern @State and @Binding practices for reactivity.
+	•	Prefer Color.primary and Color.secondary for text, and use Color(.systemBackground) for backgrounds for dark/light mode support.
+	•	Group related UI elements with Sections or Cards when needed.
+	•	Make the UI visually appealing, readable, and user-focused — but keep the code concise and modular.
+
+If unclear, use realistic placeholder content and propose suggested layout improvements automatically.
+
+
+{
+  "design_inspirations": "iOS 26 and visionOS",
+  "platform": "Native Swift (SwiftUI)",
+  "features": [
+    {
+      "title": "Translucency",
+      "description": "Use semi-transparent UI elements like menus and panels to create depth.",
+      "swiftui_notes": [
+        "Use .background(.ultraThinMaterial) for blur effects",
+        "Apply .blur(radius:) or VisualEffectBlur if using UIKit bridging",
+        "Place over ZStack to show background content through"
+      ]
+    },
+    {
+      "title": "Floating Navigation",
+      "description": "Implement nav bars and toolbars that float over content.",
+      "swiftui_notes": [
+        "Use overlays with .offset and .padding instead of NavigationView defaults",
+        "Use .background(.clear) to prevent opaque blocks",
+        "Combine with .shadow and .cornerRadius for a floating card look"
+      ]
+    },
+    {
+      "title": "Rounded Corners and Circular Elements",
+      "description": "Use more pronounced corner rounding and rounded/circular elements.",
+      "swiftui_notes": [
+        "Use .clipShape(RoundedRectangle(cornerRadius: 20))",
+        "Apply .cornerRadius(30) on cards, .clipShape(Circle()) for buttons or icons",
+        "Match new system corner styling (like Vision Pro aesthetics)"
+      ]
+    },
+    {
+      "title": "Glassy Aesthetic",
+      "description": "Make UI components look like frosted or sea-glass surfaces.",
+      "swiftui_notes": [
+        "Use .background(.ultraThinMaterial) with opacity",
+        "Combine with shadows and border overlays for 'glass' illusion",
+        "Consider matched GeometryEffect transitions to preserve fluidity"
+      ]
+    },
+    {
+      "title": "Subtle Lighting Effects",
+      "description": "Integrate lighting and motion-based visual feedback.",
+      "swiftui_notes": [
+        "Use .shadow and .glow-style overlays triggered by interaction",
+        "Use motion effects with CoreMotion or .rotation3DEffect",
+        "Consider dynamic gradients or shimmer effects"
+      ]
+    },
+    {
+      "title": "Modernized App Interfaces",
+      "description": "Redesign app screens for simplicity, elegance, and space.",
+      "swiftui_notes": [
+        "Use VStack/ZStack for clean spatial layouts",
+        "Limit visual noise, rely on SF Symbols and white space",
+        "Use .font(.title3) and .foregroundStyle(.secondary) for visual hierarchy"
+      ]
+    }
+  ]
+}
