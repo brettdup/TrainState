@@ -5,10 +5,11 @@ import HealthKit
 @main
 struct TrainStateApp: App {
     let modelContainer: ModelContainer
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     
     init() {
         do {
-            modelContainer = try ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self)
+            modelContainer = try ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, UserSettings.self)
         } catch {
             fatalError("Could not initialize ModelContainer: \(error)")
         }
@@ -16,7 +17,11 @@ struct TrainStateApp: App {
     
     var body: some Scene {
         WindowGroup {
-            MainTabView()
+            if hasCompletedOnboarding {
+                MainTabView()
+            } else {
+                OnboardingView()
+            }
         }
         .modelContainer(modelContainer)
     }

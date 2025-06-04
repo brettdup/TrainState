@@ -41,16 +41,9 @@ struct OnboardingView: View {
     
     var body: some View {
         ZStack {
-            // Light background gradient
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.white,
-                    Color(UIColor.systemGray6)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            // Solid background
+            Color(.systemBackground)
+                .ignoresSafeArea()
             
             VStack(spacing: 30) {
                 // Progress dots

@@ -117,7 +117,7 @@ struct WorkoutListView: View {
             WellDoneSheetView(isPresented: $showingWellDoneSheet)
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
+                .presentationBackground(.regularMaterial)
         }
     }
     
@@ -125,24 +125,11 @@ struct WorkoutListView: View {
     
     private var headerView: some View {
         ZStack(alignment: .bottomLeading) {
-            // Background layer with subtle gradient
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            Color(.systemBackground),
-                            Color(.systemBackground).opacity(0.95)
-                        ]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            // Background layer
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
                 .frame(height: 180)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(Color.gray.opacity(0.1), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.05), radius: 15, x: 0, y: 5)
+                .shadow(radius: 2)
 
             // Content
             VStack(alignment: .leading, spacing: 24) {
@@ -150,13 +137,13 @@ struct WorkoutListView: View {
                 HStack {
                     Text("Total Workouts")
                         .font(.headline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     Spacer()
                     
                     Text("\(workouts.count)")
                         .font(.system(size: 36, weight: .bold, design: .rounded))
-                        .foregroundColor(.blue)
+                        .foregroundStyle(.blue)
                 }
                 .padding(.horizontal, 28)
                 .padding(.top, 28)
@@ -538,53 +525,56 @@ struct WorkoutCardSD: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header with type and duration
-            HStack(spacing: 16) {
-                iconView
-                    .frame(width: 48, height: 48)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(workout.type.rawValue)
-                        .font(.headline.weight(.semibold))
-                    Text(formattedDate(workout.startDate))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                Text(formatDuration(workout.duration))
-                    .font(.system(.title3, design: .rounded).weight(.semibold))
-                    .foregroundColor(.blue)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            
-            // Categories section (if any)
+            headerSection
             if !workout.categories.isEmpty {
-                Divider()
-                    .padding(.horizontal, 20)
-                
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(workout.categories) { category in
-                            CategoryChip(category: category)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                }
+                categoriesSection
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.gray.opacity(0.1), lineWidth: 1)
-        )
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(radius: 2)
+    }
+    
+    // MARK: - View Components
+    
+    private var headerSection: some View {
+        HStack(spacing: 16) {
+            iconView
+                .frame(width: 48, height: 48)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(workout.type.rawValue)
+                    .font(.headline.weight(.semibold))
+                Text(formattedDate(workout.startDate))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            Text(formatDuration(workout.duration))
+                .font(.system(.title3, design: .rounded).weight(.semibold))
+                .foregroundStyle(.blue)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+    }
+    
+    private var categoriesSection: some View {
+        VStack(spacing: 0) {
+            Divider()
+                .padding(.horizontal, 20)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(workout.categories) { category in
+                        CategoryChip(category: category)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+            }
+        }
     }
     
     private var iconView: some View {
@@ -595,9 +585,11 @@ struct WorkoutCardSD: View {
             
             Image(systemName: iconName)
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(iconColor)
+                .foregroundStyle(iconColor)
         }
     }
+    
+    // MARK: - Helper Properties
     
     private var iconName: String {
         switch workout.type {
@@ -626,6 +618,8 @@ struct WorkoutCardSD: View {
     private var iconBackgroundColor: Color {
         iconColor.opacity(0.15)
     }
+    
+    // MARK: - Helper Methods
     
     private func formatDuration(_ duration: TimeInterval) -> String {
         let hours = Int(duration) / 3600
@@ -722,14 +716,16 @@ struct WellDoneSheetView: View {
                 .foregroundColor(.secondary)
                 .padding(.horizontal)
 
-            Button("Got it!") {
+            Button {
                 isPresented = false
+            } label: {
+                Text("Got it!")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.green)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
             }
-            .padding()
-            .frame(maxWidth: .infinity)
-            .background(Color.green)
-            .foregroundColor(.white)
-            .cornerRadius(12)
             .padding(.horizontal)
         }
         .padding(.vertical, 40)
