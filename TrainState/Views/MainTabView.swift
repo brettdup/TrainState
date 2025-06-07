@@ -34,6 +34,7 @@ struct MainTabView: View {
                 modelContext.insert(settings)
             }
         }
+        .toolbarBackground(.clear, for: .tabBar)
     }
 }
 

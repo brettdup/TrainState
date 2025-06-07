@@ -6,7 +6,7 @@ struct StatCard: View {
     let color: Color
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(color)
@@ -19,13 +19,9 @@ struct StatCard: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 80)
+        .frame(height: 62)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
-        )
+        .background(.ultraThinMaterial)
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.gray.opacity(0.1), lineWidth: 1)

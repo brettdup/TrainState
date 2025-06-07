@@ -17,20 +17,62 @@ struct DeveloperOptionsView: View {
             Button(role: .destructive, action: {
                 showingResetConfirmation = true
             }) {
-                Label("Reset All Data", systemImage: "trash")
+                HStack {
+                    Label("Reset All Data", systemImage: "trash")
+                        .font(.headline)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.red)
+                }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.red.opacity(0.15), lineWidth: 1.5)
+                )
+                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
             }
+            .buttonStyle(PlainButtonStyle())
             
             Button(role: .destructive, action: {
                 showingOnboardingResetConfirmation = true
             }) {
-                Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
+                HStack {
+                    Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
+                        .font(.headline)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.red)
+                }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.red.opacity(0.15), lineWidth: 1.5)
+                )
+                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
             }
+            .buttonStyle(PlainButtonStyle())
             
             Button(action: {
                 createSampleData()
             }) {
-                Label("Add Sample Data", systemImage: "plus.circle")
+                HStack {
+                    Label("Add Sample Data", systemImage: "plus.circle")
+                        .font(.headline)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.blue)
+                }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.blue.opacity(0.15), lineWidth: 1.5)
+                )
+                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
             }
+            .buttonStyle(PlainButtonStyle())
             
             Button(action: {
                 Task {
@@ -41,8 +83,22 @@ struct DeveloperOptionsView: View {
                     }
                 }
             }) {
-                Label("Add Default Workout", systemImage: "figure.strengthtraining.traditional")
+                HStack {
+                    Label("Add Default Workout", systemImage: "figure.strengthtraining.traditional")
+                        .font(.headline)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.blue)
+                }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.blue.opacity(0.15), lineWidth: 1.5)
+                )
+                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
             }
+            .buttonStyle(PlainButtonStyle())
         } header: {
             Text("Developer Options")
         } footer: {
@@ -205,4 +261,4 @@ struct DeveloperOptionsView: View {
             print("Failed to create sample data: \(error.localizedDescription)")
         }
     }
-} 
+}

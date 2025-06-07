@@ -9,7 +9,7 @@ TrainState is an iOS workout tracking app. The main entry point is [TrainStateAp
 
 ## Key Directories and Files
 - **Models**: Data models such as [Workout.swift](mdc:TrainState/Models/Workout.swift) and [UserSettings.swift](mdc:TrainState/Models/UserSettings.swift)
-- **Views**: UI screens, including [WorkoutListView.swift](mdc:TrainState/Views/WorkoutListView.swift), [CalendarView.swift](mdc:TrainState/Views/CalendarView.swift), [SettingsView.swift](mdc:TrainState/Views/SettingsView.swift), and more
+- **Views**: UI screens, including [WorkoutListView.swift](mdc:TrainState/Views/WorkoutListView.swift), [CalendarView.swift](mdc:TrainState/Views/CalendarView.swift), [SettingsView.swift](mdc:TrainState/Views/SettingsView.swift), and more, always check for compoenents before redeclaring them
 - **Managers**: App logic and integrations, e.g., [HealthKitManager.swift](mdc:TrainState/Managers/HealthKitManager.swift), [NotificationManager.swift](mdc:TrainState/Managers/NotificationManager.swift)
 - **Extensions**: Utility extensions, e.g., [ColorExtensions.swift](mdc:TrainState/Extensions/ColorExtensions.swift)
 

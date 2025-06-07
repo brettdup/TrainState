@@ -14,6 +14,10 @@ struct WorkoutListView: View {
     @State private var isRefreshing = false
     private let healthStore = HKHealthStore()
     
+    // Toast feedback state
+    @State private var showToast = false
+    @State private var toastMessage = ""
+    
     // MARK: - Stats
     var workoutsThisMonth: [Workout] {
         let calendar = Calendar.current
@@ -74,6 +78,163 @@ struct WorkoutListView: View {
         return result
     }
     
+    var body: some View {
+        ZStack {
+            // Toast overlay at the very top, above everything
+            if showToast {
+                ToastView(message: toastMessage)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(2)
+                    .ignoresSafeArea(edges: .top)
+            }
+            NavigationStack {
+                ZStack {
+                    ColorReflectiveBackground()
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            greetingHeader
+                            statsCardsSection
+                            filtersView
+                            workoutListSection
+                        }
+                        .padding(.top)
+                    }
+                    .refreshable {
+                        await refreshData()
+                    }
+                }
+                .navigationTitle("Workouts")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(action: {
+                            Task { await refreshData() }
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .accessibilityLabel("Refresh Workouts")
+                    }
+                }
+            }
+            .sheet(item: $selectedWorkoutForDetail) { workout in
+                NavigationStack {
+                    WorkoutDetailView(workout: workout)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                        .presentationBackground(.ultraThinMaterial)
+                }
+            }
+            .sheet(isPresented: $showingWellDoneSheet) {
+                WellDoneSheetView(isPresented: $showingWellDoneSheet)
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.regularMaterial)
+            }
+        }
+    }
+    
+    // MARK: - New Homepage Components
+
+    private var greetingHeader: some View {
+        HStack(alignment: .center, spacing: 16) {
+            // User avatar placeholder
+            ZStack {
+                Circle()
+                    .fill(Color.blue.opacity(0.15))
+                    .frame(width: 56, height: 56)
+                Image(systemName: "person.crop.circle")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 44, height: 44)
+                    .foregroundColor(.blue)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(greetingText())
+                    .font(.title2.weight(.bold))
+                Text("Ready to crush your goals today?")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal)
+    }
+
+    private var statsCardsSection: some View {
+        HStack(spacing: 8) {
+            StatCard(icon: "dumbbell.fill", value: "\(strengthThisMonthCount)/\(daysPassedInCurrentMonth)", color: .orange)
+            StatCard(icon: "figure.run", value: "\(runningThisMonthCount)/\(daysPassedInCurrentMonth)", color: .blue)
+            StatCard(icon: "calendar", value: "\(workoutsThisMonth.count)", color: .purple)
+        }
+        .padding(.horizontal)
+    }
+
+    private var workoutListSection: some View {
+        VStack(spacing: 32) {
+            if filteredWorkouts.isEmpty {
+                ContentUnavailableView(
+                    "No Workouts",
+                    systemImage: "figure.run",
+                    description: Text("Add your first workout!")
+                )
+                .padding(.top, 40)
+            } else {
+                // Sectioned by week (optional)
+                ForEach(sectionedWorkouts.keys.sorted(by: >), id: \.self) { weekStart in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(sectionHeader(for: weekStart))
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                            .padding(.leading)
+                        ForEach(sectionedWorkouts[weekStart] ?? []) { workout in
+                            Button(action: {
+                                selectedWorkoutForDetail = workout
+                                showingWorkoutDetail = true
+                            }) {
+                                WorkoutCardSD(workout: workout)
+                                    .padding(.horizontal)
+                                    .padding(.vertical, 8)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                }
+                if filteredWorkouts.count > itemsToShow {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            itemsToShow += 30
+                        }
+                    }) {
+                        Text("Show More")
+                            .font(.headline.weight(.semibold))
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color.blue.opacity(0.1))
+                            )
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
+    }
+
+    // Section workouts by week
+    private var sectionedWorkouts: [Date: [Workout]] {
+        Dictionary(grouping: filteredWorkouts.prefix(itemsToShow)) { workout in
+            Calendar.current.dateInterval(of: .weekOfYear, for: workout.startDate)?.start ?? workout.startDate
+        }
+    }
+
+    private func sectionHeader(for weekStart: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return "Week of \(formatter.string(from: weekStart))"
+    }
+    
     // MARK: - Greeting
     private func greetingText() -> String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -81,43 +242,6 @@ struct WorkoutListView: View {
         case 5..<12: return "Good morning"
         case 12..<18: return "Good afternoon"
         default: return "Good evening"
-        }
-    }
-    
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(.systemBackground)
-                    .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 24) {
-                        headerView
-                        filtersView
-                        workoutListView
-                    }
-                    .padding(.vertical)
-                }
-                .refreshable {
-                    await refreshData()
-                }
-            }
-            .navigationTitle("Workouts")
-            .navigationBarTitleDisplayMode(.large)
-        }
-        .sheet(item: $selectedWorkoutForDetail) { workout in
-            NavigationStack {
-                WorkoutDetailView(workout: workout)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-                    .presentationBackground(.ultraThinMaterial)
-            }
-        }
-        .sheet(isPresented: $showingWellDoneSheet) {
-            WellDoneSheetView(isPresented: $showingWellDoneSheet)
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.regularMaterial)
         }
     }
     
@@ -183,12 +307,7 @@ struct WorkoutListView: View {
     
     private var filtersView: some View {
         VStack(spacing: 12) {
-            Text("Workout Types")
-                .font(.headline)
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-            
+    
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     FilterPill(
@@ -242,7 +361,7 @@ struct WorkoutListView: View {
     }
     
     private var workoutListView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             ForEach(Array(filteredWorkouts.prefix(itemsToShow).enumerated()), id: \.element.id) { index, workout in
                 Button(action: {
                     selectedWorkoutForDetail = workout
@@ -293,6 +412,14 @@ struct WorkoutListView: View {
         
         // Refresh HealthKit data
         await fetchHealthData()
+        // Show toast
+        await MainActor.run {
+            toastMessage = "Workouts refreshed!"
+            showToast = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                showToast = false
+            }
+        }
     }
     
     // MARK: - HealthKit Functions
@@ -530,8 +657,18 @@ struct WorkoutCardSD: View {
                 categoriesSection
             }
         }
-        .background(.ultraThinMaterial)
+        .background(
+            ZStack {
+                Color.clear
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.ultraThinMaterial.opacity(0.1))
+            }
+        )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
         .shadow(radius: 2)
     }
     
@@ -655,7 +792,7 @@ struct WorkoutCardSD: View {
             formatter.dateFormat = "'yesterday at' h:mm a"
             return formatter.string(from: date)
         } else if let weekAgo = calendar.date(byAdding: .day, value: -7, to: now), date > weekAgo {
-            formatter.dateFormat = "'last' EEEE 'at' h:mm a"
+            formatter.dateFormat = "EEEE 'at' h:mm a"
             return formatter.string(from: date)
         } else {
             formatter.dateStyle = .medium
@@ -804,7 +941,68 @@ struct StatItem: View {
     }
 }
 
+struct QuickActionButton: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let action: () -> Void
+    var body: some View {
+        Button(action: {
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+            action()
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(Capsule().fill(color.opacity(0.15)))
+            .foregroundColor(color)
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+// MARK: - ToastView
+struct ToastView: View {
+    let message: String
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .font(.system(size: 22, weight: .bold))
+            Text(message)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+        .background(.ultraThinMaterial)
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .cornerRadius(18)
+        .shadow(color: Color.black.opacity(0.08), radius: 12, y: 4)
+        .padding(.top, 8)
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity)
+        .ignoresSafeArea(edges: .top)
+        .transition(
+            .asymmetric(
+                insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.98, anchor: .top)),
+                removal: .move(edge: .top).combined(with: .opacity)
+            )
+        )
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: message)
+    }
+}
+
 #Preview {
     WorkoutListView()
         .modelContainer(for: Workout.self, inMemory: true)
-} 
+}

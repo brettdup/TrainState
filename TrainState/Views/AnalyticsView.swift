@@ -39,7 +39,10 @@ struct AnalyticsView: View {
     private let calendar = Calendar.current
     
     var body: some View {
+
         NavigationStack {
+            ZStack {
+                ColorReflectiveBackground()
             ScrollView {
                 VStack(spacing: 16) {
                     // Week Display Mode Picker
@@ -101,10 +104,13 @@ struct AnalyticsView: View {
                     .containerRelativeFrame(.horizontal)
                 }
                 .padding(.vertical)
+                }
+                .navigationTitle("Analytics")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+
+                .scrollContentBackground(.hidden)
             }
-            .navigationTitle("Analytics")
-            .background(Color(.systemBackground))
-            .scrollContentBackground(.hidden)
         }
     }
     
@@ -354,114 +360,118 @@ struct DailyBreakdownView: View {
     let calendar: Calendar
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
+            // Floating Title
             Text("Daily Breakdown")
                 .font(.title3.bold())
-                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.horizontal, 28)
+                .shadow(color: .primary.opacity(0.08), radius: 8, y: 2)
+                .zIndex(1)
             
             if dailySummaries.isEmpty {
                 Text("No workouts in this period")
                     .foregroundStyle(.secondary)
                     .padding()
+                    .frame(maxWidth: .infinity)
             } else {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: 16) {
                     ForEach(dailySummaries) { summary in
-                        DailySummaryRow(summary: summary, calendar: calendar)
+                        DailySummaryRowModern(summary: summary, calendar: calendar)
                     }
                 }
-                .padding(.horizontal)
+                .padding(.bottom, 4)
+                .padding(.horizontal, 12)
             }
         }
-        .padding(10)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(radius: 2)
-        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: .primary.opacity(0.06), radius: 24, y: 8)
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(LinearGradient(
+                        gradient: Gradient(colors: [Color.white.opacity(0.18), Color.blue.opacity(0.08)]),
+                        startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2)
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(.horizontal, 0)
+        .padding(.bottom, 8)
     }
 }
 
-struct DailySummaryRow: View {
+// Modern, glassy row for daily summary
+struct DailySummaryRowModern: View {
     let summary: DailyWorkoutSummary
     let calendar: Calendar
     
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             // Header Section
-            headerSection
-            
-            if summary.hasAnyActivity {
-                // Activity Details Section
-                activityDetailsSection
-            } else {
-                restDaySection
-            }
-        }
-        .padding(16)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-    
-    // MARK: - Subviews
-    
-    private var headerSection: some View {
-        HStack(alignment: .center) {
-            // Date Information
-            VStack(alignment: .leading, spacing: 4) {
-                Text(calendar.shortWeekdaySymbols[calendar.component(.weekday, from: summary.date) - 1])
-                    .font(.headline)
-                Text(summary.date, style: .date)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-            
-            // Total Duration
-            if summary.hasAnyActivity {
-                HStack(spacing: 8) {
-                    Image(systemName: "clock.fill")
-                        .foregroundStyle(.blue)
-                    Text(formatDuration(summary.totalDuration))
-                        .font(.headline.monospacedDigit())
-                        .foregroundStyle(.blue)
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(calendar.shortWeekdaySymbols[calendar.component(.weekday, from: summary.date) - 1])
+                        .font(.headline)
+                    Text(summary.date, style: .date)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if summary.hasAnyActivity {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.fill")
+                            .foregroundStyle(.blue)
+                        Text(formatDuration(summary.totalDuration))
+                            .font(.headline.monospacedDigit())
+                            .foregroundStyle(.blue)
+                    }
                 }
             }
-        }
-    }
-    
-    private var activityDetailsSection: some View {
-        VStack(spacing: 12) {
-            if summary.runningDuration > 0 {
-                ActivityMetricRow(
-                    title: "Running",
-                    icon: "figure.run",
-                    color: .blue,
-                    primaryMetric: formatDistance(summary.runningDistance),
-                    secondaryMetric: formatDuration(summary.runningDuration)
-                )
+            if summary.hasAnyActivity {
+                VStack(spacing: 14) {
+                    if summary.runningDuration > 0 {
+                        ActivityMetricRow(
+                            title: "Running",
+                            icon: "figure.run",
+                            color: .blue,
+                            primaryMetric: formatDistance(summary.runningDistance),
+                            secondaryMetric: formatDuration(summary.runningDuration)
+                        )
+                    }
+                    if summary.strengthDuration > 0 {
+                        ActivityMetricRow(
+                            title: "Strength",
+                            icon: "dumbbell.fill",
+                            color: .purple,
+                            primaryMetric: "\(Int(summary.strengthCalories)) cal",
+                            secondaryMetric: formatDuration(summary.strengthDuration)
+                        )
+                    }
+                }
+            } else {
+                HStack {
+                    Image(systemName: "bed.double.fill")
+                        .foregroundStyle(.secondary)
+                    Text("Rest Day")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            
-            if summary.strengthDuration > 0 {
-                ActivityMetricRow(
-                    title: "Strength",
-                    icon: "dumbbell.fill",
-                    color: .purple,
-                    primaryMetric: "\(Int(summary.strengthCalories)) cal",
-                    secondaryMetric: formatDuration(summary.strengthDuration)
-                )
+        }
+        .padding(20)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.13), lineWidth: 1)
             }
-        }
-    }
-    
-    private var restDaySection: some View {
-        HStack {
-            Image(systemName: "bed.double.fill")
-                .foregroundStyle(.secondary)
-            Text("Rest Day")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .primary.opacity(0.08), radius: 10, y: 4)
     }
 }
 

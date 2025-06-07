@@ -69,69 +69,131 @@ struct SubcategoryLastLoggedView: View {
     }
     
     var body: some View {
-        List {
-            Section {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(WorkoutType.allCases, id: \.self) { type in
-                            Button(action: { selectedWorkoutType = type }) {
-                                Text(type.rawValue)
-                                    .font(.subheadline.weight(.medium))
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        Capsule()
-                                            .fill(selectedWorkoutType == type ? Color.blue : Color.secondary.opacity(0.1))
-                                    )
-                                    .foregroundColor(selectedWorkoutType == type ? .white : .primary)
+        ZStack {
+            ColorReflectiveBackground()
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Chip selector
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(WorkoutType.allCases, id: \.self) { type in
+                                Button(action: { selectedWorkoutType = type }) {
+                                    Text(type.rawValue)
+                                        .font(.subheadline.weight(.medium))
+                                        .padding(.horizontal, 18)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            Capsule()
+                                                .fill(selectedWorkoutType == type ? Color.accentColor : Color.secondary.opacity(0.12))
+                                        )
+                                        .foregroundColor(selectedWorkoutType == type ? .white : .primary)
+                                        .shadow(color: selectedWorkoutType == type ? Color.accentColor.opacity(0.18) : .clear, radius: 4, y: 2)
+                                }
                             }
                         }
+                        .padding(.horizontal)
+                        .padding(.top, 8)
                     }
-                    .padding(.horizontal)
-                }
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-            }
-            
-            ForEach(sortedSubcategories) { subcategory in
-                let lastLoggedDate = getLastLoggedDate(for: subcategory)
-                let daysSinceLastLogged = getDaysSinceLastLogged(lastLoggedDate)
-                
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(subcategory.name)
-                            .font(.headline)
+                    
+                    // Subcategory cards
+                    ForEach(sortedSubcategories) { subcategory in
+                        let lastLoggedDate = getLastLoggedDate(for: subcategory)
+                        let daysSinceLastLogged = getDaysSinceLastLogged(lastLoggedDate)
                         
-                        Text(formatDate(lastLoggedDate))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(subcategory.name)
+                                    .font(.headline)
+                                Spacer()
+                                if let days = daysSinceLastLogged {
+                                    Text("\(days) days ago")
+                                        .font(.caption2)
+                                        .foregroundColor(days > 7 ? .red : .green)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background((days > 7 ? Color.red.opacity(0.12) : Color.green.opacity(0.12)).opacity(0.7))
+                                        .clipShape(Capsule())
+                                }
+                            }
+                            Text(formatDate(lastLoggedDate))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(16)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: Color.primary.opacity(0.07), radius: 8, x: 0, y: 4)
+                        .padding(.horizontal)
                     }
-                    
-                    Spacer()
-                    
-                    if let days = daysSinceLastLogged {
-                        Text("\(days) days ago")
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .fill(days > 7 ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
-                            )
-                            .foregroundColor(days > 7 ? .red : .green)
-                    }
+                    Spacer(minLength: 12)
                 }
-                .padding(.vertical, 4)
+                .padding(.top)
             }
         }
         .navigationTitle("Last Logged")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        // .toolbarBackground(.visible, for: .navigationBar)
     }
 }
 
 #Preview {
+    let container: ModelContainer = {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try! ModelContainer(for: Workout.self, WorkoutSubcategory.self, WorkoutCategory.self, configurations: config)
+
+        // Create mock categories and subcategories
+        let strengthCategory = WorkoutCategory(name: "Strength", workoutType: .strength)
+        let cardioCategory = WorkoutCategory(name: "Cardio", workoutType: .cardio)
+        let arms = WorkoutSubcategory(name: "Arms", category: strengthCategory)
+        let legs = WorkoutSubcategory(name: "Legs", category: strengthCategory)
+        let core = WorkoutSubcategory(name: "Core", category: strengthCategory)
+        let back = WorkoutSubcategory(name: "Back", category: strengthCategory)
+        let chest = WorkoutSubcategory(name: "Chest", category: strengthCategory)
+        let shoulders = WorkoutSubcategory(name: "Shoulders", category: strengthCategory)
+        let glutes = WorkoutSubcategory(name: "Glutes", category: strengthCategory)
+        let hamstrings = WorkoutSubcategory(name: "Hamstrings", category: strengthCategory)
+        let calves = WorkoutSubcategory(name: "Calves", category: strengthCategory)
+        let forearms = WorkoutSubcategory(name: "Forearms", category: strengthCategory)
+        let biceps = WorkoutSubcategory(name: "Biceps", category: strengthCategory)
+        let running = WorkoutSubcategory(name: "Running", category: cardioCategory)
+        let cycling = WorkoutSubcategory(name: "Cycling", category: cardioCategory)
+
+        // Add subcategories and categories to the container
+        container.mainContext.insert(strengthCategory)
+        container.mainContext.insert(cardioCategory)
+        container.mainContext.insert(arms)
+        container.mainContext.insert(legs)
+        container.mainContext.insert(running)
+        container.mainContext.insert(cycling)
+
+        // Create mock workouts
+        let workout1 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45, subcategories: [arms])
+        let workout2 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -10, to: Date())!, duration: 60, subcategories: [legs])
+        let workout3 = Workout(type: .cardio, startDate: Calendar.current.date(byAdding: .day, value: -3, to: Date())!, duration: 30, subcategories: [running])
+        let workout4 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45, subcategories: [core])
+        let workout5 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -10, to: Date())!, duration: 60, subcategories: [back])
+        let workout6 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -3, to: Date())!, duration: 30, subcategories: [chest])
+        let workout7 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45, subcategories: [shoulders])
+        let workout8 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -10, to: Date())!, duration: 60, subcategories: [glutes])
+        let workout9 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -3, to: Date())!, duration: 30, subcategories: [hamstrings])
+        let workout10 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45, subcategories: [calves])
+        container.mainContext.insert(workout1)
+        container.mainContext.insert(workout2)
+        container.mainContext.insert(workout3)
+        container.mainContext.insert(workout4)
+        container.mainContext.insert(workout5)
+        container.mainContext.insert(workout6)
+        container.mainContext.insert(workout7)
+        container.mainContext.insert(workout8)
+        container.mainContext.insert(workout9)
+        container.mainContext.insert(workout10)
+
+        return container
+    }()
+
     NavigationStack {
         SubcategoryLastLoggedView()
     }
-    .modelContainer(for: Workout.self, inMemory: true)
+    .modelContainer(container)
 } 

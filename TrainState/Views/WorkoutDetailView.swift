@@ -17,34 +17,18 @@ struct WorkoutDetailView: View {
     
     var body: some View {
         ZStack {
-            // Modern gradient background
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color(.systemBackground),
-                    Color(.systemBackground).opacity(0.95)
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            ColorReflectiveBackground()
             
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Header Card
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 28) {
                     headerCard
-                    
-                    // Stats Grid
-                    statsGrid
-                    
-                    // Categories and Subcategories
+                    infoCard
                     categoriesCard
-                    
-                    // Notes
                     if let notes = workout.notes, !notes.isEmpty {
                         notesCard(notes)
                     }
                 }
-                .padding(.vertical)
+                .padding(.vertical, 24)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -67,90 +51,110 @@ struct WorkoutDetailView: View {
     // MARK: - Header Card
     private var headerCard: some View {
         VStack(spacing: 0) {
-            // Top section with icon and type
             HStack(spacing: 20) {
-                // Icon with modern glass effect
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 60, height: 60)
-                    
+                        .frame(width: 64, height: 64)
+                        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
                     Image(systemName: iconForType(workout.type))
-                        .font(.system(size: 30))
+                        .font(.system(size: 32, weight: .semibold))
                         .foregroundStyle(.blue)
                 }
-                
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(workout.type.rawValue)
                         .font(.title2.weight(.bold))
-                    
+                        .foregroundStyle(.primary)
                     Text(friendlyDateTime(workout.startDate))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                
                 Spacer()
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 8)
             
-            // Bottom section with date
-            HStack {
+            Divider()
+                .background(Color.secondary.opacity(0.08))
+                .padding(.horizontal, 20)
+            
+            HStack(spacing: 8) {
                 Image(systemName: "calendar")
                     .foregroundStyle(.secondary)
                 Text(formattedDate(workout.startDate))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                Spacer()
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(.ultraThinMaterial)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
         }
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
+                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
         )
-        .padding(.horizontal)
+        .padding(.horizontal, 12)
     }
     
-    // MARK: - Stats Grid
-    private var statsGrid: some View {
-        LazyVGrid(columns: [
-            GridItem(.flexible(), spacing: 16),
-            GridItem(.flexible(), spacing: 16)
-        ], spacing: 16) {
-            // Duration
-            StatCard(
-                icon: "clock.fill",
-                value: formatDuration(workout.duration),
-                color: .blue
-            )
-            
-            // Calories
-            if let calories = workout.calories {
-                StatCard(
-                    icon: "flame.fill",
-                    value: "\(Int(calories)) cal",
-                    color: .orange
-                )
+    // MARK: - Info Card (consolidated workout info)
+    private var infoCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 16) {
+                Image(systemName: iconForType(workout.type))
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(.blue)
+                Text(workout.type.rawValue)
+                    .font(.title3.weight(.semibold))
+                Spacer()
             }
-            
-            // Distance
+            Divider().background(Color.secondary.opacity(0.08))
+            HStack(spacing: 16) {
+                Image(systemName: "clock.fill")
+                    .foregroundStyle(.blue)
+                Text(formatDuration(workout.duration))
+                    .font(.body.weight(.medium))
+                Spacer()
+            }
+            if let calories = workout.calories {
+                HStack(spacing: 16) {
+                    Image(systemName: "flame.fill")
+                        .foregroundStyle(.orange)
+                    Text("\(Int(calories)) cal")
+                        .font(.body.weight(.medium))
+                    Spacer()
+                }
+            }
             if let distance = workout.distance {
-                StatCard(
-                    icon: "figure.walk",
-                    value: String(format: "%.1f km", distance / 1000),
-                    color: .green
-                )
+                HStack(spacing: 16) {
+                    Image(systemName: "figure.walk")
+                        .foregroundStyle(.green)
+                    Text(String(format: "%.1f km", distance / 1000))
+                        .font(.body.weight(.medium))
+                    Spacer()
+                }
+            }
+            HStack(spacing: 16) {
+                Image(systemName: "calendar")
+                    .foregroundStyle(.secondary)
+                Text(formattedDate(workout.startDate))
+                    .font(.body.weight(.medium))
+                Spacer()
             }
         }
-        .padding(.horizontal)
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
+        )
+        .padding(.horizontal, 12)
     }
     
     // MARK: - Categories Card
     private var categoriesCard: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Header
             HStack {
                 Text("Categories & Subcategories")
                     .font(.title3.weight(.semibold))
@@ -161,20 +165,20 @@ struct WorkoutDetailView: View {
                     isEditingCategorySheet = true
                 }) {
                     Image(systemName: "pencil.circle.fill")
-                        .font(.title3)
+                        .font(.title2)
                         .foregroundStyle(.blue)
                         .symbolRenderingMode(.hierarchical)
+                        .shadow(color: .blue.opacity(0.12), radius: 4, y: 2)
                 }
+                .buttonStyle(.plain)
             }
-            
             if workout.categories.isEmpty && workout.subcategories.isEmpty {
-                // Empty state
                 Button(action: {
                     let generator = UIImpactFeedbackGenerator(style: .light)
                     generator.impactOccurred()
                     isEditingCategorySheet = true
                 }) {
-                    HStack {
+                    HStack(spacing: 8) {
                         Image(systemName: "plus.circle.fill")
                             .symbolRenderingMode(.hierarchical)
                         Text("Add Categories")
@@ -182,20 +186,20 @@ struct WorkoutDetailView: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.blue)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, 18)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .fill(.ultraThinMaterial)
                     )
+                    .shadow(color: .blue.opacity(0.08), radius: 6, y: 2)
                 }
+                .buttonStyle(.plain)
             } else {
-                // Categories
                 if !workout.categories.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
                         Text("Categories")
                             .font(.headline)
                             .foregroundStyle(.secondary)
-                        
                         WrappingHStackLayout(horizontalSpacing: 8, verticalSpacing: 8) {
                             ForEach(workout.categories, id: \.id) { category in
                                 CategoryChip(category: category)
@@ -204,14 +208,11 @@ struct WorkoutDetailView: View {
                         }
                     }
                 }
-                
-                // Subcategories
                 if !workout.subcategories.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
                         Text("Subcategories")
                             .font(.headline)
                             .foregroundStyle(.secondary)
-                        
                         WrappingHStackLayout(horizontalSpacing: 8, verticalSpacing: 8) {
                             ForEach(workout.subcategories, id: \.id) { subcategory in
                                 SubcategoryChip(subcategory: subcategory)
@@ -224,32 +225,31 @@ struct WorkoutDetailView: View {
         }
         .padding(24)
         .background(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
+                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
         )
-        .padding(.horizontal)
+        .padding(.horizontal, 12)
     }
     
     // MARK: - Notes Card
     private func notesCard(_ notes: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("Notes")
                 .font(.headline)
-            
             Text(notes)
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding()
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
+                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
         )
-        .padding(.horizontal)
+        .padding(.horizontal, 12)
     }
 
     // Helper for workout type icon

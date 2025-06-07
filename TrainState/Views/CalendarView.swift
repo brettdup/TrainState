@@ -22,28 +22,32 @@ struct CalendarView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    // Month selector with swipe gesture
-                    monthSelector
+            ZStack {
+                ColorReflectiveBackground()
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Month selector with swipe gesture
+                        monthSelector
+                        
+                        // Calendar grid
+                        calendarGrid
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(.ultraThinMaterial)
+                            )
+                            .padding(.horizontal)
+                        
+                        // Workouts for selected date
+                        workoutsList
+                    }
+                    .padding(.vertical)
                     
-                    // Calendar grid
-                    calendarGrid
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color(.systemBackground))
-                                .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
-                        )
-                        .padding(.horizontal)
-                    
-                    // Workouts for selected date
-                    workoutsList
                 }
-                .padding(.vertical)
             }
-            .background(Color(.secondarySystemGroupedBackground).ignoresSafeArea())
+            .background(Color.clear)
             .navigationTitle("Calendar")
             .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.clear, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: {
@@ -188,7 +192,7 @@ struct CalendarView: View {
                             WorkoutCardSD(workout: workout)
                                 .background(
                                     RoundedRectangle(cornerRadius: 16)
-                                        .fill(Color(.systemBackground))
+                                        .fill(.ultraThinMaterial)
                                         .shadow(color: .black.opacity(0.07), radius: 4, y: 2)
                                 )
                                 .padding(.horizontal)

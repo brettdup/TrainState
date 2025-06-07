@@ -16,13 +16,13 @@ struct SettingsView: View {
             List {
                 // MARK: - App Settings
                 if let settings = userSettings.first {
-                    Section {
-                        Toggle("Dark Mode", isOn: Binding(
+                    Section(header: Text("App Settings")) {
+                        Toggle(isOn: Binding(
                             get: { settings.darkModeEnabled },
                             set: { settings.darkModeEnabled = $0 }
-                        ))
-                        .tint(.blue)
-                        
+                        )) {
+                            Label("Dark Mode", systemImage: "moon.fill")
+                        }
                         Picker("Measurement System", selection: Binding(
                             get: { settings.measurementSystem },
                             set: { settings.measurementSystem = $0 }
@@ -30,15 +30,11 @@ struct SettingsView: View {
                             Text("Metric").tag(MeasurementSystem.metric)
                             Text("Imperial").tag(MeasurementSystem.imperial)
                         }
-                    } header: {
-                        Text("App Settings")
-                    } footer: {
-                        Text("Choose your preferred measurement system for tracking workouts")
+                        .pickerStyle(.segmented)
                     }
-                    
                     // MARK: - Notifications
-                    Section {
-                        Toggle("Enable Notifications", isOn: Binding(
+                    Section(header: Text("Notifications")) {
+                        Toggle(isOn: Binding(
                             get: { settings.notificationEnabled },
                             set: { newValue in
                                 settings.notificationEnabled = newValue
@@ -48,106 +44,65 @@ struct SettingsView: View {
                                     NotificationManager.shared.cancelWorkoutReminder()
                                 }
                             }
-                        ))
-                        .tint(.blue)
-                        
-                        if settings.notificationEnabled {
-                            DatePicker("Reminder Time", selection: Binding(
-                                get: { settings.notificationTime ?? Date() },
-                                set: { newValue in
-                                    settings.notificationTime = newValue
-                                    NotificationManager.shared.scheduleWorkoutReminder(at: newValue)
-                                }
-                            ), displayedComponents: .hourAndMinute)
+                        )) {
+                            Label("Enable Notifications", systemImage: "bell")
                         }
-                    } header: {
-                        Text("Notifications")
-                    } footer: {
-                        Text("Set up workout reminders to help you stay on track")
+                        if settings.notificationEnabled {
+                            DatePicker(
+                                "Reminder Time",
+                                selection: Binding(
+                                    get: { settings.notificationTime ?? Date() },
+                                    set: { newValue in
+                                        settings.notificationTime = newValue
+                                        NotificationManager.shared.scheduleWorkoutReminder(at: newValue)
+                                    }
+                                ),
+                                displayedComponents: .hourAndMinute
+                            )
+                        }
                     }
                 }
-                
                 // MARK: - Workout Organization
-                Section {
-                    NavigationLink {
-                        CategoriesManagementView()
-                    } label: {
+                Section(header: Text("Workout Organization")) {
+                    NavigationLink(destination: CategoriesManagementView()) {
                         Label("Manage Categories", systemImage: "folder")
                     }
-                    
-                    NavigationLink {
-                        HealthSettingsView()
-                    } label: {
+                    NavigationLink(destination: HealthSettingsView()) {
                         Label("Health Integration", systemImage: "heart")
                     }
-                } header: {
-                    Text("Workout Organization")
-                } footer: {
-                    Text("Organize your workouts and sync with Apple Health")
                 }
-
                 // MARK: - Backup & Restore
-                BackupRestoreView()
-                
-                // MARK: - Quick Stats
-                Section {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Total Workouts")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Text("\(workouts.count)")
-                                .font(.title2)
-                                .bold()
-                        }
-                        Spacer()
-                        VStack(alignment: .leading) {
-                            Text("Categories")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Text("\(categories.count)")
-                                .font(.title2)
-                                .bold()
-                        }
-                        Spacer()
-                        VStack(alignment: .leading) {
-                            Text("Subcategories")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Text("\(subcategories.count)")
-                                .font(.title2)
-                                .bold()
-                        }
-                    }
-                    .padding(.vertical, 8)
-                } header: {
-                    Text("Quick Stats")
+                Section(header: Text("Backup & Restore")) {
+                    BackupRestoreView()
                 }
-                
+                // MARK: - Quick Stats
+                Section(header: Text("Quick Stats")) {
+                    HStack(spacing: 16) {
+                        StatCard(icon: "figure.strengthtraining.traditional", value: "\(workouts.count)", color: .orange)
+                        StatCard(icon: "folder", value: "\(categories.count)", color: .blue)
+                        StatCard(icon: "square.grid.2x2", value: "\(subcategories.count)", color: .purple)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
                 // MARK: - About
-                Section {
+                Section(header: Text("About")) {
                     HStack {
-                        Text("Version")
+                        Label("Version", systemImage: "number")
                         Spacer()
                         Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")
                             .foregroundColor(.secondary)
                     }
-                    
                     Link(destination: URL(string: "https://github.com/yourusername/TrainState")!) {
-                        HStack {
-                            Text("GitHub Repository")
-                            Spacer()
-                            Image(systemName: "arrow.up.right.square")
-                                .foregroundColor(.blue)
-                        }
+                        Label("GitHub Repository", systemImage: "arrow.up.right.square")
                     }
-                } header: {
-                    Text("About")
                 }
-                
                 // MARK: - Developer Options
-                DeveloperOptionsView()
+                Section(header: Text("Developer Options")) {
+                    DeveloperOptionsView()
+                }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Settings")
             .onAppear {
                 NotificationManager.shared.checkNotificationStatus { authorized in
@@ -161,5 +116,5 @@ struct SettingsView: View {
 #Preview {
     SettingsView()
         .modelContainer(for: [UserSettings.self, WorkoutCategory.self, WorkoutSubcategory.self], inMemory: true)
-} 
+}
 
