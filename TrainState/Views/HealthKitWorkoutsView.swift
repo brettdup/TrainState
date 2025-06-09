@@ -116,89 +116,13 @@ struct HealthKitWorkoutsView: View {
     }
 
     private func importWorkout(hkWorkout: HKWorkout) async {
-        // Check if already imported (defensive check, UI should prevent this)
-        if importedStatus[hkWorkout.uuid] ?? false {
-            print("Workout \(hkWorkout.uuid) already marked as imported. Skipping.")
-            return
-        }
-
-        // Double-check database directly to ensure workout isn't already imported
-        // Convert UUID to string for comparison to avoid type issues
-        let uuidString = hkWorkout.uuid.uuidString
-        let workoutStartDate = hkWorkout.startDate
-        let workoutDuration = hkWorkout.duration
-        
-        // First check by UUID
-        let uuidFetchDescriptor = FetchDescriptor<Workout>(
-            predicate: #Predicate { workout in
-                workout.healthKitUUID != nil && workout.healthKitUUID!.uuidString == uuidString
-            }
-        )
-        
-        // Then check by date and duration if UUID check fails
-        let dateDurationFetchDescriptor = FetchDescriptor<Workout>(
-            predicate: #Predicate { workout in
-                workout.startDate == workoutStartDate && workout.duration == workoutDuration
-            }
-        )
-        
+        print("[UI] Calling unified HealthKit import logic from HealthKitWorkoutsView.importWorkout")
         do {
-            // Check UUID first
-            let existingByUUID = try modelContext.fetch(uuidFetchDescriptor)
-            if !existingByUUID.isEmpty {
-                print("Workout \(hkWorkout.uuid) already exists in database (UUID match). Skipping.")
-                // Update imported status immediately
-                Task { @MainActor in
-                    importedStatus[hkWorkout.uuid] = true
-                }
-                return
-            }
-            
-            // Then check date and duration
-            let existingByDateDuration = try modelContext.fetch(dateDurationFetchDescriptor)
-            if !existingByDateDuration.isEmpty {
-                print("Workout \(hkWorkout.uuid) already exists in database (date/duration match). Skipping.")
-                // Update imported status immediately
-                Task { @MainActor in
-                    importedStatus[hkWorkout.uuid] = true
-                }
-                return
-            }
-        } catch {
-            print("Error checking database for workout \(hkWorkout.uuid): \(error.localizedDescription)")
-            // Continue with import - better to risk double import than miss one
-        }
-
-        print("Importing workout: \(hkWorkout.uuid)")
-        let newWorkoutType = mapHKWorkoutActivityTypeToWorkoutType(hkWorkout.workoutActivityType)
-        
-        // Fetch calories asynchronously using the new method
-        let calories = await fetchEnergyBurned(for: hkWorkout)
-        
-        let newWorkout = Workout(
-            type: newWorkoutType,
-            startDate: hkWorkout.startDate,
-            duration: hkWorkout.duration,
-            calories: calories, // Use fetched calories
-            healthKitUUID: hkWorkout.uuid
-            // Add other relevant properties from HKWorkout if your Workout model has them
-        )
-        
-        modelContext.insert(newWorkout)
-        
-        do {
-            try modelContext.save()
-            print("Successfully imported and saved workout \(hkWorkout.uuid).")
-            // Update imported status immediately on main actor
-            await MainActor.run {
-                importedStatus[hkWorkout.uuid] = true
-            }
-            
-            // Double check all imported statuses after a save
+            try await HealthKitManager.shared.importWorkoutsToCoreData(context: modelContext)
+            // After import, update imported status
             await checkImportedStatus()
         } catch {
-            print("Failed to save imported workout \(hkWorkout.uuid): \(error.localizedDescription)")
-            // Optionally, revert the insert or handle the error
+            print("[UI] Error importing workouts from HealthKit: \(error.localizedDescription)")
         }
     }
 

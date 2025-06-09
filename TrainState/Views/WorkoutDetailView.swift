@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import MapKit
 
 // Import components
 import TrainState
@@ -23,6 +24,9 @@ struct WorkoutDetailView: View {
                 VStack(spacing: 28) {
                     headerCard
                     infoCard
+                    if workout.type == .running {
+                        RunningMapAndStatsCard(route: workout.route ?? [], duration: workout.duration, distance: workout.distance)
+                    }
                     categoriesCard
                     if let notes = workout.notes, !notes.isEmpty {
                         notesCard(notes)
@@ -159,18 +163,42 @@ struct WorkoutDetailView: View {
                 Text("Categories & Subcategories")
                     .font(.title3.weight(.semibold))
                 Spacer()
-                Button(action: {
-                    let generator = UIImpactFeedbackGenerator(style: .light)
-                    generator.impactOccurred()
-                    isEditingCategorySheet = true
-                }) {
-                    Image(systemName: "pencil.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.blue)
-                        .symbolRenderingMode(.hierarchical)
-                        .shadow(color: .blue.opacity(0.12), radius: 4, y: 2)
+                if !workout.categories.isEmpty || !workout.subcategories.isEmpty {
+                    Button(action: {
+                        let generator = UIImpactFeedbackGenerator(style: .light)
+                        generator.impactOccurred()
+                        isEditingCategorySheet = true
+                    }) {
+                        ZStack {
+                            Circle()
+                                .fill(LinearGradient(
+                                    gradient: Gradient(colors: [Color.blue.opacity(0.85), Color.blue.opacity(0.65)]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ))
+                                .frame(width: 40, height: 40)
+                                .background(
+                                    Circle()
+                                        .fill(.ultraThinMaterial)
+                                )
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.white.opacity(0.5), lineWidth: 1.5)
+                                )
+                                .shadow(color: .blue.opacity(0.18), radius: 8, y: 3)
+                            Image(systemName: "pencil.circle.fill")
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundStyle(.white)
+                                .shadow(color: .blue.opacity(0.18), radius: 2, y: 1)
+                        }
+                        .contentShape(Circle())
+                        .scaleEffect(isEditingCategorySheet ? 0.92 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isEditingCategorySheet)
+                        .accessibilityLabel("Edit Categories")
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 2)
                 }
-                .buttonStyle(.plain)
             }
             if workout.categories.isEmpty && workout.subcategories.isEmpty {
                 Button(action: {
@@ -593,6 +621,7 @@ struct SubcategorySelectionView: View {
     private func toggleSubcategory(_ subName: String) {
         if let idx = selectedSubcategories.firstIndex(where: { $0.name == subName }) {
             selectedSubcategories.remove(at: idx)
+            try? modelContext.save()
         } else {
             // Check if subcategory already exists in SwiftData
             let fetchDescriptor = FetchDescriptor<WorkoutSubcategory>(
@@ -602,11 +631,13 @@ struct SubcategorySelectionView: View {
                 let existingSubcategories = try modelContext.fetch(fetchDescriptor)
                 if let existingSubcategory = existingSubcategories.first {
                     selectedSubcategories.append(existingSubcategory)
+                    try? modelContext.save()
                 } else {
                     // If not, create and insert new one
                     let newSubcategory = WorkoutSubcategory(name: subName)
                     modelContext.insert(newSubcategory)
                     selectedSubcategories.append(newSubcategory)
+                    try? modelContext.save()
                 }
             } catch {
                 print("Failed to fetch or create subcategory: \(error)")
@@ -614,6 +645,7 @@ struct SubcategorySelectionView: View {
                  let newSubcategory = WorkoutSubcategory(name: subName)
                  // modelContext.insert(newSubcategory) // Decide if insert should happen on error
                  selectedSubcategories.append(newSubcategory)
+                 try? modelContext.save()
             }
         }
     }
@@ -747,6 +779,7 @@ struct CategoryAndSubcategorySelectionView: View {
             guard let cat = sub.category else { return true }
             return !selectedCategories.contains { $0.id == cat.id }
         }
+        try? modelContext.save()
     }
     
     private func toggleCategory(_ category: WorkoutCategory) {
@@ -948,3 +981,101 @@ struct BlurView: UIViewRepresentable {
     }
     .modelContainer(container)
 } 
+
+// MARK: - Running Map and Stats Card
+struct RunningMapAndStatsCard: View {
+    let route: [CLLocation]
+    let duration: TimeInterval
+    let distance: Double?
+
+    // Use mock route if real route is empty
+    private var displayRoute: [CLLocation] {
+        route.isEmpty ? RunningMapAndStatsCard.mockRoute : route
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Route Map & Splits")
+                .font(.headline)
+            Text("Route points: \(displayRoute.count)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            RouteMapView(route: displayRoute)
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(radius: 6)
+            if let pace = averagePaceString {
+                HStack {
+                    Image(systemName: "speedometer")
+                        .foregroundColor(.blue)
+                    Text("Avg Pace: \(pace)")
+                        .font(.body.weight(.medium))
+                }
+            }
+            if !splits.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Splits")
+                        .font(.subheadline.weight(.semibold))
+                    ForEach(Array(splits.enumerated()), id: \.0) { (i, split) in
+                        Text("\(i+1) km: \(split)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
+        )
+        .padding(.horizontal, 12)
+    }
+
+    // Average pace as min/km
+    private var averagePaceString: String? {
+        guard let distance = distance, distance > 0 else { return nil }
+        let pace = duration / distance * 1000 // seconds per km
+        let minutes = Int(pace) / 60
+        let seconds = Int(pace) % 60
+        return String(format: "%d:%02d min/km", minutes, seconds)
+    }
+
+    // Splits per km
+    private var splits: [String] {
+        guard let distance = distance, distance > 0 else { return [] }
+        var splits: [String] = []
+        var splitStartTime = displayRoute.first?.timestamp ?? Date()
+        var accumulatedDistance: Double = 0
+        for i in 1..<displayRoute.count {
+            let d = displayRoute[i].distance(from: displayRoute[i-1])
+            accumulatedDistance += d
+            if accumulatedDistance >= 1000 {
+                let splitEndTime = displayRoute[i].timestamp
+                let splitDuration = splitEndTime.timeIntervalSince(splitStartTime)
+                let min = Int(splitDuration) / 60
+                let sec = Int(splitDuration) % 60
+                splits.append(String(format: "%d:%02d", min, sec))
+                splitStartTime = splitEndTime
+                accumulatedDistance = 0
+            }
+        }
+        return splits
+    }
+
+    // Mock route for demo/testing
+    static var mockRoute: [CLLocation] {
+        let base = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
+        let points = (0..<20).map { i -> CLLocation in
+            let lat = base.latitude + Double(i) * 0.001
+            let lon = base.longitude + sin(Double(i) * .pi / 10) * 0.002
+            return CLLocation(latitude: lat, longitude: lon)
+        }
+        // Add timestamps for splits
+        let startTime = Date()
+        return points.enumerated().map { (i, loc) in
+            CLLocation(coordinate: loc.coordinate, altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5, course: 0, speed: 2, timestamp: startTime.addingTimeInterval(Double(i) * 60))
+        }
+    }
+}

@@ -17,6 +17,7 @@ struct WorkoutListView: View {
     // Toast feedback state
     @State private var showToast = false
     @State private var toastMessage = ""
+    @State private var isLoading = false
     
     // MARK: - Stats
     var workoutsThisMonth: [Workout] {
@@ -79,44 +80,47 @@ struct WorkoutListView: View {
     }
     
     var body: some View {
-        ZStack {
-            // Toast overlay at the very top, above everything
-            if showToast {
-                ToastView(message: toastMessage)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(2)
-                    .ignoresSafeArea(edges: .top)
-            }
-            NavigationStack {
-                ZStack {
-                    ColorReflectiveBackground()
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            greetingHeader
-                            statsCardsSection
-                            filtersView
-                            workoutListSection
-                        }
-                        .padding(.top)
+        NavigationStack {
+            ZStack {
+                ColorReflectiveBackground()
+                ScrollView {
+                    VStack(spacing: 20) {
+                        greetingHeader
+                        statsCardsSection
+                        filtersView
+                        workoutListSection
                     }
-                    .refreshable {
-                        await refreshData()
-                    }
+                    .padding(.top)
                 }
-                .navigationTitle("Workouts")
-                .navigationBarTitleDisplayMode(.large)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button(action: {
-                            Task { await refreshData() }
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .accessibilityLabel("Refresh Workouts")
-                    }
+                .refreshable {
+                    await refreshData()
                 }
             }
+            .navigationTitle("Workouts")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: {
+                        Task { await refreshData() }
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel("Refresh Workouts")
+                }
+            }
+            .overlay(alignment: .top) {
+            if showToast || isLoading {
+                ToastView(
+                    message: isLoading ? "Refreshing…" : toastMessage,
+                    isLoading: isLoading
+                )
+         
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(100)
+                .allowsHitTesting(false)
+            }
+        }  
             .sheet(item: $selectedWorkoutForDetail) { workout in
                 NavigationStack {
                     WorkoutDetailView(workout: workout)
@@ -406,14 +410,23 @@ struct WorkoutListView: View {
     // MARK: - Helper Functions
     
     private func refreshData() async {
+        await MainActor.run {
+            isLoading = true
+            showToast = true
+        }
         // Add haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
         
-        // Refresh HealthKit data
-        await fetchHealthData()
-        // Show toast
+        // Refresh HealthKit data using unified import logic
+        print("[UI] Calling unified HealthKit import logic from WorkoutListView.refreshData")
+        do {
+            try await HealthKitManager.shared.importWorkoutsToCoreData(context: modelContext)
+        } catch {
+            print("[UI] Error importing workouts from HealthKit: \(error.localizedDescription)")
+        }
         await MainActor.run {
+            isLoading = false
             toastMessage = "Workouts refreshed!"
             showToast = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -422,226 +435,12 @@ struct WorkoutListView: View {
         }
     }
     
-    // MARK: - HealthKit Functions
-    
-    private func fetchHealthData() async {
-        print("Refreshing HealthKit data including workouts...")
-
-        guard HKHealthStore.isHealthDataAvailable() else {
-            print("HealthKit is not available on this device.")
-            return
-        }
-
-        let typesToRead: Set<HKObjectType> = [
-            HKObjectType.workoutType(),
-            HKObjectType.quantityType(forIdentifier: .stepCount)!
-            // Add other types as needed, e.g., HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!
-        ]
-
-        do {
-            try await healthStore.requestAuthorization(toShare: Set<HKSampleType>(), read: typesToRead)
-            print("HealthKit authorization granted or already determined for requested types.")
-            
-            await fetchAndStoreWorkouts()
-            
-            await fetchStepCount()
-            
-        } catch {
-            print("HealthKit authorization failed or error occurred: \(error.localizedDescription)")
-        }
-    }
-    
-    private func fetchAndStoreWorkouts() async {
-        print("Starting to fetch and store workouts...")
-
-        // Get the startDate of the most recent workout stored locally
-        var latestKnownWorkoutStartDate: Date? = nil
-        do {
-            var fetchDescriptor = FetchDescriptor<Workout>(sortBy: [SortDescriptor(\Workout.startDate, order: .reverse)])
-            fetchDescriptor.fetchLimit = 1
-            if let lastWorkout = try modelContext.fetch(fetchDescriptor).first {
-                latestKnownWorkoutStartDate = lastWorkout.startDate
-                print("Most recent workout startDate in SwiftData: \(lastWorkout.startDate)")
-            } else {
-                print("No workouts found in SwiftData. Will fetch all from HealthKit.")
-            }
-        } catch {
-            print("Error fetching latest workout startDate from SwiftData: \(error.localizedDescription)")
-            // Proceed without a startDate predicate, fetching all workouts
-        }
-
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let workoutType = HKObjectType.workoutType()
-            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-            
-            var predicate: NSPredicate? = nil
-            if let startDateForPredicate = latestKnownWorkoutStartDate {
-                // Fetch workouts that started AFTER our latest known workout.
-                // Using a small epsilon to avoid potential floating point comparison issues with dates,
-                // and to ensure we don't miss workouts that might have the *exact* same start time if re-imported.
-                // The UUID check later will prevent actual duplicates.
-                let slightlyLaterStartDate = startDateForPredicate.addingTimeInterval(1) // 1 second later
-                predicate = NSPredicate(format: "startDate > %@", slightlyLaterStartDate as NSDate)
-                print("HealthKit query will use predicate: startDate > \(slightlyLaterStartDate)")
-            } else {
-                print("HealthKit query will fetch all workouts (no predicate).")
-            }
-
-            let query = HKSampleQuery(sampleType: workoutType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { (query, samples, error) in
-                guard let fetchedWorkouts = samples as? [HKWorkout], error == nil else {
-                    print("Error fetching workouts: \(error?.localizedDescription ?? "Unknown error")")
-                    continuation.resume() // Resume on error
-                    return
-                }
-
-                if fetchedWorkouts.isEmpty {
-                    print("No new workouts found in HealthKit.")
-                    continuation.resume() // Resume if no workouts
-                    return
-                }
-
-                print("Fetched \(fetchedWorkouts.count) workouts from HealthKit.")
-
-                Task {
-                    await MainActor.run {
-                        var newWorkoutsInserted = false
-                        for hkWorkout in fetchedWorkouts {
-                            // Use FetchDescriptor for optimized duplicate check
-                            let workoutUUID = hkWorkout.uuid
-                            let workoutStartDate = hkWorkout.startDate
-                            let workoutDuration = hkWorkout.duration
-                            
-                            // First check by UUID
-                            var uuidFetchDescriptor = FetchDescriptor<Workout>(
-                                predicate: #Predicate { workout in
-                                    workout.healthKitUUID == workoutUUID
-                                }
-                            )
-                            
-                            // Then check by date and duration if UUID check fails
-                            var dateDurationFetchDescriptor = FetchDescriptor<Workout>(
-                                predicate: #Predicate { workout in
-                                    workout.startDate == workoutStartDate && workout.duration == workoutDuration
-                                }
-                            )
-                            
-                            do {
-                                // Check UUID first
-                                let existingByUUID = try modelContext.fetch(uuidFetchDescriptor)
-                                if !existingByUUID.isEmpty {
-                                    print("Workout with HKUUID \(hkWorkout.uuid) already exists. Skipping.")
-                                    continue
-                                }
-                                
-                                // Then check date and duration
-                                let existingByDateDuration = try modelContext.fetch(dateDurationFetchDescriptor)
-                                if !existingByDateDuration.isEmpty {
-                                    print("Workout with same date and duration already exists. Skipping.")
-                                    continue
-                                }
-                                
-                                // If we get here, it's a new workout
-                                let newWorkoutType = self.mapHKWorkoutActivityTypeToWorkoutType(hkWorkout.workoutActivityType)
-                                
-                                let newWorkout = Workout(
-                                    type: newWorkoutType,
-                                    startDate: hkWorkout.startDate,
-                                    duration: hkWorkout.duration,
-                                    calories: hkWorkout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
-                                    distance: hkWorkout.workoutActivityType == .running ? hkWorkout.totalDistance?.doubleValue(for: .meter()) : nil,
-                                    healthKitUUID: hkWorkout.uuid
-                                )
-                                modelContext.insert(newWorkout)
-                                newWorkoutsInserted = true
-                                print("Inserting new workout from HealthKit: Type(\(newWorkoutType.rawValue)) - \(newWorkout.startDate) - HKUUID: \(hkWorkout.uuid)")
-                            } catch {
-                                print("Error checking for existing workout (UUID: \(workoutUUID)): \(error.localizedDescription)")
-                            }
-                        }
-                        
-                        if newWorkoutsInserted {
-                            do {
-                                try modelContext.save()
-                                print("Successfully saved context after processing workouts.")
-                                // Show well done sheet when new workouts are imported
-                                showingWellDoneSheet = true
-                            } catch {
-                                print("Failed to save model context after processing workouts: \(error.localizedDescription)")
-                            }
-                        } else {
-                             print("No new workouts were inserted, skipping save.")
-                        }
-                        continuation.resume() // Resume after all processing
-                    }
-                }
-            }
-            healthStore.execute(query)
-        }
-        print("Finished fetching and storing workouts.")
-    }
-
-    // Helper function to map HKWorkoutActivityType to your app's WorkoutType
-    private func mapHKWorkoutActivityTypeToWorkoutType(_ activityType: HKWorkoutActivityType) -> WorkoutType {
-        switch activityType {
-        case .traditionalStrengthTraining, .functionalStrengthTraining:
-            return .strength
-        case .running:
-            return .running
-        case .cycling:
-            return .cycling
-        case .swimming:
-            return .swimming
-        case .yoga:
-            return .yoga
-        case .barre, .coreTraining, .dance, .flexibility, .highIntensityIntervalTraining, .jumpRope, .kickboxing, .pilates, .stairs, .stepTraining, .walking, .elliptical, .handCycling:
-            return .cardio
-        default:
-            print("Unmapped HKWorkoutActivityType: \(activityType.rawValue)")
-            return .other
-        }
-    }
-
-    private func fetchStepCount() async {
-        print("Starting to fetch step count...")
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            guard let stepCountType = HKObjectType.quantityType(forIdentifier: .stepCount) else {
-                print("Step count type is no longer available in HealthKit.")
-                continuation.resume()
-                return
-            }
-            
-            let now = Date()
-            let startDate = Calendar.current.startOfDay(for: now)
-            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: now, options: .strictStartDate)
-            
-            let query = HKSampleQuery(sampleType: stepCountType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { (query, samples, error) in
-                guard let quantitySamples = samples as? [HKQuantitySample] else {
-                    print("Error fetching step count samples: \(error?.localizedDescription ?? "Unknown error")")
-                    continuation.resume() // Resume on error
-                    return
-                }
-                
-                let totalSteps = quantitySamples.reduce(0.0) { $0 + $1.quantity.doubleValue(for: HKUnit.count()) }
-                
-                Task { // Ensure UI updates or related logic run on main actor
-                    await MainActor.run {
-                        print("Total steps today (on refresh): \(totalSteps)")
-                        // If you have a @State var for steps, update it here:
-                        // self.todayStepCount = totalSteps
-                    }
-                    continuation.resume() // Resume after processing
-                }
-            }
-            healthStore.execute(query)
-        }
-        print("Finished fetching step count.")
-    }
-    
     private func deleteWorkouts(offsets: IndexSet) {
         withAnimation {
             for index in offsets {
                 modelContext.delete(workouts[index])
             }
+            try? modelContext.save()
         }
     }
 }
@@ -688,6 +487,17 @@ struct WorkoutCardSD: View {
             }
             
             Spacer()
+
+            if workout.type == .running, let distance = workout.distance {
+                Text(String(format: "%.1f km", distance / 1000))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.blue)
+
+                    // need an "in" so it says 5km in 32 mins
+                    Text("in ")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+            }
             
             Text(formatDuration(workout.duration))
                 .font(.system(.title3, design: .rounded).weight(.semibold))
@@ -970,11 +780,17 @@ struct QuickActionButton: View {
 // MARK: - ToastView
 struct ToastView: View {
     let message: String
+    var isLoading: Bool = false
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.green)
-                .font(.system(size: 22, weight: .bold))
+            if isLoading {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .blue))
+            } else {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                    .font(.system(size: 22, weight: .bold))
+            }
             Text(message)
                 .font(.subheadline.weight(.semibold))
                 .foregroundColor(.primary)
@@ -988,10 +804,8 @@ struct ToastView: View {
         )
         .cornerRadius(18)
         .shadow(color: Color.black.opacity(0.08), radius: 12, y: 4)
-        .padding(.top, 8)
         .padding(.horizontal, 32)
         .frame(maxWidth: .infinity)
-        .ignoresSafeArea(edges: .top)
         .transition(
             .asymmetric(
                 insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.98, anchor: .top)),

@@ -65,6 +65,7 @@ struct EditWorkoutView: View {
         workout.type = selectedType
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
+        try? modelContext.save()
         dismiss()
     }
 }

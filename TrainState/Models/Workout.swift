@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import CoreLocation
 
 @Model
 final class Workout: Codable {
@@ -13,9 +14,21 @@ final class Workout: Codable {
     var notes: String?
     @Relationship var categories: [WorkoutCategory]
     @Relationship var subcategories: [WorkoutSubcategory]
+    var routeData: Data? // Encoded [CLLocation] for running workouts
+    
+    // Helper to get/set route as [CLLocation]
+    var route: [CLLocation]? {
+        get {
+            guard let data = routeData else { return nil }
+            return try? NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(data) as? [CLLocation]
+        }
+        set {
+            routeData = try? NSKeyedArchiver.archivedData(withRootObject: newValue ?? [], requiringSecureCoding: false)
+        }
+    }
     
     enum CodingKeys: String, CodingKey {
-        case id, healthKitUUID, type, startDate, duration, calories, distance, notes
+        case id, healthKitUUID, type, startDate, duration, calories, distance, notes, routeData
         case categories, subcategories
     }
     
@@ -28,7 +41,8 @@ final class Workout: Codable {
         notes: String? = nil,
         categories: [WorkoutCategory] = [],
         subcategories: [WorkoutSubcategory] = [],
-        healthKitUUID: UUID? = nil
+        healthKitUUID: UUID? = nil,
+        routeData: Data? = nil
     ) {
         self.id = UUID()
         self.type = type
@@ -40,6 +54,7 @@ final class Workout: Codable {
         self.categories = categories
         self.subcategories = subcategories
         self.healthKitUUID = healthKitUUID
+        self.routeData = routeData
     }
     
     required init(from decoder: Decoder) throws {
@@ -54,6 +69,7 @@ final class Workout: Codable {
         notes = try container.decodeIfPresent(String.self, forKey: .notes)
         categories = try container.decode([WorkoutCategory].self, forKey: .categories)
         subcategories = try container.decode([WorkoutSubcategory].self, forKey: .subcategories)
+        routeData = try container.decodeIfPresent(Data.self, forKey: .routeData)
     }
     
     func encode(to encoder: Encoder) throws {
@@ -68,6 +84,7 @@ final class Workout: Codable {
         try container.encodeIfPresent(notes, forKey: .notes)
         try container.encode(categories, forKey: .categories)
         try container.encode(subcategories, forKey: .subcategories)
+        try container.encodeIfPresent(routeData, forKey: .routeData)
     }
 }
 
@@ -128,6 +145,7 @@ final class WorkoutCategory: Codable {
         let core = WorkoutCategory(name: "Core", color: "#8E24AA", workoutType: .strength)
         let cardio = WorkoutCategory(name: "Cardio", color: "#F4511E", workoutType: .cardio)
         let flexibility = WorkoutCategory(name: "Flexibility", color: "#039BE5", workoutType: .yoga)
+        let running = WorkoutCategory(name: "Running", color: "#039BE5", workoutType: .running)
         
         // Create subcategories for each main category
         let pushSubcategories = [
@@ -165,7 +183,11 @@ final class WorkoutCategory: Codable {
             "Dynamic": ["Arm Circles", "Leg Swings", "Hip Circles", "Cat-Cow"],
             "Mobility": ["Shoulder Mobility", "Hip Mobility", "Ankle Mobility"]
         ]
-        
+
+        let runningSubcategories = [
+            "Tempo": ["Tempo Run", "Easy Run", "Long Run", "Interval Run"],
+        ]
+
         // Create and link subcategories
         func createSubcategories(_ dict: [String: [String]], for category: WorkoutCategory) {
             for (group, exercises) in dict {
@@ -183,8 +205,9 @@ final class WorkoutCategory: Codable {
         createSubcategories(coreSubcategories, for: core)
         createSubcategories(cardioSubcategories, for: cardio)
         createSubcategories(flexibilitySubcategories, for: flexibility)
+        createSubcategories(runningSubcategories, for: running)
         
-        return [push, pull, legs, core, cardio, flexibility]
+        return [push, pull, legs, core, cardio, flexibility, running]
     }
     
     // Get categories for a specific workout type

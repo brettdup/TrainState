@@ -2,6 +2,7 @@ import Foundation
 import HealthKit
 import Combine
 import SwiftData
+import CoreLocation
 
 class HealthKitManager: ObservableObject {
     static let shared = HealthKitManager()
@@ -16,14 +17,16 @@ class HealthKitManager: ObservableObject {
             HKObjectType.workoutType(),
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
             HKObjectType.quantityType(forIdentifier: .heartRate)!,
-            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+            HKSeriesType.workoutRoute() as HKObjectType
         ]
         
         // Define the types we want to write to HealthKit
         let typesToWrite: Set<HKSampleType> = [
             HKObjectType.workoutType(),
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+            HKSeriesType.workoutRoute() as HKSampleType
         ]
         
         // Request authorization
@@ -40,14 +43,16 @@ class HealthKitManager: ObservableObject {
             HKObjectType.workoutType(),
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
             HKObjectType.quantityType(forIdentifier: .heartRate)!,
-            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+            HKSeriesType.workoutRoute() as HKObjectType
         ]
         
         // Define the types we want to write to HealthKit
         let typesToWrite: Set<HKSampleType> = [
             HKObjectType.workoutType(),
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+            HKSeriesType.workoutRoute() as HKSampleType
         ]
         
         return try await withCheckedThrowingContinuation { continuation in
@@ -133,22 +138,37 @@ class HealthKitManager: ObservableObject {
                 }
             }
         }
-        
-        // Update progress for UI
-        let totalWorkouts = workouts.count
+        print("[HealthKit] Total workouts fetched: \(workouts.count)")
+
+        // Only keep running workouts, sorted by startDate descending, and take the 10 most recent
+        let runningWorkouts = workouts
+            .filter { $0.workoutActivityType == .running }
+            .sorted { $0.startDate > $1.startDate }
+            .prefix(10)
+        print("[HealthKit] Importing only \(runningWorkouts.count) most recent running workouts")
+
+        let totalWorkouts = runningWorkouts.count
         var processedWorkouts = 0
-        
-        // Import each workout
-        for hkWorkout in workouts {
-            // Get distance for running workouts
+
+        for hkWorkout in runningWorkouts {
+            print("[HealthKit] Importing workout: \(hkWorkout.uuid) type: \(hkWorkout.workoutActivityType.rawValue) name: \(hkWorkout.workoutActivityType.name)")
             var distance: Double? = nil
-            if hkWorkout.workoutActivityType == .running {
-                distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
+            distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
+
+            let locations: [CLLocation]? = try await withCheckedContinuation { continuation in
+                self.fetchRoute(for: hkWorkout) { locs in
+                    if let locs = locs {
+                        print("[HealthKit] Fetched route for workout \(hkWorkout.uuid): \(locs.count) points")
+                    } else {
+                        print("[HealthKit] No route found for workout \(hkWorkout.uuid)")
+                    }
+                    continuation.resume(returning: locs)
+                }
             }
-            
-            // Convert HKWorkout to app's Workout model
+            print("[HealthKit] Locations right after fetch: \(locations?.count ?? -1)")
+            let workoutType = convertFromHKWorkoutActivityType(hkWorkout.workoutActivityType)
             let workout = Workout(
-                type: convertFromHKWorkoutActivityType(hkWorkout.workoutActivityType),
+                type: workoutType,
                 startDate: hkWorkout.startDate,
                 duration: hkWorkout.duration,
                 calories: hkWorkout.totalEnergyBurned?.doubleValue(for: HKUnit.kilocalorie()),
@@ -156,24 +176,31 @@ class HealthKitManager: ObservableObject {
                 notes: "Imported from Apple Health",
                 healthKitUUID: hkWorkout.uuid
             )
-            
-            // Save to SwiftData
+            if let locs = locations, !locs.isEmpty {
+                workout.route = locs
+            }
+            print("[HealthKit] Workout.route after set: \(workout.route?.count ?? -1)")
+            // Deduplication: skip if already imported
+            let healthKitUUID = hkWorkout.uuid
+            let existing = try? context.fetch(
+                FetchDescriptor<Workout>(predicate: #Predicate { $0.healthKitUUID == healthKitUUID })
+            )
+            if existing?.isEmpty == false {
+                print("[HealthKit] Skipping duplicate workout: \(hkWorkout.uuid)")
+                continue
+            }
             context.insert(workout)
-            
-            // Update progress
+
             processedWorkouts += 1
             let progress = Double(processedWorkouts) / Double(totalWorkouts)
-            
-            // Post notification for progress updates
             NotificationCenter.default.post(
                 name: NSNotification.Name("ImportProgressUpdated"),
                 object: nil,
                 userInfo: ["progress": progress]
             )
-            
-            // Small delay to avoid overwhelming the system
-            try await Task.sleep(for: .milliseconds(10)) // 10ms
+            try await Task.sleep(for: .milliseconds(10))
         }
+        try? context.save()
     }
     
     private func convertToHKWorkoutActivityType(_ type: WorkoutType) -> HKWorkoutActivityType {
@@ -247,6 +274,41 @@ class HealthKitManager: ObservableObject {
                 }
             }
         }
+    }
+    
+    // Fetch the route (array of CLLocation) for a running workout
+    func fetchRoute(for workout: HKWorkout, completion: @escaping ([CLLocation]?) -> Void) {
+        print("[HealthKit] fetchRoute called for workout: \(workout.uuid)")
+        let routeType = HKSeriesType.workoutRoute()
+        let predicate = HKQuery.predicateForObjects(from: workout)
+        let routeQuery = HKSampleQuery(sampleType: routeType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { [weak self] query, samples, error in
+            guard let self = self else { completion(nil); return }
+            print("[HealthKit] fetchRoute samples: \(samples?.count ?? -1) for workout: \(workout.uuid)")
+            guard let routeSamples = samples as? [HKWorkoutRoute], let route = routeSamples.first else {
+                print("[HealthKit] No HKWorkoutRoute samples found for workout \(workout.uuid)")
+                completion(nil)
+                return
+            }
+            var locations: [CLLocation] = []
+            let locationQuery = HKWorkoutRouteQuery(route: route) { _, newLocations, done, error in
+                locations.append(contentsOf: newLocations ?? [])
+                if done {
+                    print("[HealthKit] Route locations loaded: \(locations.count) points for workout \(workout.uuid)")
+                    DispatchQueue.main.async {
+                        completion(locations)
+                    }
+                }
+            }
+            self.healthStore.execute(locationQuery)
+        }
+        healthStore.execute(routeQuery)
+    }
+    
+    // Helper: Check authorization status for HKWorkoutRouteType
+    func isRouteAuthorized() -> Bool {
+        let routeType = HKSeriesType.workoutRoute()
+        let status = healthStore.authorizationStatus(for: routeType)
+        return status == .sharingAuthorized
     }
 }
 

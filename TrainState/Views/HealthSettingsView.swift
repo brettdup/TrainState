@@ -103,6 +103,21 @@ struct HealthSettingsView: View {
                     .font(.footnote)
                     .foregroundColor(.secondary)
             }
+            
+            // Permissions Management
+            Section(header: Text("Permissions Management")) {
+                Button("Re-request HealthKit Permissions") {
+                    requestHealthKitAuthorization()
+                }
+                .buttonStyle(.bordered)
+                Button("Open Health App Settings") {
+                    openAppSettings()
+                }
+                .buttonStyle(.bordered)
+                Text("To fully revoke permissions, open the Settings app, go to Privacy & Security > Health > TrainState, and turn off all permissions.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .navigationTitle("Health Integration")
         .onAppear {
@@ -327,6 +342,13 @@ struct HealthSettingsView: View {
                     showError = true
                 }
             }
+        }
+    }
+    
+    // Helper to open app settings
+    private func openAppSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
         }
     }
 }

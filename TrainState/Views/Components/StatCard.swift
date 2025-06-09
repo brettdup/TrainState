@@ -21,11 +21,16 @@ struct StatCard: View {
         .frame(maxWidth: .infinity)
         .frame(height: 62)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.gray.opacity(0.1), lineWidth: 1)
-        )
+        .background(
+                    ZStack {
+                        Color.clear
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.ultraThinMaterial.opacity(0.1))
+                    }
+                )        .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.gray.opacity(0.1), lineWidth: 1)
+                )
     }
 }
 
