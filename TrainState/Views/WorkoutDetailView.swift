@@ -13,6 +13,8 @@ struct WorkoutDetailView: View {
     @State private var isEditingCategories = false
     @State private var isEditingSubcategories = false
     @State private var isEditingCategorySheet = false
+    @State private var showRouteSheet = false
+    @State private var decodedRoute: [CLLocation] = []
     
     @Query private var categories: [WorkoutCategory]
     
@@ -24,8 +26,8 @@ struct WorkoutDetailView: View {
                 VStack(spacing: 28) {
                     headerCard
                     infoCard
-                    if workout.type == .running {
-                        RunningMapAndStatsCard(route: workout.route ?? [], duration: workout.duration, distance: workout.distance)
+                    if workout.type == .running, let route = workout.route?.decodedRoute {
+                        RunningMapAndStatsCard(route: route, duration: workout.duration, distance: workout.distance)
                     }
                     categoriesCard
                     if let notes = workout.notes, !notes.isEmpty {
@@ -48,6 +50,11 @@ struct WorkoutDetailView: View {
                     selectedSubcategories: $workout.subcategories,
                     workoutType: workout.type
                 )
+            }
+        }
+        .sheet(isPresented: $showRouteSheet) {
+            if workout.type == .running {
+                RunningMapAndStatsCard(route: decodedRoute, duration: workout.duration, distance: workout.distance)
             }
         }
     }

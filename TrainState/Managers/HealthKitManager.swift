@@ -1,8 +1,7 @@
 import Foundation
 import HealthKit
-import Combine
-import SwiftData
 import CoreLocation
+import SwiftData
 
 class HealthKitManager: ObservableObject {
     static let shared = HealthKitManager()
@@ -140,32 +139,29 @@ class HealthKitManager: ObservableObject {
         }
         print("[HealthKit] Total workouts fetched: \(workouts.count)")
 
-        // Only keep running workouts, sorted by startDate descending, and take the 10 most recent
-        let runningWorkouts = workouts
-            .filter { $0.workoutActivityType == .running }
-            .sorted { $0.startDate > $1.startDate }
-            .prefix(10)
-        print("[HealthKit] Importing only \(runningWorkouts.count) most recent running workouts")
+        // Import all workouts, sorted by startDate descending
+        let sortedWorkouts = workouts.sorted { $0.startDate > $1.startDate }
+        print("[HealthKit] Importing all \(sortedWorkouts.count) workouts")
 
-        let totalWorkouts = runningWorkouts.count
+        let totalWorkouts = sortedWorkouts.count
         var processedWorkouts = 0
+        var runningWorkoutsToRoute: [(hkWorkout: HKWorkout, workout: Workout)] = []
 
-        for hkWorkout in runningWorkouts {
+        for hkWorkout in sortedWorkouts {
             print("[HealthKit] Importing workout: \(hkWorkout.uuid) type: \(hkWorkout.workoutActivityType.rawValue) name: \(hkWorkout.workoutActivityType.name)")
             var distance: Double? = nil
             distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
 
-            let locations: [CLLocation]? = try await withCheckedContinuation { continuation in
-                self.fetchRoute(for: hkWorkout) { locs in
-                    if let locs = locs {
-                        print("[HealthKit] Fetched route for workout \(hkWorkout.uuid): \(locs.count) points")
-                    } else {
-                        print("[HealthKit] No route found for workout \(hkWorkout.uuid)")
-                    }
-                    continuation.resume(returning: locs)
-                }
+            // Deduplication: skip if already imported
+            let uuid = hkWorkout.uuid
+            let existing = try? context.fetch(
+                FetchDescriptor<Workout>(predicate: #Predicate { $0.healthKitUUID == uuid })
+            )
+            if existing?.isEmpty == false {
+                print("[HealthKit] Skipping duplicate workout: \(hkWorkout.uuid)")
+                continue
             }
-            print("[HealthKit] Locations right after fetch: \(locations?.count ?? -1)")
+
             let workoutType = convertFromHKWorkoutActivityType(hkWorkout.workoutActivityType)
             let workout = Workout(
                 type: workoutType,
@@ -174,21 +170,13 @@ class HealthKitManager: ObservableObject {
                 calories: hkWorkout.totalEnergyBurned?.doubleValue(for: HKUnit.kilocalorie()),
                 distance: distance,
                 notes: "Imported from Apple Health",
-                healthKitUUID: hkWorkout.uuid
+                healthKitUUID: uuid
             )
-            if let locs = locations, !locs.isEmpty {
-                workout.route = locs
+
+            if hkWorkout.workoutActivityType == .running {
+                runningWorkoutsToRoute.append((hkWorkout, workout))
             }
-            print("[HealthKit] Workout.route after set: \(workout.route?.count ?? -1)")
-            // Deduplication: skip if already imported
-            let healthKitUUID = hkWorkout.uuid
-            let existing = try? context.fetch(
-                FetchDescriptor<Workout>(predicate: #Predicate { $0.healthKitUUID == healthKitUUID })
-            )
-            if existing?.isEmpty == false {
-                print("[HealthKit] Skipping duplicate workout: \(hkWorkout.uuid)")
-                continue
-            }
+
             context.insert(workout)
 
             processedWorkouts += 1
@@ -201,6 +189,37 @@ class HealthKitManager: ObservableObject {
             try await Task.sleep(for: .milliseconds(10))
         }
         try? context.save()
+
+        // Fetch routes for running workouts in parallel after main import
+        await withTaskGroup(of: Void.self) { group in
+            for (hkWorkout, workout) in runningWorkoutsToRoute {
+                group.addTask {
+                    let locations: [CLLocation]? = await withCheckedContinuation { continuation in
+                        self.fetchRoute(for: hkWorkout) { locs in
+                            if let locs = locs {
+                                print("[HealthKit] Fetched route for workout \(hkWorkout.uuid): \(locs.count) points")
+                            } else {
+                                print("[HealthKit] No route found for workout \(hkWorkout.uuid)")
+                            }
+                            continuation.resume(returning: locs)
+                        }
+                    }
+                    if let locs = locations, !locs.isEmpty {
+                        await MainActor.run {
+                            let uuid = hkWorkout.uuid
+                            let fetch = try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.healthKitUUID == uuid }))
+                            if let dbWorkout = fetch?.first {
+                                let routeData = try? NSKeyedArchiver.archivedData(withRootObject: locs, requiringSecureCoding: false)
+                                let workoutRoute = WorkoutRoute(routeData: routeData, workout: dbWorkout)
+                                dbWorkout.route = workoutRoute
+                                context.insert(workoutRoute)
+                                try? context.save()
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     private func convertToHKWorkoutActivityType(_ type: WorkoutType) -> HKWorkoutActivityType {

@@ -14,21 +14,10 @@ final class Workout: Codable {
     var notes: String?
     @Relationship var categories: [WorkoutCategory]
     @Relationship var subcategories: [WorkoutSubcategory]
-    var routeData: Data? // Encoded [CLLocation] for running workouts
-    
-    // Helper to get/set route as [CLLocation]
-    var route: [CLLocation]? {
-        get {
-            guard let data = routeData else { return nil }
-            return try? NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(data) as? [CLLocation]
-        }
-        set {
-            routeData = try? NSKeyedArchiver.archivedData(withRootObject: newValue ?? [], requiringSecureCoding: false)
-        }
-    }
+    @Relationship(deleteRule: .cascade) var route: WorkoutRoute?
     
     enum CodingKeys: String, CodingKey {
-        case id, healthKitUUID, type, startDate, duration, calories, distance, notes, routeData
+        case id, healthKitUUID, type, startDate, duration, calories, distance, notes
         case categories, subcategories
     }
     
@@ -41,8 +30,7 @@ final class Workout: Codable {
         notes: String? = nil,
         categories: [WorkoutCategory] = [],
         subcategories: [WorkoutSubcategory] = [],
-        healthKitUUID: UUID? = nil,
-        routeData: Data? = nil
+        healthKitUUID: UUID? = nil
     ) {
         self.id = UUID()
         self.type = type
@@ -54,7 +42,6 @@ final class Workout: Codable {
         self.categories = categories
         self.subcategories = subcategories
         self.healthKitUUID = healthKitUUID
-        self.routeData = routeData
     }
     
     required init(from decoder: Decoder) throws {
@@ -69,7 +56,6 @@ final class Workout: Codable {
         notes = try container.decodeIfPresent(String.self, forKey: .notes)
         categories = try container.decode([WorkoutCategory].self, forKey: .categories)
         subcategories = try container.decode([WorkoutSubcategory].self, forKey: .subcategories)
-        routeData = try container.decodeIfPresent(Data.self, forKey: .routeData)
     }
     
     func encode(to encoder: Encoder) throws {
@@ -84,7 +70,6 @@ final class Workout: Codable {
         try container.encodeIfPresent(notes, forKey: .notes)
         try container.encode(categories, forKey: .categories)
         try container.encode(subcategories, forKey: .subcategories)
-        try container.encodeIfPresent(routeData, forKey: .routeData)
     }
 }
 
@@ -243,5 +228,48 @@ final class WorkoutSubcategory: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
+    }
+}
+
+// New model for route data
+@Model
+final class WorkoutRoute: Codable {
+    var id: UUID
+    var routeData: Data? // Encoded [CLLocation]
+    @Relationship var workout: Workout?
+
+    init(routeData: Data?, workout: Workout? = nil) {
+        self.id = UUID()
+        self.routeData = routeData
+        self.workout = workout
+    }
+
+    // Helper to get/set route as [CLLocation]
+    var decodedRoute: [CLLocation]? {
+        get {
+            guard let data = routeData else { return nil }
+            return try? NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(data) as? [CLLocation]
+        }
+        set {
+            routeData = try? NSKeyedArchiver.archivedData(withRootObject: newValue ?? [], requiringSecureCoding: false)
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, routeData
+    }
+
+    required init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        routeData = try container.decodeIfPresent(Data.self, forKey: .routeData)
+        // workout relationship is not decoded here
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(routeData, forKey: .routeData)
+        // workout relationship is not encoded here
     }
 } 
