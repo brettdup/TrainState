@@ -58,8 +58,10 @@ struct SettingsView: View {
                             // About
                             aboutSection
                             
+                            #if DEBUG
                             // Developer Options
                             developerSection
+                            #endif
                         }
                     }
                     .padding(.horizontal)
@@ -358,6 +360,14 @@ struct SettingsView: View {
                 
                 Link(destination: URL(string: "https://github.com/yourusername/TrainState")!) {
                     SettingsRow(icon: "arrow.up.right.square", title: "GitHub Repository")
+                }
+                
+                Button(action: {
+                    if let url = URL(string: "mailto:duplessisbrett@icloud.com?subject=TrainState%20App%20Feedback&body=Hi%20Brett%2C%0A%0AI%20would%20like%20to%20share%20my%20feedback%20about%20TrainState%3A%0A%0A") {
+                        UIApplication.shared.open(url)
+                    }
+                }) {
+                    SettingsRow(icon: "envelope.fill", title: "Send Feedback")
                 }
             }
         }

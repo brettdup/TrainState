@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 import SwiftData
 import HealthKit
@@ -131,3 +132,4 @@ struct DeveloperOptionsView: View {
         hasCompletedOnboarding = false
     }
 }
+#endif
