@@ -4,7 +4,8 @@ struct SubcategoryChip: View {
     let subcategory: WorkoutSubcategory
     
     var body: some View {
-        let color = Color(hexString: subcategory.category?.color ?? "#007AFF") ?? .blue
+        // Since subcategory no longer has direct category reference, use default blue color
+        let color = Color.blue
         HStack(spacing: 6) {
             Image(systemName: "tag")
                 .font(.caption2.weight(.semibold))
@@ -17,8 +18,9 @@ struct SubcategoryChip: View {
         .padding(.vertical, 8)
         .background(
             ZStack {
-                // Frosted glass effect
-                BlurView(style: .systemThinMaterial)
+                // Frosted glass effect using native SwiftUI materials
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.ultraThinMaterial)
                 
                 // Subtle gradient overlay
                 LinearGradient(

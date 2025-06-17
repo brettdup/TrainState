@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import CloudKit
 
 struct BackupRestoreView: View {
     @Environment(\.modelContext) private var modelContext
@@ -12,40 +13,247 @@ struct BackupRestoreView: View {
     @State private var showingExportSuccess = false
     @State private var showingExportError = false
     @State private var exportErrorMessage = ""
+    @State private var isCloudBackingUp = false
+    @State private var isCloudRestoring = false
+    @State private var showingCloudError = false
+    @State private var showingCloudSuccess = false
+    @State private var cloudErrorMessage = ""
+    @State private var cloudSuccessMessage = ""
+    @State private var isCloudAvailable = false
+    @State private var showingCloudRestoreConfirmation = false
+    @State private var availableBackups: [BackupInfo] = []
+    @State private var selectedBackup: BackupInfo?
+    @State private var isLoadingBackups = false
     
     var body: some View {
-        Section {
-            Button(action: {
-                exportData()
-            }) {
-                HStack {
-                    Label("Export Data", systemImage: "square.and.arrow.up")
-                    if isExporting {
-                        Spacer()
-                        ProgressView()
-                            .controlSize(.small)
+        NavigationView {
+            List {
+                // Local Backup Section
+                Section {
+                    Button(action: exportData) {
+                        HStack {
+                            Image(systemName: "square.and.arrow.up")
+                                .foregroundColor(.blue)
+                                .frame(width: 24)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Export Data")
+                                    .font(.headline)
+                                Text("Create a backup file")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            if isExporting {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .disabled(isExporting)
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    Button(action: importData) {
+                        HStack {
+                            Image(systemName: "square.and.arrow.down")
+                                .foregroundColor(.green)
+                                .frame(width: 24)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Import Data")
+                                    .font(.headline)
+                                Text("Restore from backup file")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            if isImporting {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .disabled(isImporting)
+                    .buttonStyle(PlainButtonStyle())
+                    
+                } header: {
+                    Text("Local Backup")
+                } footer: {
+                    Text("Export your data to backup or transfer to another device. Import will replace all existing data.")
+                }
+                
+                // iCloud Backup Section
+                Section {
+                    // Backup to iCloud Button
+                    Button(action: {
+                        Task { await backupToCloud() }
+                    }) {
+                        HStack {
+                            Image(systemName: "icloud.and.arrow.up")
+                                .foregroundColor(isCloudAvailable ? .blue : .gray)
+                                .frame(width: 24)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Backup to iCloud")
+                                    .font(.headline)
+                                    .foregroundColor(isCloudAvailable ? .primary : .secondary)
+                                Text("Save data to your iCloud account")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            if isCloudBackingUp {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else if isCloudAvailable {
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .disabled(isCloudBackingUp || !isCloudAvailable)
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    // Available Backups List
+                    if isCloudAvailable {
+                        if isLoadingBackups {
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .controlSize(.small)
+                                Spacer()
+                            }
+                        } else if availableBackups.isEmpty {
+                            Text("No backups available")
+                                .foregroundColor(.secondary)
+                                .italic()
+                        } else {
+                            ForEach(availableBackups) { backup in
+                                Button(action: {
+                                    selectedBackup = backup
+                                    showingCloudRestoreConfirmation = true
+                                }) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack {
+                                            Text(backup.deviceName)
+                                                .font(.headline)
+                                            Spacer()
+                                            Text(backup.timestamp, style: .relative)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        HStack(spacing: 12) {
+                                            Label("\(backup.workoutCount)", systemImage: "figure.strengthtraining.traditional")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                            
+                                            Label("\(backup.categoryCount)", systemImage: "folder.fill")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                            
+                                            Label("\(backup.subcategoryCount)", systemImage: "tag.fill")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                            
+                                            Label("\(backup.assignedSubcategoryCount)", systemImage: "tag.circle.fill")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .padding(.vertical, 4)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                    }
+                    
+                } header: {
+                    Text("iCloud Backup")
+                } footer: {
+                    if !isCloudAvailable {
+                        Label("iCloud is not available. Please sign in to iCloud in Settings.", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                    } else {
+                        Text("Automatically backup and restore your data using your iCloud account. Restore will replace all existing data.")
+                    }
+                }
+                
+                // Data Summary Section
+                if !isCloudRestoring && !isImporting {
+                    Section("Current Data") {
+                        HStack {
+                            Label("\(workouts.count)", systemImage: "figure.strengthtraining.traditional")
+                            Spacer()
+                            Text("Workouts")
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        HStack {
+                            Label("\(categories.count)", systemImage: "folder.fill")
+                            Spacer()
+                            Text("Categories")
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        HStack {
+                            Label("\(subcategories.count)", systemImage: "tag.fill")
+                            Spacer()
+                            Text("Subcategories")
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
-            .disabled(isExporting)
-            
-            Button(action: {
-                importData()
-            }) {
-                HStack {
-                    Label("Import Data", systemImage: "square.and.arrow.down")
-                    if isImporting {
-                        Spacer()
-                        ProgressView()
-                            .controlSize(.small)
+            .navigationTitle("Backup & Restore")
+            .navigationBarTitleDisplayMode(.large)
+            .refreshable {
+                await checkCloudStatus()
+                await loadAvailableBackups()
+            }
+            .task {
+                await checkCloudStatus()
+                await loadAvailableBackups()
+            }
+            .overlay {
+                if isCloudBackingUp || isCloudRestoring {
+                    Color.black.opacity(0.4)
+                        .edgesIgnoringSafeArea(.all)
+                    
+                    VStack {
+                        ProgressView {
+                            Text(isCloudBackingUp ? "Backing up..." : "Restoring...")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                        }
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.5)
+                        .padding(30)
                     }
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.regularMaterial)
+                    )
                 }
             }
-            .disabled(isImporting)
-        } header: {
-            Text("Backup & Restore")
-        } footer: {
-            Text("Export your data to backup or transfer to another device")
         }
         .alert("Export Successful", isPresented: $showingExportSuccess) {
             Button("OK", role: .cancel) { }
@@ -57,6 +265,109 @@ struct BackupRestoreView: View {
         } message: {
             Text("Failed to export data: \(exportErrorMessage)")
         }
+        .alert("iCloud Error", isPresented: $showingCloudError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(cloudErrorMessage)
+        }
+        .alert("Success", isPresented: $showingCloudSuccess) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(cloudSuccessMessage)
+        }
+        .alert("Restore from iCloud", isPresented: $showingCloudRestoreConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Restore", role: .destructive) {
+                if let backup = selectedBackup {
+                    Task { await restoreFromCloud(backup: backup) }
+                }
+            }
+        } message: {
+            if let backup = selectedBackup {
+                Text("This will replace all your current data with the backup from \(backup.deviceName) (\(backup.timestamp, style: .relative)). This action cannot be undone.")
+            }
+        }
+    }
+    
+    private func checkCloudStatus() async {
+        do {
+            let available = try await CloudKitManager.shared.checkCloudStatus()
+            await MainActor.run {
+                isCloudAvailable = available
+            }
+        } catch {
+            await MainActor.run {
+                isCloudAvailable = false
+                cloudErrorMessage = error.localizedDescription
+                showingCloudError = true
+            }
+        }
+    }
+    
+    private func loadAvailableBackups() async {
+        guard isCloudAvailable else { return }
+        
+        await MainActor.run {
+            isLoadingBackups = true
+        }
+        
+        do {
+            let backups = try await CloudKitManager.shared.fetchAvailableBackups()
+            await MainActor.run {
+                availableBackups = backups
+                isLoadingBackups = false
+            }
+        } catch {
+            await MainActor.run {
+                isLoadingBackups = false
+                cloudErrorMessage = "Failed to load backups: \(error.localizedDescription)"
+                showingCloudError = true
+            }
+        }
+    }
+    
+    private func backupToCloud() async {
+        await MainActor.run {
+            isCloudBackingUp = true
+        }
+        
+        do {
+            try await CloudKitManager.shared.backupToCloud(context: modelContext)
+            await MainActor.run {
+                isCloudBackingUp = false
+                cloudSuccessMessage = "Your data has been successfully backed up to iCloud."
+                showingCloudSuccess = true
+            }
+            // Reload available backups
+            await loadAvailableBackups()
+        } catch {
+            await MainActor.run {
+                isCloudBackingUp = false
+                cloudErrorMessage = "Failed to backup to iCloud: \(error.localizedDescription)"
+                showingCloudError = true
+            }
+        }
+    }
+    
+    private func restoreFromCloud(backup: BackupInfo) async {
+        await MainActor.run {
+            isCloudRestoring = true
+        }
+        
+        do {
+            try await CloudKitManager.shared.restoreFromCloud(backupInfo: backup, context: modelContext)
+            await MainActor.run {
+                isCloudRestoring = false
+                cloudSuccessMessage = "Your data has been successfully restored from iCloud."
+                showingCloudSuccess = true
+            }
+        } catch {
+            await MainActor.run {
+                isCloudRestoring = false
+                cloudErrorMessage = "Failed to restore from iCloud: \(error.localizedDescription)"
+                showingCloudError = true
+            }
+        }
     }
     
     private func exportData() {
@@ -67,14 +378,17 @@ struct BackupRestoreView: View {
                 let encoder = JSONEncoder()
                 encoder.dateEncodingStrategy = .iso8601
                 
-                // Export workouts
-                let workoutsData = try encoder.encode(workouts)
+                // Export workouts using export structures
+                let workoutExports = workouts.map { WorkoutExport(from: $0) }
+                let workoutsData = try encoder.encode(workoutExports)
                 
-                // Export categories
-                let categoriesData = try encoder.encode(categories)
+                // Export categories using export structures
+                let categoryExports = categories.map { WorkoutCategoryExport(from: $0) }
+                let categoriesData = try encoder.encode(categoryExports)
                 
-                // Export subcategories
-                let subcategoriesData = try encoder.encode(subcategories)
+                // Export subcategories using export structures
+                let subcategoryExports = subcategories.map { WorkoutSubcategoryExport(from: $0) }
+                let subcategoriesData = try encoder.encode(subcategoryExports)
                 
                 // Create a dictionary with all data
                 let exportData: [String: Data] = [
@@ -88,7 +402,10 @@ struct BackupRestoreView: View {
                 
                 // Get documents directory
                 let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let fileURL = documentsDirectory.appendingPathComponent("TrainState_Backup.json")
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm"
+                let timestamp = dateFormatter.string(from: Date())
+                let fileURL = documentsDirectory.appendingPathComponent("TrainState_Backup_\(timestamp).json")
                 
                 // Write to file
                 try finalData.write(to: fileURL)
@@ -107,6 +424,8 @@ struct BackupRestoreView: View {
                        let rootViewController = windowScene.windows.first?.rootViewController {
                         rootViewController.present(activityVC, animated: true)
                     }
+                    
+                    showingExportSuccess = true
                 }
             } catch {
                 await MainActor.run {
@@ -151,25 +470,71 @@ struct BackupRestoreView: View {
                 modelContext.delete(subcategory)
             }
             
-            // Import new data
-            if let workoutsData = importData["workouts"] {
-                let importedWorkouts = try decoder.decode([Workout].self, from: workoutsData)
-                for workout in importedWorkouts {
-                    modelContext.insert(workout)
-                }
-            }
-            
+            // Import categories first
+            var categoryMap: [UUID: WorkoutCategory] = [:]
             if let categoriesData = importData["categories"] {
-                let importedCategories = try decoder.decode([WorkoutCategory].self, from: categoriesData)
-                for category in importedCategories {
+                let importedCategoryExports = try decoder.decode([WorkoutCategoryExport].self, from: categoriesData)
+                for categoryExport in importedCategoryExports {
+                    let category = WorkoutCategory(name: categoryExport.name, color: categoryExport.color, workoutType: categoryExport.workoutType)
+                    category.id = categoryExport.id
+                    categoryMap[categoryExport.id] = category
                     modelContext.insert(category)
                 }
             }
             
+            // Import subcategories second
+            var subcategoryMap: [UUID: WorkoutSubcategory] = [:]
             if let subcategoriesData = importData["subcategories"] {
-                let importedSubcategories = try decoder.decode([WorkoutSubcategory].self, from: subcategoriesData)
-                for subcategory in importedSubcategories {
+                let importedSubcategoryExports = try decoder.decode([WorkoutSubcategoryExport].self, from: subcategoriesData)
+                for subcategoryExport in importedSubcategoryExports {
+                    let subcategory = WorkoutSubcategory(name: subcategoryExport.name)
+                    subcategory.id = subcategoryExport.id
+                    subcategoryMap[subcategoryExport.id] = subcategory
                     modelContext.insert(subcategory)
+                }
+            }
+            
+            // Import workouts without relationships first
+            var workoutMap: [UUID: Workout] = [:]
+            if let workoutsData = importData["workouts"] {
+                let importedWorkoutExports = try decoder.decode([WorkoutExport].self, from: workoutsData)
+                for workoutExport in importedWorkoutExports {
+                    let workout = Workout(
+                        type: workoutExport.type,
+                        startDate: workoutExport.startDate,
+                        duration: workoutExport.duration,
+                        calories: workoutExport.calories,
+                        distance: workoutExport.distance,
+                        notes: workoutExport.notes,
+                        healthKitUUID: workoutExport.healthKitUUID
+                    )
+                    workout.id = workoutExport.id
+                    workoutMap[workoutExport.id] = workout
+                    modelContext.insert(workout)
+                }
+                
+                // Save all objects first to establish them in the context
+                try modelContext.save()
+                
+                // Now restore relationships after all objects are persisted
+                for workoutExport in importedWorkoutExports {
+                    guard let workout = workoutMap[workoutExport.id] else { continue }
+                    
+                    // Safely restore category relationships
+                    if let categoryIds = workoutExport.categoryIds {
+                        let categories = categoryIds.compactMap { categoryMap[$0] }
+                        for category in categories {
+                            workout.addCategory(category)
+                        }
+                    }
+                    
+                    // Safely restore subcategory relationships
+                    if let subcategoryIds = workoutExport.subcategoryIds {
+                        let subcategories = subcategoryIds.compactMap { subcategoryMap[$0] }
+                        for subcategory in subcategories {
+                            workout.addSubcategory(subcategory)
+                        }
+                    }
                 }
             }
             
@@ -177,34 +542,13 @@ struct BackupRestoreView: View {
             
             await MainActor.run {
                 isImporting = false
-                // Show success alert
-                let alert = UIAlertController(
-                    title: "Success",
-                    message: "Data imported successfully",
-                    preferredStyle: .alert
-                )
-                alert.addAction(UIAlertAction(title: "OK", style: .default))
-                
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let rootViewController = windowScene.windows.first?.rootViewController {
-                    rootViewController.present(alert, animated: true)
-                }
+                showingExportSuccess = true
             }
         } catch {
             await MainActor.run {
                 isImporting = false
-                // Show error alert
-                let alert = UIAlertController(
-                    title: "Import Failed",
-                    message: error.localizedDescription,
-                    preferredStyle: .alert
-                )
-                alert.addAction(UIAlertAction(title: "OK", style: .default))
-                
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let rootViewController = windowScene.windows.first?.rootViewController {
-                    rootViewController.present(alert, animated: true)
-                }
+                exportErrorMessage = "Failed to import data: \(error.localizedDescription)"
+                showingExportError = true
             }
         }
     }

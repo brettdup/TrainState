@@ -96,30 +96,19 @@ struct OnboardingView: View {
                 Spacer()
                 
                 // Navigation buttons
-                HStack {
+                HStack(spacing: 16) {
                     if currentStep > 0 {
                         Button {
                             withAnimation {
                                 currentStep -= 1
                             }
                         } label: {
-                            HStack {
-                                Image(systemName: "chevron.left")
-                                Text("Back")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color(UIColor.systemGray5))
-                                    .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
-                            )
-                            .foregroundColor(steps[currentStep].color)
+                            Text("Back")
+                                .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(ScaleButtonStyle())
+                        .buttonStyle(.bordered)
+                        .tint(.secondary)
                     }
-                    
-                    Spacer()
                     
                     if currentStep < steps.count - 1 {
                         Button {
@@ -131,38 +120,20 @@ struct OnboardingView: View {
                                 }
                             }
                         } label: {
-                            HStack {
-                                Text(currentStep == 1 ? "Import Workouts" : "Next")
-                                Image(systemName: "chevron.right")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(steps[currentStep].color)
-                                    .shadow(color: steps[currentStep].color.opacity(0.2), radius: 4, x: 0, y: 2)
-                            )
-                            .foregroundColor(.white)
+                            Text(currentStep == 1 ? "Import Workouts" : "Next")
+                                .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(ScaleButtonStyle())
+                        .buttonStyle(.borderedProminent)
+                        .tint(steps[currentStep].color)
                     } else {
                         Button {
                             hasCompletedOnboarding = true
                         } label: {
-                            HStack {
-                                Text("Get Started")
-                                Image(systemName: "checkmark.circle.fill")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(steps[currentStep].color)
-                                    .shadow(color: steps[currentStep].color.opacity(0.2), radius: 4, x: 0, y: 2)
-                            )
-                            .foregroundColor(.white)
+                            Text("Get Started")
+                                .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(ScaleButtonStyle())
+                        .buttonStyle(.borderedProminent)
+                        .tint(steps[currentStep].color)
                     }
                 }
                 .padding(.horizontal)
@@ -175,6 +146,9 @@ struct OnboardingView: View {
             Text(errorMessage ?? "An unknown error occurred")
         }
         .onAppear {
+            // Initialize default data when onboarding starts
+            DataInitializationManager.shared.initializeAppData(context: modelContext)
+            
             // Set up notification observer for import progress
             NotificationCenter.default.addObserver(
                 forName: NSNotification.Name("ImportProgressUpdated"),

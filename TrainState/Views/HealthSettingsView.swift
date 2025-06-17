@@ -18,108 +18,39 @@ struct HealthSettingsView: View {
     private let healthKitManager = HealthKitManager()
     
     var body: some View {
-        Form {
-            Section(header: Text("Health Integration Status")) {
-                if isLoadingAuthStatus {
-                    HStack {
-                        ProgressView()
-                        Text("Checking authorization status...")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    HStack {
-                        Image(systemName: isHealthKitAuthorized ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundColor(isHealthKitAuthorized ? .green : .red)
-                        Text(isHealthKitAuthorized ? "Connected to Apple Health" : "Not connected to Apple Health")
-                    }
-                    
-                    if !isHealthKitAuthorized {
-                        Button("Connect to Apple Health") {
-                            requestHealthKitAuthorization()
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                }
-            }
+        ZStack {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
             
-            if isHealthKitAuthorized {
-                Section(header: Text("Sync Options")) {
-                    Toggle("Import workouts from Health", isOn: $importEnabled)
-                    Toggle("Export workouts to Health", isOn: $exportEnabled)
-                    
-                    if let lastSync = lastSyncDate {
-                        HStack {
-                            Text("Last Synced")
-                            Spacer()
-                            Text(lastSync, style: .relative)
-                                .foregroundColor(.secondary)
-                        }
+            ScrollView {
+                VStack(spacing: 28) {
+                    // Status Card
+                    statusCard
+                        .padding(.horizontal)
+                        .padding(.top, 12)
+                    // Sync Card
+                    if isHealthKitAuthorized {
+                        syncCard
+                            .padding(.horizontal)
                     }
-                    
-                    Button(action: syncWithHealthKit) {
-                        if isImporting {
-                            HStack {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle())
-                                Text("Syncing...")
-                            }
-                        } else {
-                            Text("Sync Now")
-                        }
+                    // Import Card
+                    if isHealthKitAuthorized {
+                        importCard
+                            .padding(.horizontal)
                     }
-                    .disabled(isImporting)
+                    // About Card
+                    aboutCard
+                        .padding(.horizontal)
+                    // Permissions Card
+                    permissionsCard
+                        .padding(.horizontal)
+                        .padding(.bottom, 24)
                 }
-                
-                Section(header: Text("Import History")) {
-                    Button("Import Past Workouts") {
-                        importWorkouts()
-                    }
-                    .disabled(isImporting)
-                    
-                    Button("Import All Unimported Workouts") {
-                        importUnimportedWorkouts()
-                    }
-                    .disabled(isImporting)
-                    
-                    if isImporting {
-                        VStack {
-                            ProgressView(value: importProgress)
-                                .progressViewStyle(LinearProgressViewStyle())
-                            Text("\(Int(importProgress * 100))%")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    NavigationLink(destination: HealthKitWorkoutsView()) {
-                        Text("Browse HealthKit Workouts")
-                    }
-                }
-            }
-            
-            Section(header: Text("About Health Integration")) {
-                Text("TrainState can sync your workouts with Apple Health. This allows you to keep all your fitness data in one place.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-            }
-            
-            // Permissions Management
-            Section(header: Text("Permissions Management")) {
-                Button("Re-request HealthKit Permissions") {
-                    requestHealthKitAuthorization()
-                }
-                .buttonStyle(.bordered)
-                Button("Open Health App Settings") {
-                    openAppSettings()
-                }
-                .buttonStyle(.bordered)
-                Text("To fully revoke permissions, open the Settings app, go to Privacy & Security > Health > TrainState, and turn off all permissions.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                .frame(maxWidth: 600)
+                .navigationTitle("Health Integration")
+                .navigationBarTitleDisplayMode(.large)
             }
         }
-        .navigationTitle("Health Integration")
         .onAppear {
             checkHealthKitAuthorizationStatus()
         }
@@ -130,6 +61,233 @@ struct HealthSettingsView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+    }
+    
+    // MARK: - Cards
+    private var statusCard: some View {
+        VStack(spacing: 18) {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(isHealthKitAuthorized ? Color.green.opacity(0.18) : Color.red.opacity(0.18))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: isHealthKitAuthorized ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(isHealthKitAuthorized ? .green : .red)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(isHealthKitAuthorized ? "Connected to Apple Health" : "Not connected to Apple Health")
+                        .font(.headline)
+                    if isLoadingAuthStatus {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Checking authorization status...")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                Spacer()
+            }
+            if !isHealthKitAuthorized && !isLoadingAuthStatus {
+                Button(action: requestHealthKitAuthorization) {
+                    Label("Connect to Apple Health", systemImage: "heart.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonStyle(ScaleButtonStyle())
+            }
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .primary.opacity(0.06), radius: 16, y: 6)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        )
+    }
+    
+    private var syncCard: some View {
+        VStack(spacing: 18) {
+            HStack(spacing: 16) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.blue)
+                Text("Sync Workouts with Health")
+                    .font(.title3.weight(.semibold))
+                Spacer()
+            }
+            HStack(spacing: 16) {
+                Toggle(isOn: $importEnabled) {
+                    Label("Import from Health", systemImage: "arrow.down.heart")
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .green))
+                Toggle(isOn: $exportEnabled) {
+                    Label("Export to Health", systemImage: "arrow.up.heart")
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .blue))
+            }
+            .padding(10)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(radius: 2)
+            if let lastSync = lastSyncDate {
+                HStack {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundColor(.secondary)
+                    Text("Last Synced")
+                    Spacer()
+                    Text(lastSync, style: .relative)
+                        .foregroundColor(.secondary)
+                }
+                .font(.footnote)
+            }
+            Button(action: syncWithHealthKit) {
+                if isImporting {
+                    HStack {
+                        ProgressView()
+                        Text("Syncing...")
+                    }
+                } else {
+                    Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonStyle(ScaleButtonStyle())
+            .frame(maxWidth: .infinity)
+            .disabled(isImporting)
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .blue.opacity(0.05), radius: 12, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.blue.opacity(0.10), lineWidth: 1)
+        )
+    }
+    
+    private var importCard: some View {
+        VStack(spacing: 18) {
+            HStack(spacing: 16) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(.green)
+                Text("Import History")
+                    .font(.title3.weight(.semibold))
+                Spacer()
+            }
+            HStack(spacing: 12) {
+                Button(action: importWorkouts) {
+                    Label("Import Past Workouts", systemImage: "clock.arrow.circlepath")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .buttonStyle(ScaleButtonStyle())
+                .disabled(isImporting)
+                Button(action: importUnimportedWorkouts) {
+                    Label("Import All Unimported", systemImage: "arrow.down.circle")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .buttonStyle(ScaleButtonStyle())
+                .disabled(isImporting)
+            }
+            if isImporting {
+                VStack(spacing: 8) {
+                    ProgressView(value: importProgress)
+                        .progressViewStyle(LinearProgressViewStyle())
+                    Text("\(Int(importProgress * 100))%")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            NavigationLink(destination: HealthKitWorkoutsView()) {
+                Label("Browse HealthKit Workouts", systemImage: "list.bullet.rectangle")
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .buttonStyle(ScaleButtonStyle())
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .green.opacity(0.05), radius: 12, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.green.opacity(0.10), lineWidth: 1)
+        )
+    }
+    
+    private var aboutCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(.purple)
+                Text("About Health Integration")
+                    .font(.title3.weight(.semibold))
+            }
+            Text("TrainState can sync your workouts with Apple Health. This allows you to keep all your fitness data in one place.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .purple.opacity(0.05), radius: 12, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.purple.opacity(0.10), lineWidth: 1)
+        )
+    }
+    
+    private var permissionsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(.orange)
+                Text("Permissions Management")
+                    .font(.title3.weight(.semibold))
+            }
+            Button("Re-request HealthKit Permissions") {
+                requestHealthKitAuthorization()
+            }
+            .buttonStyle(.bordered)
+            .buttonStyle(ScaleButtonStyle())
+            Button("Open Health App Settings") {
+                openAppSettings()
+            }
+            .buttonStyle(.bordered)
+            .buttonStyle(ScaleButtonStyle())
+            Text("To fully revoke permissions, open the Settings app, go to Privacy & Security > Health > TrainState, and turn off all permissions.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .orange.opacity(0.05), radius: 12, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.orange.opacity(0.10), lineWidth: 1)
+        )
     }
     
     private func checkHealthKitAuthorizationStatus() {

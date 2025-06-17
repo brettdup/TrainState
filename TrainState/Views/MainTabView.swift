@@ -22,6 +22,11 @@ struct MainTabView: View {
                     Label("Analytics", systemImage: "chart.bar")
                 }
             
+            PremiumView()
+                .tabItem {
+                    Label("Premium", systemImage: "star.fill")
+                }
+            
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
@@ -29,10 +34,8 @@ struct MainTabView: View {
         }
         .tint(.blue)
         .onAppear {
-            if userSettings.isEmpty {
-                let settings = UserSettings()
-                modelContext.insert(settings)
-            }
+            // Initialize default data on first app launch
+            DataInitializationManager.shared.initializeAppData(context: modelContext)
         }
         .toolbarBackground(.clear, for: .tabBar)
     }

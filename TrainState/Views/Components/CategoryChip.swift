@@ -4,7 +4,7 @@ struct CategoryChip: View {
     let category: WorkoutCategory
     
     var body: some View {
-        let color = Color(hexString: category.color) ?? .blue
+        let color = Color(hex: category.color) ?? .blue
         HStack(spacing: 6) {
             Image(systemName: "tag.fill")
                 .font(.caption2.weight(.semibold))

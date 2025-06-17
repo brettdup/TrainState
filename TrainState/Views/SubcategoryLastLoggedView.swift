@@ -4,24 +4,38 @@ import SwiftData
 struct SubcategoryLastLoggedView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var workouts: [Workout]
+    @Query private var categories: [WorkoutCategory]
     @Query private var subcategories: [WorkoutSubcategory]
     
     @State private var selectedWorkoutType: WorkoutType = .strength
     
     private var filteredSubcategories: [WorkoutSubcategory] {
-        subcategories.filter { subcategory in
-            subcategory.category?.workoutType == selectedWorkoutType
+        let relevantCategoryIds = categories
+            .filter { $0.workoutType == selectedWorkoutType }
+            .map { $0.id }
+        
+        return subcategories.filter { subcategory in
+            if let category = subcategory.category {
+                return relevantCategoryIds.contains(category.id)
+            }
+            return false
         }
     }
     
     private func getLastLoggedDate(for subcategory: WorkoutSubcategory) -> Date? {
-        workouts
-            .filter { workout in
-                workout.subcategories.contains(where: { $0.id == subcategory.id })
-            }
-            .sorted { $0.startDate > $1.startDate }
-            .first?
-            .startDate
+        let subcategoryId = subcategory.id
+        let descriptor = FetchDescriptor<Workout>(
+            predicate: #Predicate { workout in
+                workout.subcategories?.contains { $0.id == subcategoryId } ?? false
+            },
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        
+        if let lastWorkout = try? modelContext.fetch(descriptor).first {
+            return lastWorkout.startDate
+        }
+        
+        return nil
     }
     
     private func formatDate(_ date: Date?) -> String {
@@ -70,7 +84,9 @@ struct SubcategoryLastLoggedView: View {
     
     var body: some View {
         ZStack {
-            ColorReflectiveBackground()
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+            
             ScrollView {
                 VStack(spacing: 20) {
                     // Chip selector
@@ -145,19 +161,23 @@ struct SubcategoryLastLoggedView: View {
         // Create mock categories and subcategories
         let strengthCategory = WorkoutCategory(name: "Strength", workoutType: .strength)
         let cardioCategory = WorkoutCategory(name: "Cardio", workoutType: .cardio)
-        let arms = WorkoutSubcategory(name: "Arms", category: strengthCategory)
-        let legs = WorkoutSubcategory(name: "Legs", category: strengthCategory)
-        let core = WorkoutSubcategory(name: "Core", category: strengthCategory)
-        let back = WorkoutSubcategory(name: "Back", category: strengthCategory)
-        let chest = WorkoutSubcategory(name: "Chest", category: strengthCategory)
-        let shoulders = WorkoutSubcategory(name: "Shoulders", category: strengthCategory)
-        let glutes = WorkoutSubcategory(name: "Glutes", category: strengthCategory)
-        let hamstrings = WorkoutSubcategory(name: "Hamstrings", category: strengthCategory)
-        let calves = WorkoutSubcategory(name: "Calves", category: strengthCategory)
-        let forearms = WorkoutSubcategory(name: "Forearms", category: strengthCategory)
-        let biceps = WorkoutSubcategory(name: "Biceps", category: strengthCategory)
-        let running = WorkoutSubcategory(name: "Running", category: cardioCategory)
-        let cycling = WorkoutSubcategory(name: "Cycling", category: cardioCategory)
+        let arms = WorkoutSubcategory(name: "Arms")
+        let legs = WorkoutSubcategory(name: "Legs")
+        let core = WorkoutSubcategory(name: "Core")
+        let back = WorkoutSubcategory(name: "Back")
+        let chest = WorkoutSubcategory(name: "Chest")
+        let shoulders = WorkoutSubcategory(name: "Shoulders")
+        let glutes = WorkoutSubcategory(name: "Glutes")
+        let hamstrings = WorkoutSubcategory(name: "Hamstrings")
+        let calves = WorkoutSubcategory(name: "Calves")
+        let forearms = WorkoutSubcategory(name: "Forearms")
+        let biceps = WorkoutSubcategory(name: "Biceps")
+        let running = WorkoutSubcategory(name: "Running")
+        let cycling = WorkoutSubcategory(name: "Cycling")
+        
+        // Add subcategories to their categories
+        // Note: In the real app, subcategories would be linked through the parent-child relationship
+        // For this preview, we'll just insert them separately
 
         // Add subcategories and categories to the container
         container.mainContext.insert(strengthCategory)
@@ -168,16 +188,26 @@ struct SubcategoryLastLoggedView: View {
         container.mainContext.insert(cycling)
 
         // Create mock workouts
-        let workout1 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45, subcategories: [arms])
-        let workout2 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -10, to: Date())!, duration: 60, subcategories: [legs])
-        let workout3 = Workout(type: .cardio, startDate: Calendar.current.date(byAdding: .day, value: -3, to: Date())!, duration: 30, subcategories: [running])
-        let workout4 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45, subcategories: [core])
-        let workout5 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -10, to: Date())!, duration: 60, subcategories: [back])
-        let workout6 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -3, to: Date())!, duration: 30, subcategories: [chest])
-        let workout7 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45, subcategories: [shoulders])
-        let workout8 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -10, to: Date())!, duration: 60, subcategories: [glutes])
-        let workout9 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -3, to: Date())!, duration: 30, subcategories: [hamstrings])
-        let workout10 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45, subcategories: [calves])
+        let workout1 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45)
+        workout1.addSubcategory(arms)
+        let workout2 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -10, to: Date())!, duration: 60)
+        workout2.addSubcategory(legs)
+        let workout3 = Workout(type: .cardio, startDate: Calendar.current.date(byAdding: .day, value: -3, to: Date())!, duration: 30)
+        workout3.addSubcategory(running)
+        let workout4 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45)
+        workout4.addSubcategory(core)
+        let workout5 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -10, to: Date())!, duration: 60)
+        workout5.addSubcategory(back)
+        let workout6 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -3, to: Date())!, duration: 30)
+        workout6.addSubcategory(chest)
+        let workout7 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45)
+        workout7.addSubcategory(shoulders)
+        let workout8 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -10, to: Date())!, duration: 60)
+        workout8.addSubcategory(glutes)
+        let workout9 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -3, to: Date())!, duration: 30)
+        workout9.addSubcategory(hamstrings)
+        let workout10 = Workout(type: .strength, startDate: Calendar.current.date(byAdding: .day, value: -1, to: Date())!, duration: 45)
+        workout10.addSubcategory(calves)
         container.mainContext.insert(workout1)
         container.mainContext.insert(workout2)
         container.mainContext.insert(workout3)

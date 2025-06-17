@@ -152,17 +152,34 @@ class HealthKitManager: ObservableObject {
             var distance: Double? = nil
             distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
 
-            // Deduplication: skip if already imported
+            // Enhanced deduplication: check for both healthKitUUID and exact workout matches
             let uuid = hkWorkout.uuid
-            let existing = try? context.fetch(
+            let startDate = hkWorkout.startDate
+            let duration = hkWorkout.duration
+            
+            // First check by healthKitUUID
+            let existingByUUID = try? context.fetch(
                 FetchDescriptor<Workout>(predicate: #Predicate { $0.healthKitUUID == uuid })
             )
-            if existing?.isEmpty == false {
-                print("[HealthKit] Skipping duplicate workout: \(hkWorkout.uuid)")
+            if existingByUUID?.isEmpty == false {
+                print("[HealthKit] Skipping duplicate workout by UUID: \(hkWorkout.uuid)")
+                continue
+            }
+            
+            // Second check by exact match (startDate, duration, type) for workouts that might not have healthKitUUID
+            let workoutType = convertFromHKWorkoutActivityType(hkWorkout.workoutActivityType)
+            let existingByData = try? context.fetch(
+                FetchDescriptor<Workout>(predicate: #Predicate { workout in
+                    workout.startDate == startDate && 
+                    workout.duration == duration && 
+                    workout.type == workoutType
+                })
+            )
+            if existingByData?.isEmpty == false {
+                print("[HealthKit] Skipping duplicate workout by data match: \(hkWorkout.uuid)")
                 continue
             }
 
-            let workoutType = convertFromHKWorkoutActivityType(hkWorkout.workoutActivityType)
             let workout = Workout(
                 type: workoutType,
                 startDate: hkWorkout.startDate,
@@ -194,6 +211,7 @@ class HealthKitManager: ObservableObject {
         await withTaskGroup(of: Void.self) { group in
             for (hkWorkout, workout) in runningWorkoutsToRoute {
                 group.addTask {
+                    print("[HealthKit] Starting route fetch for workout: \(hkWorkout.uuid)")
                     let locations: [CLLocation]? = await withCheckedContinuation { continuation in
                         self.fetchRoute(for: hkWorkout) { locs in
                             if let locs = locs {
@@ -204,18 +222,29 @@ class HealthKitManager: ObservableObject {
                             continuation.resume(returning: locs)
                         }
                     }
+                    
                     if let locs = locations, !locs.isEmpty {
+                        print("[HealthKit] Saving route data for workout: \(hkWorkout.uuid)")
                         await MainActor.run {
                             let uuid = hkWorkout.uuid
                             let fetch = try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.healthKitUUID == uuid }))
                             if let dbWorkout = fetch?.first {
-                                let routeData = try? NSKeyedArchiver.archivedData(withRootObject: locs, requiringSecureCoding: false)
-                                let workoutRoute = WorkoutRoute(routeData: routeData, workout: dbWorkout)
-                                dbWorkout.route = workoutRoute
-                                context.insert(workoutRoute)
-                                try? context.save()
+                                do {
+                                    let routeData = try NSKeyedArchiver.archivedData(withRootObject: locs, requiringSecureCoding: false)
+                                    let workoutRoute = WorkoutRoute(routeData: routeData)
+                                    dbWorkout.route = workoutRoute
+                                    context.insert(workoutRoute)
+                                    try context.save()
+                                    print("[HealthKit] Successfully saved route data for workout: \(hkWorkout.uuid)")
+                                } catch {
+                                    print("[HealthKit] Failed to save route data for workout \(hkWorkout.uuid): \(error.localizedDescription)")
+                                }
+                            } else {
+                                print("[HealthKit] Could not find workout in database for UUID: \(hkWorkout.uuid)")
                             }
                         }
+                    } else {
+                        print("[HealthKit] No route data to save for workout: \(hkWorkout.uuid)")
                     }
                 }
             }
@@ -255,6 +284,8 @@ class HealthKitManager: ObservableObject {
             return .cycling
         case .swimming:
             return .swimming
+        case .other:
+            return .other
         default:
             return .other
         }
@@ -302,6 +333,11 @@ class HealthKitManager: ObservableObject {
         let predicate = HKQuery.predicateForObjects(from: workout)
         let routeQuery = HKSampleQuery(sampleType: routeType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { [weak self] query, samples, error in
             guard let self = self else { completion(nil); return }
+            if let error = error {
+                print("[HealthKit] Error fetching route: \(error.localizedDescription)")
+                completion(nil)
+                return
+            }
             print("[HealthKit] fetchRoute samples: \(samples?.count ?? -1) for workout: \(workout.uuid)")
             guard let routeSamples = samples as? [HKWorkoutRoute], let route = routeSamples.first else {
                 print("[HealthKit] No HKWorkoutRoute samples found for workout \(workout.uuid)")
@@ -310,6 +346,11 @@ class HealthKitManager: ObservableObject {
             }
             var locations: [CLLocation] = []
             let locationQuery = HKWorkoutRouteQuery(route: route) { _, newLocations, done, error in
+                if let error = error {
+                    print("[HealthKit] Error fetching route locations: \(error.localizedDescription)")
+                    completion(nil)
+                    return
+                }
                 locations.append(contentsOf: newLocations ?? [])
                 if done {
                     print("[HealthKit] Route locations loaded: \(locations.count) points for workout \(workout.uuid)")

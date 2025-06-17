@@ -9,10 +9,54 @@ struct TrainStateApp: App {
     
     init() {
         do {
-            modelContainer = try ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, UserSettings.self)
+            // Create a schema with all model types
+            let schema = Schema([
+                Workout.self,
+                WorkoutCategory.self,
+                WorkoutSubcategory.self,
+                UserSettings.self,
+                WorkoutRoute.self
+            ])
+            
+            // Try CloudKit configuration first
+            do {
+                let bundleIdentifier = Bundle.main.bundleIdentifier ?? "bb.TrainState"
+                print("[App] Attempting to initialize CloudKit with bundle identifier: \(bundleIdentifier)")
+                let cloudConfig = ModelConfiguration(
+                    schema: schema,
+                    url: URL.documentsDirectory.appendingPathComponent("TrainState.store"),
+                    allowsSave: true,
+                    cloudKitDatabase: .private("iCloud.\(bundleIdentifier)")
+                )
+                modelContainer = try ModelContainer(for: schema, configurations: cloudConfig)
+                print("[App] Successfully initialized ModelContainer with CloudKit")
+            } catch {
+                print("[App] CloudKit initialization failed with error: \(error)")
+                // Fallback to local-only persistent store
+                print("[App] Falling back to local storage")
+                let localConfig = ModelConfiguration(
+                    schema: schema,
+                    url: URL.documentsDirectory.appendingPathComponent("TrainState.store"),
+                    allowsSave: true
+                )
+                modelContainer = try ModelContainer(for: schema, configurations: localConfig)
+                print("[App] Successfully initialized ModelContainer with local storage")
+            }
         } catch {
-            fatalError("Could not initialize ModelContainer: \(error)")
+            print("Failed to initialize persistent ModelContainer: \(error)")
+            // Final fallback to in-memory store
+            do {
+                let fallbackConfig = ModelConfiguration(isStoredInMemoryOnly: true)
+                modelContainer = try ModelContainer(
+                    for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, UserSettings.self, WorkoutRoute.self,
+                    configurations: fallbackConfig
+                )
+                print("Using in-memory ModelContainer as fallback")
+            } catch {
+                fatalError("Could not initialize ModelContainer: \(error)")
+            }
         }
+        
         // Make the tab bar transparent globally and customize item appearance
         let appearance = UITabBarAppearance()
         appearance.configureWithTransparentBackground()
@@ -32,7 +76,6 @@ struct TrainStateApp: App {
             .font: UIFont.systemFont(ofSize: 12, weight: .regular)
         ]
         
-
         appearance.stackedLayoutAppearance = itemAppearance
         appearance.inlineLayoutAppearance = itemAppearance
         appearance.compactInlineLayoutAppearance = itemAppearance
@@ -52,7 +95,7 @@ struct TrainStateApp: App {
                     OnboardingView()
                 }
             }
+            .modelContainer(modelContainer)
         }
-        .modelContainer(modelContainer)
     }
 } 

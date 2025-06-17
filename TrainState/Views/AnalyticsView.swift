@@ -35,75 +35,132 @@ struct DailyWorkoutSummary: Identifiable {
 struct AnalyticsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\Workout.startDate, order: .reverse)]) private var workouts: [Workout]
+    @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var selectedWeekDisplayMode: WeekDisplayMode = .lastSevenDays
+    @State private var cachedFilteredWorkouts: (running: [Workout], strength: [Workout]) = (running: [], strength: [])
+    @State private var cachedDailySummaries: [DailyWorkoutSummary] = []
+    @State private var lastWorkoutsHash: Int = 0
+    @State private var showingPremiumPaywall = false
     private let calendar = Calendar.current
     
     var body: some View {
-
         NavigationStack {
             ZStack {
-                ColorReflectiveBackground()
-            ScrollView {
-                VStack(spacing: 16) {
-                    // Week Display Mode Picker
-                    Picker("Week Display", selection: $selectedWeekDisplayMode) {
-                        ForEach(WeekDisplayMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    
-                    // Last Logged Subcategories
-                    NavigationLink {
-                        SubcategoryLastLoggedView()
-                    } label: {
-                        HStack(spacing: 16) {
-                            Image(systemName: "clock.fill")
-                                .font(.title2)
-                                .foregroundStyle(.blue)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Last Logged Subcategories")
-                                    .font(.headline)
-                                Text("Track when you last performed each exercise")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                Color(.systemGroupedBackground)
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Week Display Mode Picker - Show for all users
+                        Picker("Week Display", selection: $selectedWeekDisplayMode) {
+                            ForEach(WeekDisplayMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
                             }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.secondary)
                         }
-                        .padding(16)
-                        .background(.ultraThinMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
+                        .disabled(!purchaseManager.hasActiveSubscription)
+                        .opacity(purchaseManager.hasActiveSubscription ? 1.0 : 0.6)
+                        
+                        if purchaseManager.hasActiveSubscription {
+                            // Premium Content
+                            // Last Logged Subcategories
+                            NavigationLink {
+                                SubcategoryLastLoggedView()
+                            } label: {
+                                HStack(spacing: 16) {
+                                    Image(systemName: "clock.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(.blue)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Last Logged Subcategories")
+                                            .font(.headline)
+                                        Text("Track when you last performed each exercise")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(16)
+                                .background(.ultraThinMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal)
+                            
+                            // Weekly Summary Card
+                            WeeklySummaryCard(filteredWorkouts: cachedFilteredWorkouts)
+                                .containerRelativeFrame(.horizontal)
+                            
+                            // Activity Chart
+                            ActivityChartView(dailySummaries: cachedDailySummaries)
+                                .frame(height: 220)
+                                .containerRelativeFrame(.horizontal)
+                            
+                            // Daily Breakdown
+                            DailyBreakdownView(dailySummaries: cachedDailySummaries, calendar: calendar)
+                                .containerRelativeFrame(.horizontal)
+                            
+                            // Activity Streaks
+                            StreakCardView(
+                                currentStreak: calculateCurrentStreak(workouts: workouts, calendar: calendar),
+                                longestStreak: calculateLongestStreak(workouts: workouts, calendar: calendar)
+                            )
+                            .containerRelativeFrame(.horizontal)
+                        } else {
+                            // Free Content - Basic Overview
+                            VStack(spacing: 20) {
+                                // Basic Weekly Summary (limited)
+                                WeeklySummaryCard(filteredWorkouts: cachedFilteredWorkouts)
+                                    .containerRelativeFrame(.horizontal)
+                                
+                                // Premium Upsell Card
+                                Button(action: {
+                                    showingPremiumPaywall = true
+                                }) {
+                                    VStack(spacing: 16) {
+                                        Image(systemName: "chart.line.uptrend.xyaxis")
+                                            .font(.system(size: 40))
+                                            .foregroundColor(.blue)
+                                        
+                                        Text("Unlock Advanced Analytics")
+                                            .font(.title2.weight(.bold))
+                                            .multilineTextAlignment(.center)
+                                        
+                                        Text("Get detailed insights with charts, streaks, daily breakdowns, and more")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .multilineTextAlignment(.center)
+                                        
+                                        HStack {
+                                            Image(systemName: "star.fill")
+                                            Text("Upgrade to Premium")
+                                                .font(.headline)
+                                        }
+                                        .padding()
+                                        .background(Color.blue)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(12)
+                                    }
+                                    .padding(24)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                            .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal)
+                            }
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal)
-                    
-                    // Weekly Summary Card
-                    WeeklySummaryCard(filteredWorkouts: filteredWorkouts)
-                        .containerRelativeFrame(.horizontal)
-                    
-                    // Activity Chart
-                    ActivityChartView(dailySummaries: dailySummaries)
-                        .frame(height: 220)
-                        .containerRelativeFrame(.horizontal)
-                    
-                    // Daily Breakdown
-                    DailyBreakdownView(dailySummaries: dailySummaries, calendar: calendar)
-                        .containerRelativeFrame(.horizontal)
-                    
-                    // Activity Streaks
-                    StreakCardView(
-                        currentStreak: calculateCurrentStreak(workouts: workouts, calendar: calendar),
-                        longestStreak: calculateLongestStreak(workouts: workouts, calendar: calendar)
-                    )
-                    .containerRelativeFrame(.horizontal)
-                }
-                .padding(.vertical)
+                    .padding(.vertical)
                 }
                 .navigationTitle("Analytics")
                 .navigationBarTitleDisplayMode(.large)
@@ -111,6 +168,32 @@ struct AnalyticsView: View {
 
                 .scrollContentBackground(.hidden)
             }
+        }
+        .onAppear {
+            updateCachedData()
+        }
+        .onChange(of: workouts) { _, _ in
+            updateCachedData()
+        }
+        .onChange(of: selectedWeekDisplayMode) { _, _ in
+            updateCachedData()
+        }
+        .sheet(isPresented: $showingPremiumPaywall) {
+            AnalyticsPremiumPaywallView(
+                isPresented: $showingPremiumPaywall,
+                onPurchase: {
+                    Task {
+                        if let product = purchaseManager.products.first(where: { $0.id == "Premium1Month" }) {
+                            do {
+                                try await purchaseManager.purchase(product)
+                                showingPremiumPaywall = false
+                            } catch {
+                                print("Purchase failed:", error)
+                            }
+                        }
+                    }
+                }
+            )
         }
     }
     
@@ -235,6 +318,16 @@ struct AnalyticsView: View {
         }
         
         return maxStreak
+    }
+    
+    // MARK: - Cache Management
+    private func updateCachedData() {
+        let newHash = workouts.map { $0.id }.hashValue
+        if newHash != lastWorkoutsHash || cachedDailySummaries.isEmpty {
+            lastWorkoutsHash = newHash
+            cachedFilteredWorkouts = filteredWorkouts
+            cachedDailySummaries = dailySummaries
+        }
     }
 }
 
@@ -375,7 +468,7 @@ struct DailyBreakdownView: View {
                     .padding()
                     .frame(maxWidth: .infinity)
             } else {
-                LazyVStack(spacing: 16) {
+                VStack(spacing: 16) {
                     ForEach(dailySummaries) { summary in
                         DailySummaryRowModern(summary: summary, calendar: calendar)
                     }
@@ -601,19 +694,20 @@ private func formatDistance(_ distance: Double) -> String {
     }
 }
 
-#Preview {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: Workout.self, configurations: config)
-    
-    // Sample Data for Preview
+// Preview helper function
+private func createSampleWorkout(type: WorkoutType, daysAgo: Int, duration: TimeInterval, calories: Double?) -> Workout {
     let today = Date()
     let calendar = Calendar.current
-    
-    // Function to create workouts for preview
-    func createSampleWorkout(type: WorkoutType, daysAgo: Int, duration: TimeInterval, calories: Double?) -> Workout {
-        let date = calendar.date(byAdding: .day, value: -daysAgo, to: today)!
-        return Workout(type: type, startDate: date, duration: duration, calories: calories)
-    }
+    let date = calendar.date(byAdding: .day, value: -daysAgo, to: today)!
+    return Workout(type: type, startDate: date, duration: duration, calories: calories)
+}
+
+#Preview {
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(
+        for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, UserSettings.self, WorkoutRoute.self,
+        configurations: config
+    )
     
     // Add sample workouts to the context
     let sampleWorkouts = [
@@ -630,10 +724,117 @@ private func formatDistance(_ distance: Double) -> String {
         createSampleWorkout(type: .running, daysAgo: 15, duration: 1800, calories: 260)
     ]
     
-    sampleWorkouts.forEach { workout in
+    for workout in sampleWorkouts {
         container.mainContext.insert(workout)
     }
     
     return AnalyticsView()
         .modelContainer(container)
+}
+
+// MARK: - Analytics Premium Paywall View
+struct AnalyticsPremiumPaywallView: View {
+    @Binding var isPresented: Bool
+    let onPurchase: () -> Void
+    @StateObject private var purchaseManager = PurchaseManager.shared
+    @State private var showingSubscriptionPage = false
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color(.systemGroupedBackground)
+                    .ignoresSafeArea()
+                
+                VStack(spacing: 32) {
+                    // Header
+                    VStack(spacing: 16) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: 60))
+                            .foregroundStyle(.blue)
+                        
+                        Text("Unlock Advanced Analytics")
+                            .font(.title2.weight(.bold))
+                            .multilineTextAlignment(.center)
+                        
+                        Text("Get detailed insights into your fitness progress with comprehensive charts and analytics")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    
+                    // Features
+                    VStack(spacing: 20) {
+                        AnalyticsFeatureRow(
+                            icon: "chart.bar.fill",
+                            title: "Interactive Charts",
+                            description: "Visualize your progress with beautiful charts and graphs"
+                        )
+                        AnalyticsFeatureRow(
+                            icon: "flame.fill",
+                            title: "Activity Streaks",
+                            description: "Track your current and longest workout streaks"
+                        )
+                        AnalyticsFeatureRow(
+                            icon: "calendar.badge.clock",
+                            title: "Daily Breakdown",
+                            description: "See detailed daily activity summaries and patterns"
+                        )
+                        AnalyticsFeatureRow(
+                            icon: "clock.fill",
+                            title: "Last Logged Tracking",
+                            description: "Track when you last performed each exercise"
+                        )
+                    }
+                    .padding(.horizontal)
+                    
+                    Spacer()
+                    
+                    // Purchase Button
+                    Button(action: {
+                        showingSubscriptionPage = true
+                    }) {
+                        Text("Unlock Premium Analytics")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(16)
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 32)
+                }
+                .padding(.top, 20)
+            }
+            .navigationTitle("Premium Analytics")
+            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showingSubscriptionPage) {
+                PremiumView()
+            }
+        }
+    }
+}
+
+private struct AnalyticsFeatureRow: View {
+    let icon: String
+    let title: String
+    let description: String
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 24))
+                .foregroundStyle(.blue)
+                .frame(width: 32)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
 } 

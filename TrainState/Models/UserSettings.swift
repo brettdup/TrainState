@@ -3,23 +3,24 @@ import SwiftData
 
 @Model
 final class UserSettings {
-    var id: UUID
-    var isOnboarded: Bool
-    var preferredWorkoutTypes: [WorkoutType]
-    var notificationEnabled: Bool
+    var id: UUID = UUID()
+    var isOnboarded: Bool = false
+    var preferredWorkoutTypes: [WorkoutType] = []
+    var notificationEnabled: Bool = false
     var notificationTime: Date?
-    var darkModeEnabled: Bool
-    var measurementSystem: MeasurementSystem
+    var darkModeEnabled: Bool = false
+    var measurementSystem: MeasurementSystem = MeasurementSystem.metric
     
     init(
+        id: UUID = UUID(),
         isOnboarded: Bool = false,
         preferredWorkoutTypes: [WorkoutType] = [],
         notificationEnabled: Bool = false,
         notificationTime: Date? = nil,
         darkModeEnabled: Bool = false,
-        measurementSystem: MeasurementSystem = .metric
+        measurementSystem: MeasurementSystem = MeasurementSystem.metric
     ) {
-        self.id = UUID()
+        self.id = id
         self.isOnboarded = isOnboarded
         self.preferredWorkoutTypes = preferredWorkoutTypes
         self.notificationEnabled = notificationEnabled

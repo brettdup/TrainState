@@ -2,42 +2,64 @@ import SwiftUI
 import SwiftData
 import MapKit
 
-// Import components
-import TrainState
-
 struct WorkoutDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Bindable var workout: Workout
     @State private var isEditing = false
-    @State private var isEditingCategories = false
-    @State private var isEditingSubcategories = false
     @State private var isEditingCategorySheet = false
     @State private var showRouteSheet = false
     @State private var decodedRoute: [CLLocation] = []
+    @State private var scrollOffset: CGFloat = 0
     
     @Query private var categories: [WorkoutCategory]
     
     var body: some View {
         ZStack {
-            ColorReflectiveBackground()
+            // Modern gradient background with depth
+            backgroundGradient
+                .ignoresSafeArea()
             
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 28) {
-                    headerCard
-                    infoCard
-                    if workout.type == .running, let route = workout.route?.decodedRoute {
-                        RunningMapAndStatsCard(route: route, duration: workout.duration, distance: workout.distance)
+            // Main content
+            GeometryReader { geometry in
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        // Hero section with workout type and key info
+                        heroSection
+                            .padding(.top, 20)
+                            .padding(.bottom, 32)
+                        
+                        // Content cards in natural flow
+                        contentSection
+                            .padding(.bottom, 100) // Space for floating buttons
                     }
-                    categoriesCard
-                    if let notes = workout.notes, !notes.isEmpty {
-                        notesCard(notes)
-                    }
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(key: ScrollOffsetPreferenceKey.self, value: geo.frame(in: .named("scroll")).minY)
+                        }
+                    )
                 }
-                .padding(.vertical, 24)
+                .coordinateSpace(name: "scroll")
+                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                    scrollOffset = value
+                }
             }
+            
+            // Floating action buttons
+            floatingActions
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                // Dynamic title that appears on scroll
+                Text(workout.type.rawValue)
+                    .font(.headline.weight(.semibold))
+                    .opacity(scrollOffset < -50 ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.2), value: scrollOffset)
+            }
+        }
         .sheet(isPresented: $isEditing) {
             NavigationStack {
                 EditWorkoutView(workout: workout)
@@ -46,8 +68,14 @@ struct WorkoutDetailView: View {
         .sheet(isPresented: $isEditingCategorySheet) {
             NavigationStack {
                 CategoryAndSubcategorySelectionView(
-                    selectedCategories: $workout.categories,
-                    selectedSubcategories: $workout.subcategories,
+                    selectedCategories: Binding(
+                        get: { workout.categories ?? [] },
+                        set: { workout.categories = $0 }
+                    ),
+                    selectedSubcategories: Binding(
+                        get: { workout.subcategories ?? [] },
+                        set: { workout.subcategories = $0 }
+                    ),
                     workoutType: workout.type
                 )
             }
@@ -59,923 +87,453 @@ struct WorkoutDetailView: View {
         }
     }
     
-    // MARK: - Header Card
-    private var headerCard: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 20) {
+    // MARK: - Background
+    private var backgroundGradient: some View {
+        // Simple, performant background
+        Color(.systemBackground)
+    }
+    
+    // MARK: - Hero Section
+    private var heroSection: some View {
+        VStack(spacing: 24) {
+            // Main workout icon and type
+            VStack(spacing: 16) {
                 ZStack {
+                    // Animated gradient background
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    workoutTypeColor.opacity(0.2),
+                                    workoutTypeColor.opacity(0.1)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 80, height: 80)
+                        .blur(radius: 16)
+                        .scaleEffect(1.1)
+                    
+                    // Glass circle with icon
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 64, height: 64)
-                        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
-                    Image(systemName: iconForType(workout.type))
-                        .font(.system(size: 32, weight: .semibold))
-                        .foregroundStyle(.blue)
+                        .frame(width: 72, height: 72)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white.opacity(0.3),
+                                            Color.white.opacity(0.1)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: workoutTypeColor.opacity(0.2), radius: 12, y: 6)
+                        .overlay(
+                            Image(systemName: WorkoutTypeHelper.iconForType(workout.type))
+                                .font(.system(size: 32, weight: .semibold))
+                                .foregroundStyle(workoutTypeColor)
+                                .shadow(color: workoutTypeColor.opacity(0.3), radius: 6, y: 2)
+                        )
                 }
-                VStack(alignment: .leading, spacing: 6) {
+                
+                VStack(spacing: 8) {
                     Text(workout.type.rawValue)
-                        .font(.title2.weight(.bold))
+                        .font(.largeTitle.weight(.bold))
                         .foregroundStyle(.primary)
-                    Text(friendlyDateTime(workout.startDate))
-                        .font(.subheadline)
+                    
+                    Text(DateFormatHelper.friendlyDateTime(workout.startDate))
+                        .font(.title3)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 8)
             
-            Divider()
-                .background(Color.secondary.opacity(0.08))
-                .padding(.horizontal, 20)
-            
-            HStack(spacing: 8) {
-                Image(systemName: "calendar")
-                    .foregroundStyle(.secondary)
-                Text(formattedDate(workout.startDate))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
+            // Key metrics in horizontal scrollable format
+            keyMetricsRow
         }
-        .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
-        )
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 20)
     }
     
-    // MARK: - Info Card (consolidated workout info)
-    private var infoCard: some View {
-        VStack(alignment: .leading, spacing: 18) {
+    // MARK: - Key Metrics Row
+    private var keyMetricsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 16) {
-                Image(systemName: iconForType(workout.type))
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(.blue)
-                Text(workout.type.rawValue)
-                    .font(.title3.weight(.semibold))
-                Spacer()
-            }
-            Divider().background(Color.secondary.opacity(0.08))
-            HStack(spacing: 16) {
-                Image(systemName: "clock.fill")
-                    .foregroundStyle(.blue)
-                Text(formatDuration(workout.duration))
-                    .font(.body.weight(.medium))
-                Spacer()
-            }
-            if let calories = workout.calories {
-                HStack(spacing: 16) {
-                    Image(systemName: "flame.fill")
-                        .foregroundStyle(.orange)
-                    Text("\(Int(calories)) cal")
-                        .font(.body.weight(.medium))
-                    Spacer()
+                // Duration (always shown)
+                MetricCard(
+                    icon: "clock.fill",
+                    title: "Duration",
+                    value: DurationFormatHelper.formatDuration(workout.duration),
+                    color: .blue
+                )
+                
+                // Calories (if available)
+                if let calories = workout.calories {
+                    MetricCard(
+                        icon: "flame.fill",
+                        title: "Calories",
+                        value: "\(Int(calories))",
+                        color: .orange
+                    )
                 }
-            }
-            if let distance = workout.distance {
-                HStack(spacing: 16) {
-                    Image(systemName: "figure.walk")
-                        .foregroundStyle(.green)
-                    Text(String(format: "%.1f km", distance / 1000))
-                        .font(.body.weight(.medium))
-                    Spacer()
+                
+                // Distance (if available)
+                if let distance = workout.distance {
+                    MetricCard(
+                        icon: "figure.walk",
+                        title: "Distance",
+                        value: String(format: "%.1f km", distance / 1000),
+                        color: .green
+                    )
                 }
+                
+                // Date
+                MetricCard(
+                    icon: "calendar",
+                    title: "Date",
+                    value: DateFormatHelper.formattedDate(workout.startDate),
+                    color: .purple
+                )
             }
-            HStack(spacing: 16) {
-                Image(systemName: "calendar")
-                    .foregroundStyle(.secondary)
-                Text(formattedDate(workout.startDate))
-                    .font(.body.weight(.medium))
-                Spacer()
-            }
+            .padding(.horizontal, 20)
         }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
-        )
-        .padding(.horizontal, 12)
     }
     
-    // MARK: - Categories Card
-    private var categoriesCard: some View {
+    // MARK: - Content Section
+    private var contentSection: some View {
+        VStack(spacing: 32) {
+            if workout.type == .running {
+                if let route = workout.route?.decodedRoute, !route.isEmpty {
+                    RunningMapAndStatsCard(
+                        route: route,
+                        duration: workout.duration,
+                        distance: workout.distance
+                    )
+                    .onAppear {
+                        print("[WorkoutDetail] Workout type: \(workout.type)")
+                        print("[WorkoutDetail] Has route: \(workout.route != nil)")
+                        print("[WorkoutDetail] Route points: \(route.count)")
+                    }
+                } else {
+                    Text("No route data available for this workout")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                        )
+                        .onAppear {
+                            print("[WorkoutDetail] Workout type: \(workout.type)")
+                            print("[WorkoutDetail] Has route: \(workout.route != nil)")
+                            print("[WorkoutDetail] Route points: 0")
+                        }
+                }
+            }
+            
+            // Categories section
+            categoriesSection
+            
+            // Notes section (if available)
+            if let notes = workout.notes, !notes.isEmpty {
+                NotesSection(notes: notes)
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+    
+    // MARK: - Categories Section
+    private var categoriesSection: some View {
         VStack(alignment: .leading, spacing: 20) {
+            // Header with edit button
             HStack {
                 Text("Categories & Subcategories")
                     .font(.title3.weight(.semibold))
                 Spacer()
-                if !workout.categories.isEmpty || !workout.subcategories.isEmpty {
-                    Button(action: {
-                        let generator = UIImpactFeedbackGenerator(style: .light)
-                        generator.impactOccurred()
-                        isEditingCategorySheet = true
-                    }) {
-                        ZStack {
-                            Circle()
-                                .fill(LinearGradient(
-                                    gradient: Gradient(colors: [Color.blue.opacity(0.85), Color.blue.opacity(0.65)]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ))
-                                .frame(width: 40, height: 40)
-                                .background(
-                                    Circle()
-                                        .fill(.ultraThinMaterial)
-                                )
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.white.opacity(0.5), lineWidth: 1.5)
-                                )
-                                .shadow(color: .blue.opacity(0.18), radius: 8, y: 3)
-                            Image(systemName: "pencil.circle.fill")
-                                .font(.system(size: 24, weight: .bold))
-                                .foregroundStyle(.white)
-                                .shadow(color: .blue.opacity(0.18), radius: 2, y: 1)
-                        }
-                        .contentShape(Circle())
-                        .scaleEffect(isEditingCategorySheet ? 0.92 : 1.0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isEditingCategorySheet)
-                        .accessibilityLabel("Edit Categories")
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, 2)
+                if !(workout.categories?.isEmpty ?? true) || !(workout.subcategories?.isEmpty ?? true) {
+                    EditCategoriesButton(action: { isEditingCategorySheet = true })
                 }
             }
-            if workout.categories.isEmpty && workout.subcategories.isEmpty {
-                Button(action: {
-                    let generator = UIImpactFeedbackGenerator(style: .light)
-                    generator.impactOccurred()
-                    isEditingCategorySheet = true
-                }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "plus.circle.fill")
-                            .symbolRenderingMode(.hierarchical)
-                        Text("Add Categories")
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.blue)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                    )
-                    .shadow(color: .blue.opacity(0.08), radius: 6, y: 2)
-                }
-                .buttonStyle(.plain)
+            
+            // Content
+            if (workout.categories?.isEmpty ?? true) && (workout.subcategories?.isEmpty ?? true) {
+                AddCategoriesButton(action: { isEditingCategorySheet = true })
             } else {
-                if !workout.categories.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Categories")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                        WrappingHStackLayout(horizontalSpacing: 8, verticalSpacing: 8) {
-                            ForEach(workout.categories, id: \.id) { category in
-                                CategoryChip(category: category)
-                                    .transition(.scale.combined(with: .opacity))
-                            }
-                        }
-                    }
+                if let categories = workout.categories, !categories.isEmpty {
+                    CategoryChips(categories: categories)
                 }
-                if !workout.subcategories.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Subcategories")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                        WrappingHStackLayout(horizontalSpacing: 8, verticalSpacing: 8) {
-                            ForEach(workout.subcategories, id: \.id) { subcategory in
-                                SubcategoryChip(subcategory: subcategory)
-                                    .transition(.scale.combined(with: .opacity))
-                            }
-                        }
-                    }
+                if let subcategories = workout.subcategories, !subcategories.isEmpty {
+                    SubcategoryChips(subcategories: subcategories)
                 }
             }
         }
         .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
-        )
-        .padding(.horizontal, 12)
     }
     
-    // MARK: - Notes Card
-    private func notesCard(_ notes: String) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Notes")
-                .font(.headline)
-            Text(notes)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
-        )
-        .padding(.horizontal, 12)
-    }
-
-    // Helper for workout type icon
-    private func iconForType(_ type: WorkoutType) -> String {
-        switch type {
-        case .strength: return "dumbbell.fill"
-        case .cardio: return "heart.circle.fill"
-        case .yoga: return "figure.mind.and.body"
-        case .running: return "figure.run"
-        case .cycling: return "bicycle"
-        case .swimming: return "figure.pool.swim"
-        case .other: return "star.fill"
-        }
-    }
-
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = Int(duration) / 60 % 60
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
-    }
-
-    private func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: date)
-    }
-
-    // MARK: - Relative Date Formatting Helpers
-    private func friendlyDateTime(_ date: Date) -> String {
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
-            return "Today, \(formattedTime(date))"
-        } else if calendar.isDateInYesterday(date) {
-            return "Yesterday, \(formattedTime(date))"
-        } else if calendar.isDate(date, equalTo: Date(), toGranularity: .weekOfYear) {
-            let weekday = DateFormatter().weekdaySymbols[calendar.component(.weekday, from: date) - 1]
-            return "\(weekday), \(formattedTime(date))"
-        } else {
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateStyle = .medium
-            dateFormatter.timeStyle = .short
-            return dateFormatter.string(from: date)
-        }
-    }
-
-    private func formattedTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        return formatter.string(from: date)
-    }
-}
-
-// Helper View for consistent section styling in WorkoutDetailView
-struct SectionView<Content: View>: View {
-    let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            content
-        }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.gray.opacity(0.1), lineWidth: 1)
-        )
-        .padding(.horizontal)
-    }
-}
-
-#Preview {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: Workout.self, configurations: config)
-    let workout = Workout(type: .strength, duration: 3600)
-    
-    return NavigationStack {
-        WorkoutDetailView(workout: workout)
-    }
-    .modelContainer(container)
-} 
-
-// New WrappingHStackLayout using Layout protocol
-struct WrappingHStackLayout: Layout {
-    var horizontalSpacing: CGFloat
-    var verticalSpacing: CGFloat
-
-    init(horizontalSpacing: CGFloat = 8, verticalSpacing: CGFloat = 8) {
-        self.horizontalSpacing = horizontalSpacing
-        self.verticalSpacing = verticalSpacing
-    }
-    
-    private func computeRows(subviews: Subviews, proposalWidth: CGFloat) -> (rows: [[LayoutSubview]], subviewSizes: [CGSize]) {
-        var rows: [[LayoutSubview]] = []
-        var currentRow: [LayoutSubview] = []
-        var currentRowWidth: CGFloat = 0
-        // Ensure subviewSizes are computed based on the correct proposal, not always .unspecified for initial measurement if it causes issues.
-        // However, .unspecified is standard for getting ideal size before constraining.
-        let subviewSizes = subviews.map { $0.sizeThatFits(.unspecified) }
-
-        for (index, subview) in subviews.enumerated() {
-            let subviewSize = subviewSizes[index]
-            // Check if adding this subview (plus spacing if not the first in row) exceeds proposal width
-            if currentRowWidth + subviewSize.width + (currentRow.isEmpty ? 0 : horizontalSpacing) > proposalWidth && !currentRow.isEmpty {
-                rows.append(currentRow) // Finish current row
-                currentRow = []         // Start a new row
-                currentRowWidth = 0     // Reset current row width
-            }
-            currentRow.append(subview)
-            // Add subview width and spacing (if not the first item in this new/ongoing row)
-            currentRowWidth += subviewSize.width + (currentRow.count > 1 ? horizontalSpacing : 0)
-        }
-        if !currentRow.isEmpty {
-            rows.append(currentRow) // Add the last row
-        }
-        return (rows, subviewSizes)
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard !subviews.isEmpty else { return .zero }
-
-        // Use proposed width, or infinity if not specified (Layouts often get a concrete width from parent)
-        let effectiveProposalWidth = proposal.width ?? .infinity 
-        let (rows, subviewSizes) = computeRows(subviews: subviews, proposalWidth: effectiveProposalWidth)
-
-        let totalHeight = rows.enumerated().reduce(CGFloat.zero) { accumulatedHeight, rowData in
-            let (rowIndex, rowViews) = rowData
-            // Calculate height of the current row (max height of subviews in it)
-            let rowHeight = rowViews.map { subview -> CGFloat in
-                let subviewIndex = subviews.firstIndex(of: subview)!
-                return subviewSizes[subviewIndex].height
-            }.max() ?? 0
-            // Add row height and vertical spacing (if not the first row)
-            return accumulatedHeight + (rowIndex > 0 ? verticalSpacing : 0) + rowHeight
-        }
-
-        // Calculate max width used by any row, or use proposal if provided
-        let maxWidth = rows.reduce(CGFloat.zero) { currentMaxWidth, rowViews in
-            let rowWidth = rowViews.enumerated().reduce(CGFloat.zero) { accumulatedWidth, viewData in
-                let (viewIndex, view) = viewData
-                let subviewIndex = subviews.firstIndex(of: view)!
-                return accumulatedWidth + (viewIndex > 0 ? horizontalSpacing : 0) + subviewSizes[subviewIndex].width
-            }
-            return max(currentMaxWidth, rowWidth)
-        }
-        
-        // If a width was proposed, use it. Otherwise, use the calculated max width.
-        return CGSize(width: proposal.width ?? maxWidth, height: totalHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard !subviews.isEmpty else { return }
-        
-        // Use bounds.width as the concrete width for placing subviews
-        let (rows, subviewSizes) = computeRows(subviews: subviews, proposalWidth: bounds.width)
-        var currentY = bounds.minY
-
-        for (rowIndex, rowViews) in rows.enumerated() {
-            var currentX = bounds.minX
-            // Calculate the height of the current row for vertical positioning
-            let rowHeight = rowViews.map { subview -> CGFloat in
-                let subviewIndex = subviews.firstIndex(of: subview)!
-                return subviewSizes[subviewIndex].height
-            }.max() ?? 0
-            
-            // Add vertical spacing if not the first row
-            if rowIndex > 0 {
-                currentY += verticalSpacing
-            }
-
-            for (viewIndex, view) in rowViews.enumerated() {
-                // Add horizontal spacing if not the first view in the row
-                if viewIndex > 0 {
-                    currentX += horizontalSpacing
-                }
-                let subviewIndex = subviews.firstIndex(of: view)!
-                let currentSubviewSize = subviewSizes[subviewIndex]
+    // MARK: - Floating Actions
+    private var floatingActions: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
                 
-                // Place the subview
-                view.place(at: CGPoint(x: currentX, y: currentY),
-                           anchor: .topLeading, // Align to top-left of its allocated space
-                           proposal: ProposedViewSize(currentSubviewSize)) // Propose its ideal size
-                
-                currentX += currentSubviewSize.width // Move X for the next subview
-            }
-            currentY += rowHeight // Move Y for the next row
-        }
-    }
-}
-// END New WrappingHStackLayout
-
-struct CategorySelectionView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var selectedCategories: [WorkoutCategory]
-    @State private var workoutType: WorkoutType
-    
-    @Query private var allCategories: [WorkoutCategory]
-    
-    var filteredCategories: [WorkoutCategory] {
-        allCategories.filter { $0.workoutType == workoutType }
-    }
-    
-    init(selectedCategories: Binding<[WorkoutCategory]>, workoutType: WorkoutType) {
-        self._selectedCategories = selectedCategories
-        self._workoutType = State(initialValue: workoutType)
-    }
-    
-    var body: some View {
-        let selectedCategoryIDs = Set(selectedCategories.map { $0.id })
-        List {
-            Section {
-                Picker("Workout Type", selection: $workoutType) {
-                    ForEach(WorkoutType.allCases, id: \.self) { type in
-                        Text(type.rawValue).tag(type)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-            
-            Section {
-                if filteredCategories.isEmpty {
-                    Text("No categories found for this workout type")
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(filteredCategories, id: \.id) { category in
-                        Button(action: {
-                            toggleCategory(category)
-                        }) {
-                            HStack {
-                                Circle()
-                                    .fill(.blue)
-                                    .frame(width: 12, height: 12)
-                                Text(category.name)
-                                Spacer()
-                                if selectedCategoryIDs.contains(category.id) {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.blue)
-                                }
-                            }
-                        }
-                        .foregroundColor(.primary)
-                    }
-                }
-            }
-        }
-        .navigationTitle("Select Categories")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
-                    dismiss()
-                }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done") {
-                    dismiss()
-                }
-            }
-        }
-    }
-    
-    private func toggleCategory(_ category: WorkoutCategory) {
-        if let index = selectedCategories.firstIndex(where: { $0.id == category.id }) {
-            selectedCategories.remove(at: index)
-        } else {
-            selectedCategories.append(category)
-        }
-    }
-}
-
-struct SubcategorySelectionView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @Binding var selectedSubcategories: [WorkoutSubcategory]
-    var selectedCategories: [WorkoutCategory]
-    
-    @Query private var allPersistedSubcategories: [WorkoutSubcategory]
-    
-    // Get subcategories for selected categories from persisted entities
-    var subcategoryOptions: [String] {
-        let selectedCategoryIDs = Set(selectedCategories.map { $0.id })
-        return allPersistedSubcategories
-            .filter { subcategory in
-                guard let parentCategory = subcategory.category else { return false }
-                return selectedCategoryIDs.contains(parentCategory.id)
-            }
-            .map { $0.name }
-            .sorted()
-            // To ensure unique names if somehow multiple persisted subcategories under the same parent have the same name
-            // This would ideally be enforced at data entry, but good for robustness in display
-            .reduce(into: [String]()) { result, name in 
-                if !result.contains(name) {
-                    result.append(name)
-                }
-            }
-    }
-    
-    var body: some View {
-        List {
-            if subcategoryOptions.isEmpty {
-                Text("Select a category first")
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(subcategoryOptions, id: \.self) { sub in
-                    Button(action: { toggleSubcategory(sub) }) {
-                        HStack {
-                            Text(sub)
-                            Spacer()
-                            if selectedSubcategories.contains(where: { $0.name == sub }) {
-                                Image(systemName: "checkmark").foregroundColor(.blue)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("Select Subcategories")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { dismiss() }
-            }
-        }
-    }
-    
-    private func toggleSubcategory(_ subName: String) {
-        if let idx = selectedSubcategories.firstIndex(where: { $0.name == subName }) {
-            selectedSubcategories.remove(at: idx)
-            try? modelContext.save()
-        } else {
-            // Check if subcategory already exists in SwiftData
-            let fetchDescriptor = FetchDescriptor<WorkoutSubcategory>(
-                predicate: #Predicate { $0.name == subName }
-            )
-            do {
-                let existingSubcategories = try modelContext.fetch(fetchDescriptor)
-                if let existingSubcategory = existingSubcategories.first {
-                    selectedSubcategories.append(existingSubcategory)
-                    try? modelContext.save()
-                } else {
-                    // If not, create and insert new one
-                    let newSubcategory = WorkoutSubcategory(name: subName)
-                    modelContext.insert(newSubcategory)
-                    selectedSubcategories.append(newSubcategory)
-                    try? modelContext.save()
-                }
-            } catch {
-                print("Failed to fetch or create subcategory: \(error)")
-                // Fallback to old behavior or handle error appropriately
-                 let newSubcategory = WorkoutSubcategory(name: subName)
-                 // modelContext.insert(newSubcategory) // Decide if insert should happen on error
-                 selectedSubcategories.append(newSubcategory)
-                 try? modelContext.save()
-            }
-        }
-    }
-}
-
-struct CategoryAndSubcategorySelectionView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @Binding var selectedCategories: [WorkoutCategory]
-    @Binding var selectedSubcategories: [WorkoutSubcategory]
-    @Query private var allWorkoutCategoriesFromDB: [WorkoutCategory]
-    @Query private var allPersistedSubcategories: [WorkoutSubcategory]
-    let workoutType: WorkoutType
-    
-    @State private var selectedTab: Int = 0
-    @State private var animateSelection = false
-    
-    // Get categories for the specific workout type
-    var filteredPrimaryCategories: [WorkoutCategory] {
-        allWorkoutCategoriesFromDB.filter { $0.workoutType == workoutType }
-    }
-    
-    // Subcategory options from persisted entities, mapped by parent category name
-    var subcategoryOptions: [String: [WorkoutSubcategory]] {
-        var options: [String: [WorkoutSubcategory]] = [:]
-        for category in filteredPrimaryCategories {
-            let subsForThisCategory = allPersistedSubcategories
-                .filter { $0.category?.id == category.id }
-                .sorted { $0.name < $1.name }
-            if !subsForThisCategory.isEmpty {
-                options[category.name] = subsForThisCategory
-            }
-        }
-        return options
-    }
-    
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                // Background gradient
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(.systemBackground),
-                        Color(.systemBackground).opacity(0.95)
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                
-                VStack(spacing: 0) {
-                    // Custom tab bar
-                    HStack(spacing: 0) {
-                        TabButton(
-                            title: "Categories",
-                            isSelected: selectedTab == 0,
-                            action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { selectedTab = 0 } }
-                        )
-                        TabButton(
-                            title: "Subcategories",
-                            isSelected: selectedTab == 1,
-                            action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { selectedTab = 1 } }
-                        )
-                    }
-                    .padding(.horizontal)
-                    .padding(.top)
-                    
-                    // Content
-                    TabView(selection: $selectedTab) {
-                        // Categories Tab
-                        ScrollView {
-                            LazyVGrid(columns: [
-                                GridItem(.flexible(), spacing: 16),
-                                GridItem(.flexible(), spacing: 16)
-                            ], spacing: 16) {
-                                ForEach(filteredPrimaryCategories, id: \.id) { category in
-                                    CategoryCard(
-                                        category: category,
-                                        isSelected: selectedCategories.contains(where: { $0.id == category.id }),
-                                        onTap: { toggleCategory(category) }
+                // Edit button
+                Button(action: {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    isEditing = true
+                }) {
+                    Label("Edit", systemImage: "pencil")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 14)
+                        .background(
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            workoutTypeColor,
+                                            workoutTypeColor.opacity(0.8)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
                                     )
-                                    .transition(.scale.combined(with: .opacity))
-                                }
-                            }
-                            .padding()
-                        }
-                        .tag(0)
-                        
-                        // Subcategories Tab
-                        ScrollView {
-                            VStack(spacing: 24) {
-                                ForEach(filteredPrimaryCategories, id: \.id) { category in
-                                    if let subs = subcategoryOptions[category.name], !subs.isEmpty {
-                                        SubcategoryGroup(
-                                            category: category,
-                                            subcategories: subs,
-                                            selectedSubcategories: selectedSubcategories,
-                                            onSubcategoryTap: { sub in
-                                                toggleSubcategory(sub, for: category)
-                                            }
-                                        )
-                                        .transition(.scale.combined(with: .opacity))
-                                    }
-                                }
-                            }
-                            .padding()
-                        }
-                        .tag(1)
-                    }
-                    .tabViewStyle(.page(indexDisplayMode: .never))
+                                )
+                                .shadow(color: workoutTypeColor.opacity(0.4), radius: 12, y: 6)
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        )
                 }
+                .buttonStyle(ScaleButtonStyle())
             }
-            .navigationTitle("Select Categories")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        cleanupSubcategories()
-                        dismiss()
-                    }
-                }
-            }
+            .padding(.trailing, 20)
+            .padding(.bottom, 20)
         }
     }
     
-    private func cleanupSubcategories() {
-        selectedSubcategories.removeAll { sub in
-            guard let cat = sub.category else { return true }
-            return !selectedCategories.contains { $0.id == cat.id }
-        }
-        try? modelContext.save()
-    }
-    
-    private func toggleCategory(_ category: WorkoutCategory) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            if let idx = selectedCategories.firstIndex(where: { $0.id == category.id }) {
-                selectedCategories.remove(at: idx)
-                selectedSubcategories.removeAll { sub in
-                    sub.category?.id == category.id
-                }
-            } else {
-                selectedCategories.append(category)
-            }
-        }
-    }
-    
-    private func toggleSubcategory(_ sub: WorkoutSubcategory, for category: WorkoutCategory) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            if !selectedCategories.contains(where: { $0.id == category.id }) {
-                return
-            }
-            
-            if let idx = selectedSubcategories.firstIndex(where: { $0.id == sub.id }) {
-                selectedSubcategories.remove(at: idx)
-            } else {
-                if sub.category?.id == category.id {
-                    selectedSubcategories.append(sub)
-                }
-            }
+    // MARK: - Helpers
+    private var workoutTypeColor: Color {
+        switch workout.type {
+        case .strength: return .purple
+        case .cardio: return .red
+        case .yoga: return .mint
+        case .running: return .blue
+        case .cycling: return .green
+        case .swimming: return .cyan
+        case .other: return .orange
         }
     }
 }
 
 // MARK: - Supporting Views
-struct TabButton: View {
+
+private struct MetricCard: View {
+    let icon: String
     let title: String
-    let isSelected: Bool
-    let action: () -> Void
+    let value: String
+    let color: Color
     
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(isSelected ? .blue : .secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(
-                    VStack {
-                        Spacer()
-                        if isSelected {
-                            Rectangle()
-                                .fill(Color.blue)
-                                .frame(height: 2)
-                                .matchedGeometryEffect(id: "tabIndicator", in: namespace)
-                        }
-                    }
-                )
-        }
-    }
-    
-    @Namespace private var namespace
-}
-
-struct CategoryCard: View {
-    let category: WorkoutCategory
-    let isSelected: Bool
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 16) {
-                Circle()
-                    .fill(Color(hex: category.color) ?? .blue)
-                    .frame(width: 48, height: 48)
-                    .overlay(
-                        Circle()
-                            .stroke(.ultraThinMaterial, lineWidth: 2)
-                            .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
-                    )
-                
-                Text(category.name)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.blue)
-                        .font(.title3)
-                        .symbolRenderingMode(.hierarchical)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(isSelected ? Color.blue : Color.gray.opacity(0.2), lineWidth: 1)
-            )
-        }
-    }
-}
-
-struct SubcategoryGroup: View {
-    let category: WorkoutCategory
-    let subcategories: [WorkoutSubcategory]
-    let selectedSubcategories: [WorkoutSubcategory]
-    let onSubcategoryTap: (WorkoutSubcategory) -> Void
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Category header
-            HStack {
-                Circle()
-                    .fill(Color(hex: category.color) ?? .blue)
-                    .frame(width: 12, height: 12)
-                Text(category.name)
-                    .font(.title3.weight(.semibold))
-            }
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(color)
             
-            // Subcategories grid
-            LazyVGrid(columns: [
-                GridItem(.flexible(), spacing: 12),
-                GridItem(.flexible(), spacing: 12)
-            ], spacing: 12) {
-                ForEach(subcategories, id: \.id) { sub in
-                    SubcategoryCard(
-                        subcategory: sub,
-                        isSelected: selectedSubcategories.contains(where: { $0.id == sub.id }),
-                        onTap: { onSubcategoryTap(sub) }
-                    )
-                }
+            VStack(spacing: 4) {
+                Text(value)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.primary)
+                
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(20)
+        .frame(width: 100)
+        .padding(.vertical, 20)
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+                .shadow(color: color.opacity(0.1), radius: 8, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(color.opacity(0.2), lineWidth: 1)
         )
     }
 }
 
-struct SubcategoryCard: View {
-    let subcategory: WorkoutSubcategory
-    let isSelected: Bool
-    let onTap: () -> Void
+private struct EditCategoriesButton: View {
+    let action: () -> Void
     
     var body: some View {
-        Button(action: onTap) {
-            HStack {
-                Text(subcategory.name)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                
-                Spacer()
-                
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.blue)
-                        .symbolRenderingMode(.hierarchical)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.blue : Color.gray.opacity(0.2), lineWidth: 1)
-            )
+        Button(action: action) {
+            Image(systemName: "pencil.circle.fill")
+                .font(.system(size: 32))
+                .foregroundStyle(.blue)
+                .background(Circle().fill(.ultraThinMaterial))
         }
+        .buttonStyle(ScaleButtonStyle())
     }
 }
 
-// BlurView for sticky action bar
-import UIKit
-struct BlurView: UIViewRepresentable {
-    var style: UIBlurEffect.Style = .systemMaterial
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        return UIVisualEffectView(effect: UIBlurEffect(style: style))
+private struct AddCategoriesButton: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 16) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 40, weight: .medium))
+                    .foregroundStyle(.blue)
+                
+                VStack(spacing: 8) {
+                    Text("Add Categories")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    
+                    Text("Organize this workout with categories and exercises")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 40)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .strokeBorder(
+                                Color.blue.opacity(0.3),
+                                style: StrokeStyle(
+                                    lineWidth: 2,
+                                    lineCap: .round,
+                                    dash: [8, 4]
+                                )
+                            )
+                    )
+            )
+        }
+        .buttonStyle(ScaleButtonStyle())
     }
-    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
+}
+
+private struct CategoryChips: View {
+    let categories: [WorkoutCategory]
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            ForEach(categories) { category in
+                CategoryChip(category: category)
+            }
+        }
+    }
+    
+    private func CategoryChip(category: WorkoutCategory) -> some View {
+        Text(category.name)
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(chipBackground)
+            .foregroundStyle(.primary)
+    }
+    
+    private var chipBackground: some View {
+        Capsule()
+            .fill(.ultraThinMaterial)
+            .overlay(
+                Capsule()
+                    .stroke(.primary.opacity(0.2), lineWidth: 1)
+            )
+    }
+}
+
+private struct SubcategoryChips: View {
+    let subcategories: [WorkoutSubcategory]
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            ForEach(subcategories) { subcategory in
+                SubcategoryChip(subcategory: subcategory)
+            }
+        }
+    }
+    
+    private func SubcategoryChip(subcategory: WorkoutSubcategory) -> some View {
+        Text(subcategory.name)
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(chipBackground)
+            .foregroundStyle(.primary)
+    }
+    
+    private var chipBackground: some View {
+        Capsule()
+            .fill(.ultraThinMaterial)
+            .overlay(
+                Capsule()
+                    .stroke(.primary.opacity(0.2), lineWidth: 1)
+            )
+    }
+}
+
+private struct NotesSection: View {
+    let notes: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Notes")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.primary)
+                    
+                    Text("Additional workout details")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "note.text")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.orange)
+            }
+            
+            Text(notes)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .lineSpacing(6)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .primary.opacity(0.05), radius: 16, y: 8)
+        )
+    }
+}
+
+// ScaleButtonStyle is already defined in Components/ScaleButtonStyle.swift
+
+// MARK: - Scroll Offset Preference
+private struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
 }
 
 #Preview {
@@ -987,102 +545,4 @@ struct BlurView: UIViewRepresentable {
         WorkoutDetailView(workout: workout)
     }
     .modelContainer(container)
-} 
-
-// MARK: - Running Map and Stats Card
-struct RunningMapAndStatsCard: View {
-    let route: [CLLocation]
-    let duration: TimeInterval
-    let distance: Double?
-
-    // Use mock route if real route is empty
-    private var displayRoute: [CLLocation] {
-        route.isEmpty ? RunningMapAndStatsCard.mockRoute : route
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Route Map & Splits")
-                .font(.headline)
-            Text("Route points: \(displayRoute.count)")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            RouteMapView(route: displayRoute)
-                .frame(height: 220)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(radius: 6)
-            if let pace = averagePaceString {
-                HStack {
-                    Image(systemName: "speedometer")
-                        .foregroundColor(.blue)
-                    Text("Avg Pace: \(pace)")
-                        .font(.body.weight(.medium))
-                }
-            }
-            if !splits.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Splits")
-                        .font(.subheadline.weight(.semibold))
-                    ForEach(Array(splits.enumerated()), id: \.0) { (i, split) in
-                        Text("\(i+1) km: \(split)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-        }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
-        )
-        .padding(.horizontal, 12)
-    }
-
-    // Average pace as min/km
-    private var averagePaceString: String? {
-        guard let distance = distance, distance > 0 else { return nil }
-        let pace = duration / distance * 1000 // seconds per km
-        let minutes = Int(pace) / 60
-        let seconds = Int(pace) % 60
-        return String(format: "%d:%02d min/km", minutes, seconds)
-    }
-
-    // Splits per km
-    private var splits: [String] {
-        guard let distance = distance, distance > 0 else { return [] }
-        var splits: [String] = []
-        var splitStartTime = displayRoute.first?.timestamp ?? Date()
-        var accumulatedDistance: Double = 0
-        for i in 1..<displayRoute.count {
-            let d = displayRoute[i].distance(from: displayRoute[i-1])
-            accumulatedDistance += d
-            if accumulatedDistance >= 1000 {
-                let splitEndTime = displayRoute[i].timestamp
-                let splitDuration = splitEndTime.timeIntervalSince(splitStartTime)
-                let min = Int(splitDuration) / 60
-                let sec = Int(splitDuration) % 60
-                splits.append(String(format: "%d:%02d", min, sec))
-                splitStartTime = splitEndTime
-                accumulatedDistance = 0
-            }
-        }
-        return splits
-    }
-
-    // Mock route for demo/testing
-    static var mockRoute: [CLLocation] {
-        let base = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
-        let points = (0..<20).map { i -> CLLocation in
-            let lat = base.latitude + Double(i) * 0.001
-            let lon = base.longitude + sin(Double(i) * .pi / 10) * 0.002
-            return CLLocation(latitude: lat, longitude: lon)
-        }
-        // Add timestamps for splits
-        let startTime = Date()
-        return points.enumerated().map { (i, loc) in
-            CLLocation(coordinate: loc.coordinate, altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5, course: 0, speed: 2, timestamp: startTime.addingTimeInterval(Double(i) * 60))
-        }
-    }
 }
