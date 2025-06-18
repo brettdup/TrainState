@@ -80,32 +80,23 @@ class CloudKitManager {
             try await privateDatabase.save(backupRecord)
             print("[CloudKit] Successfully saved backup record")
         } catch let error as CKError {
-            print("[CloudKit] Detailed error information:")
-            print("- Error code: \(error.code.rawValue)")
-            print("- Error description: \(error.localizedDescription)")
-            print("- Server record: \(String(describing: error.serverRecord))")
-            print("- Client record: \(String(describing: error.clientRecord))")
-            print("- Retry after: \(String(describing: error.retryAfterSeconds))")
+            print("[CloudKit] Backup failed with error: \(error.code.rawValue)")
             
             switch error.code {
-            case .unknownItem:
-                print("[CloudKit] Schema deployment might not be complete yet")
-            case .serverRecordChanged:
-                print("[CloudKit] Server record was changed")
-            case .zoneNotFound:
-                print("[CloudKit] Zone not found")
             case .networkFailure, .networkUnavailable:
-                print("[CloudKit] Network issue")
-            case .notAuthenticated:
-                print("[CloudKit] Not authenticated with iCloud")
-            case .permissionFailure:
-                print("[CloudKit] Permission issue")
+                throw CloudKitError.networkError
             case .quotaExceeded:
-                print("[CloudKit] Quota exceeded")
+                throw CloudKitError.quotaExceeded
+            case .notAuthenticated:
+                throw CloudKitError.noAccount
+            case .permissionFailure:
+                throw CloudKitError.restricted
             default:
-                print("[CloudKit] Other CloudKit error")
+                throw CloudKitError.syncFailed
             }
-            throw error
+        } catch {
+            print("[CloudKit] Unexpected error during backup: \(error)")
+            throw CloudKitError.unknown
         }
         
         // Clean up temporary files
@@ -268,10 +259,24 @@ class CloudKitManager {
     
     func checkCloudStatus() async throws -> Bool {
         do {
+            let container = CKContainer.default()
             let status = try await container.accountStatus()
-            return status == .available
+            
+            switch status {
+            case .available:
+                return true
+            case .noAccount:
+                throw CloudKitError.noAccount
+            case .restricted:
+                throw CloudKitError.restricted
+            case .couldNotDetermine:
+                throw CloudKitError.unknown
+            @unknown default:
+                throw CloudKitError.unknown
+            }
         } catch {
-            throw CloudKitError.accountStatusCheckFailed(error)
+            print("[CloudKit] Status check failed: \(error.localizedDescription)")
+            throw error
         }
     }
 }
@@ -291,19 +296,28 @@ struct BackupInfo: Identifiable {
 
 // MARK: - Error Types
 
-enum CloudKitError: Error {
-    case noBackupFound
-    case invalidBackupData
-    case accountStatusCheckFailed(Error)
+enum CloudKitError: LocalizedError {
+    case noAccount
+    case restricted
+    case unknown
+    case syncFailed
+    case quotaExceeded
+    case networkError
     
-    var localizedDescription: String {
+    var errorDescription: String? {
         switch self {
-        case .noBackupFound:
-            return "No backup found in iCloud"
-        case .invalidBackupData:
-            return "Invalid backup data in iCloud"
-        case .accountStatusCheckFailed(let error):
-            return "Failed to check iCloud status: \(error.localizedDescription)"
+        case .noAccount:
+            return "Please sign in to your iCloud account in Settings"
+        case .restricted:
+            return "iCloud access is restricted on this device"
+        case .unknown:
+            return "Unable to connect to iCloud. Please try again later"
+        case .syncFailed:
+            return "Failed to sync with iCloud. Please check your internet connection"
+        case .quotaExceeded:
+            return "Your iCloud storage is full. Please free up some space"
+        case .networkError:
+            return "Network connection error. Please check your internet connection"
         }
     }
 } 

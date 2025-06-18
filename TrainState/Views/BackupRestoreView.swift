@@ -24,6 +24,7 @@ struct BackupRestoreView: View {
     @State private var availableBackups: [BackupInfo] = []
     @State private var selectedBackup: BackupInfo?
     @State private var isLoadingBackups = false
+    @State private var showingBackupSelection = false
     
     var body: some View {
         NavigationView {
@@ -287,6 +288,11 @@ struct BackupRestoreView: View {
                 Text("This will replace all your current data with the backup from \(backup.deviceName) (\(backup.timestamp, style: .relative)). This action cannot be undone.")
             }
         }
+        .alert("Backup Selection", isPresented: $showingBackupSelection) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(cloudErrorMessage)
+        }
     }
     
     private func checkCloudStatus() async {
@@ -320,7 +326,7 @@ struct BackupRestoreView: View {
         } catch {
             await MainActor.run {
                 isLoadingBackups = false
-                cloudErrorMessage = "Failed to load backups: \(error.localizedDescription)"
+                cloudErrorMessage = "Error: Failed to load backups: \(error.localizedDescription)"
                 showingCloudError = true
             }
         }
@@ -340,11 +346,35 @@ struct BackupRestoreView: View {
             }
             // Reload available backups
             await loadAvailableBackups()
+        } catch let error as CloudKitError {
+            await MainActor.run {
+                isCloudBackingUp = false
+                cloudErrorMessage = "Error: \(error.localizedDescription)"
+                showingCloudError = true
+                
+                // Check for available backups when error occurs
+                Task {
+                    await loadAvailableBackups()
+                    if !availableBackups.isEmpty {
+                        cloudErrorMessage += "\n\nPrevious backups are available for restore."
+                        showingBackupSelection = true
+                    }
+                }
+            }
         } catch {
             await MainActor.run {
                 isCloudBackingUp = false
-                cloudErrorMessage = "Failed to backup to iCloud: \(error.localizedDescription)"
+                cloudErrorMessage = "Error: An unexpected error occurred. Please try again later."
                 showingCloudError = true
+                
+                // Check for available backups when error occurs
+                Task {
+                    await loadAvailableBackups()
+                    if !availableBackups.isEmpty {
+                        cloudErrorMessage += "\n\nPrevious backups are available for restore."
+                        showingBackupSelection = true
+                    }
+                }
             }
         }
     }
@@ -361,11 +391,35 @@ struct BackupRestoreView: View {
                 cloudSuccessMessage = "Your data has been successfully restored from iCloud."
                 showingCloudSuccess = true
             }
+        } catch let error as CloudKitError {
+            await MainActor.run {
+                isCloudRestoring = false
+                cloudErrorMessage = "Error: \(error.localizedDescription)"
+                showingCloudError = true
+                
+                // Check for other available backups when restore fails
+                Task {
+                    await loadAvailableBackups()
+                    if availableBackups.count > 1 {
+                        cloudErrorMessage += "\n\nOther backups are available to try."
+                        showingBackupSelection = true
+                    }
+                }
+            }
         } catch {
             await MainActor.run {
                 isCloudRestoring = false
-                cloudErrorMessage = "Failed to restore from iCloud: \(error.localizedDescription)"
+                cloudErrorMessage = "Error: An unexpected error occurred. Please try again later."
                 showingCloudError = true
+                
+                // Check for other available backups when restore fails
+                Task {
+                    await loadAvailableBackups()
+                    if availableBackups.count > 1 {
+                        cloudErrorMessage += "\n\nOther backups are available to try."
+                        showingBackupSelection = true
+                    }
+                }
             }
         }
     }

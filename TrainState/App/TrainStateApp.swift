@@ -22,14 +22,31 @@ struct TrainStateApp: App {
             do {
                 let bundleIdentifier = Bundle.main.bundleIdentifier ?? "bb.TrainState"
                 print("[App] Attempting to initialize CloudKit with bundle identifier: \(bundleIdentifier)")
+                
+                // Configure CloudKit with more robust settings
                 let cloudConfig = ModelConfiguration(
                     schema: schema,
                     url: URL.documentsDirectory.appendingPathComponent("TrainState.store"),
                     allowsSave: true,
-                    cloudKitDatabase: .private("iCloud.\(bundleIdentifier)")
+                    cloudKitDatabase: .private("iCloud.\(bundleIdentifier)"),
+                    cloudKitContainerIdentifier: "iCloud.\(bundleIdentifier)"
                 )
+                
+                // Add migration options for better data handling
+                cloudConfig.migrationOptions = .destructive
+                
                 modelContainer = try ModelContainer(for: schema, configurations: cloudConfig)
                 print("[App] Successfully initialized ModelContainer with CloudKit")
+                
+                // Verify CloudKit status
+                Task {
+                    do {
+                        let status = try await CloudKitManager.shared.checkCloudStatus()
+                        print("[App] CloudKit status check: \(status ? "Available" : "Unavailable")")
+                    } catch {
+                        print("[App] CloudKit status check failed: \(error.localizedDescription)")
+                    }
+                }
             } catch {
                 print("[App] CloudKit initialization failed with error: \(error)")
                 // Fallback to local-only persistent store
