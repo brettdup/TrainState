@@ -28,12 +28,8 @@ struct TrainStateApp: App {
                     schema: schema,
                     url: URL.documentsDirectory.appendingPathComponent("TrainState.store"),
                     allowsSave: true,
-                    cloudKitDatabase: .private("iCloud.\(bundleIdentifier)"),
-                    cloudKitContainerIdentifier: "iCloud.\(bundleIdentifier)"
+                    cloudKitDatabase: .private("iCloud.\(bundleIdentifier)")
                 )
-                
-                // Add migration options for better data handling
-                cloudConfig.migrationOptions = .destructive
                 
                 modelContainer = try ModelContainer(for: schema, configurations: cloudConfig)
                 print("[App] Successfully initialized ModelContainer with CloudKit")
