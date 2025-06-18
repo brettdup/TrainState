@@ -118,23 +118,20 @@ struct WorkoutListView: View {
         NavigationStack {
             ZStack {
                 // Simple, performant background
-                Color(.systemGroupedBackground)
+                BackgroundView()
                     .ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 20) {
                         statsCardsSection
-                        filtersView
                         workoutListSection
                     }
                     .padding(.top)
-                
                 }
                 .refreshable {
                     await refreshData()
                 }
             }
-            .padding(.horizontal, 30)
             .navigationTitle("Workouts")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -273,49 +270,8 @@ struct WorkoutListView: View {
             .padding()
             .background(.regularMaterial)
             .cornerRadius(12)
-
-        }.padding(.horizontal, 18)
-
-    }
-
-    private var filtersView: some View {
-        let filterSet: [String] = ["All", "Strength", "Running", "Cardio"]
-        
-        return HStack(spacing: 16) {
-            ForEach(filterSet, id: \.self) { item in
-                Button(action: {
-                    withAnimation() {
-                        selectedFilter = item
-                        currentPage = 1 // Reset pagination when filter changes
-                    }
-                }) {
-                    Image(systemName: iconName(for: item))
-                        .frame(width: 80.0, height: 80.0)
-                        .font(.system(size: 36))
-                        .foregroundColor(selectedFilter == item ? .blue : .primary)
-                        .background(
-                            RoundedRectangle(cornerRadius: 20)
-                                .fill(.ultraThinMaterial)
-                                .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 20)
-                                .stroke(selectedFilter == item ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 2)
-                        )
-                }
-                .buttonStyle(ScaleButtonStyle())
-            }
-        }.padding(.horizontal, 20)
-    }
-    
-    private func iconName(for filter: String) -> String {
-        switch filter {
-        case "All": return "square.grid.2x2.fill"
-        case "Strength": return "dumbbell.fill"
-        case "Running": return "figure.run"
-        case "Cardio": return "heart.circle.fill"
-        default: return "square.grid.2x2.fill"
         }
+        .padding(.horizontal)
     }
 
     private var workoutListSection: some View {
@@ -326,8 +282,37 @@ struct WorkoutListView: View {
                     .font(.title2.weight(.bold))
                 
                 Spacer()
+                
+                Menu {
+                    ForEach(["All", "Strength", "Running", "Cardio"], id: \.self) { filter in
+                        Button(action: {
+                            withAnimation {
+                                selectedFilter = filter
+                                currentPage = 1 // Reset pagination when filter changes
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: iconName(for: filter))
+                                Text(filter)
+                                if selectedFilter == filter {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color(.systemBackground))
+                            .shadow(radius: 4)
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.primary)
+                    }
+                }
+                .accessibilityLabel("Filter Options")
             }
-            .padding(.horizontal, 12)
             
             // Workouts
             LazyVStack(spacing: 12) {
@@ -354,7 +339,6 @@ struct WorkoutListView: View {
                         .foregroundColor(.blue)
                         .cornerRadius(12)
                 }
-                .padding(.horizontal)
                 .padding(.bottom, 8)
             }
             
@@ -371,11 +355,10 @@ struct WorkoutListView: View {
                         .foregroundColor(.blue)
                         .cornerRadius(12)
                 }
-                .padding(.horizontal)
                 .padding(.bottom, 8)
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal)
     }
     
     // MARK: - Greeting
@@ -496,6 +479,16 @@ struct WorkoutListView: View {
             cachedStrengthCount = cachedWorkoutsThisMonth.filter { $0.type == .strength }.count
         }
     }
+    
+    private func iconName(for filter: String) -> String {
+        switch filter {
+        case "All": return "square.grid.2x2.fill"
+        case "Strength": return "dumbbell.fill"
+        case "Running": return "figure.run"
+        case "Cardio": return "heart.circle.fill"
+        default: return "square.grid.2x2.fill"
+        }
+    }
 }
 
 // MARK: - Simple Workout Row
@@ -570,38 +563,43 @@ struct WorkoutRow: View {
     @ViewBuilder
     private func workoutCardView() -> some View {
         HStack(spacing: 16) {
-            // Icon
+            // Icon with improved visual design
             ZStack {
                 Circle()
-                    .fill(iconColor.opacity(0.15))
-                    .frame(width: 48, height: 48)
+                    .fill(iconColor.opacity(0.08))
+                    .frame(width: 52, height: 52)
+                    .overlay(
+                        Circle()
+                            .stroke(iconColor.opacity(0.15), lineWidth: 1)
+                    )
                 Image(systemName: iconName)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundColor(iconColor)
             }
+            .shadow(color: iconColor.opacity(0.08), radius: 8, x: 0, y: 4)
 
-            // Text content
-            VStack(alignment: .leading, spacing: 6) {
+            // Text content with improved typography and spacing
+            VStack(alignment: .leading, spacing: 8) {
                 Text(workout.type.rawValue)
-                    .font(.headline.weight(.semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(formattedDate(workout.startDate))
-                        .font(.subheadline)
+                        .font(.system(size: 14))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
 
                     if let firstCategory = workout.categories?.first {
                         Text(firstCategory.name)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(iconColor)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Color(hex: firstCategory.color)?.opacity(0.8) ?? iconColor.opacity(0.8))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
                             .background(
                                 Capsule()
-                                    .fill(iconColor.opacity(0.1))
+                                    .fill(Color(hex: firstCategory.color)?.opacity(0.05) ?? iconColor.opacity(0.05))
                             )
                             .lineLimit(1)
                     }
@@ -610,28 +608,42 @@ struct WorkoutRow: View {
 
             Spacer()
 
-            // Stats
-            VStack(alignment: .trailing, spacing: 6) {
+            // Stats with improved visual design
+            VStack(alignment: .trailing, spacing: 8) {
                 Text(formatDuration(workout.duration))
-                    .font(.subheadline.weight(.bold))
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 if workout.type == .running, let distance = workout.distance {
                     Text(String(format: "%.1f km", distance / 1000))
-                        .font(.caption.weight(.medium))
-                        .foregroundColor(iconColor)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(iconColor.opacity(0.8))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
                         .background(
                             Capsule()
-                                .fill(iconColor.opacity(0.1))
+                                .fill(iconColor.opacity(0.05))
                         )
                         .lineLimit(1)
                 }
             }
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial.opacity(0.7))
+                .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: workout.type)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: workout.duration)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: workout.distance)
     }
 }
 

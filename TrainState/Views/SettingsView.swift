@@ -320,21 +320,7 @@ struct SettingsView: View {
             }
         }
         .sheet(isPresented: $showingPremiumPaywall) {
-            PremiumPaywallView(
-                isPresented: $showingPremiumPaywall,
-                onPurchase: {
-                    Task {
-                        if let product = purchaseManager.products.first(where: { $0.id == "Premium1Month" }) {
-                            do {
-                                try await purchaseManager.purchase(product)
-                                showingPremiumPaywall = false
-                            } catch {
-                                print("Purchase failed:", error)
-                            }
-                        }
-                    }
-                }
-            )
+            PremiumSheet(isPresented: $showingPremiumPaywall)
         }
     }
     

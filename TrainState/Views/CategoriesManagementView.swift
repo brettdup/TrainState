@@ -292,10 +292,8 @@ struct CategoriesManagementView: View {
                 .ignoresSafeArea()
             
             if !purchaseManager.hasActiveSubscription {
-                PremiumPaywallView(
-                    isPresented: $showingPremiumPaywall,
-                    onPurchase: handlePurchase
-                )
+                // Present the full PremiumView instead of the custom paywall
+                PremiumSheet(isPresented: $showingPremiumPaywall)
             } else {
                 ScrollView {
                     VStack(spacing: 24) {
@@ -644,53 +642,14 @@ struct AddSubcategoryView: View {
 }
 
 // MARK: - Premium Paywall View
-struct PremiumPaywallView: View {
+struct PremiumSheet: View {
     @Binding var isPresented: Bool
-    let onPurchase: () -> Void
-    
     var body: some View {
-        VStack(spacing: 32) {
-            // Header
-            VStack(spacing: 16) {
-                Image(systemName: "star.circle.fill")
-                    .font(.system(size: 60))
-                    .foregroundStyle(.blue)
-                
-                Text("Unlock Premium Categories")
-                    .font(.title2.weight(.bold))
-                    .multilineTextAlignment(.center)
-                
-                Text("Get access to unlimited categories and subcategories to better organize your workouts")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-            
-            // Features
-            VStack(spacing: 20) {
-                FeatureRow(icon: "folder.fill", title: "Unlimited Categories", description: "Create as many categories as you need")
-                FeatureRow(icon: "list.bullet", title: "Custom Subcategories", description: "Organize your workouts with detailed subcategories")
-                FeatureRow(icon: "arrow.triangle.2.circlepath", title: "Reset & Restore", description: "Reset to default categories or restore your custom setup")
-            }
-            .padding(.horizontal)
-            
-            Spacer()
-            
-            // Purchase Button
-            Button(action: onPurchase) {
-                Text("Unlock Premium - $0.99")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(16)
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 32)
+        NavigationStack {
+            PremiumView()
         }
-        .padding(.top, 60)
+        .presentationDetents([.large])
+        .onDisappear { isPresented = false }
     }
 }
 
