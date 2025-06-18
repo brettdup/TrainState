@@ -817,12 +817,81 @@ private struct WorkoutFeatureRow: View {
 }
 
 #Preview {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(
-        for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, UserSettings.self, WorkoutRoute.self,
-        configurations: config
-    )
+    let preview = {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try! ModelContainer(
+            for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, UserSettings.self, WorkoutRoute.self,
+            configurations: config
+        )
+        
+        // Add sample workouts
+        let context = container.mainContext
+        
+        // Create sample categories
+        let strengthCategory = WorkoutCategory(name: "Upper Body")
+        let runningCategory = WorkoutCategory(name: "Morning Run")
+        let cardioCategory = WorkoutCategory(name: "HIIT")
+        
+        // Insert categories into context
+        context.insert(strengthCategory)
+        context.insert(runningCategory)
+        context.insert(cardioCategory)
+        
+        // Create sample workouts
+        let workout1 = Workout(
+            type: .strength,
+            startDate: Date().addingTimeInterval(-3600), // 1 hour ago
+            duration: 45 * 60, // 45 minutes
+            calories: 350
+        )
+        workout1.categories = [strengthCategory]
+        context.insert(workout1)
+        
+        let workout2 = Workout(
+            type: .running,
+            startDate: Date().addingTimeInterval(-86400), // 1 day ago
+            duration: 30 * 60, // 30 minutes
+            calories: 400,
+            distance: 5000 // 5km
+        )
+        workout2.categories = [runningCategory]
+        context.insert(workout2)
+        
+        let workout3 = Workout(
+            type: .cardio,
+            startDate: Date().addingTimeInterval(-172800), // 2 days ago
+            duration: 60 * 60, // 1 hour
+            calories: 600
+        )
+        workout3.categories = [cardioCategory]
+        context.insert(workout3)
+        
+        // Add more workouts with different dates
+        let workout4 = Workout(
+            type: .strength,
+            startDate: Date().addingTimeInterval(-259200), // 3 days ago
+            duration: 50 * 60, // 50 minutes
+            calories: 450
+        )
+        workout4.categories = [strengthCategory]
+        context.insert(workout4)
+        
+        let workout5 = Workout(
+            type: .running,
+            startDate: Date().addingTimeInterval(-345600), // 4 days ago
+            duration: 45 * 60, // 45 minutes
+            calories: 500,
+            distance: 7000 // 7km
+        )
+        workout5.categories = [runningCategory]
+        context.insert(workout5)
+        
+        // Save all changes to the context
+        try? context.save()
+        
+        return WorkoutListView()
+            .modelContainer(container)
+    }
     
-    WorkoutListView()
-        .modelContainer(container)
+    return preview()
 }
