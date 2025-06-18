@@ -4,20 +4,17 @@ import SwiftData
 
 struct PremiumView: View {
     @Environment(\.modelContext) private var modelContext
-    @StateObject private var purchaseManager = PurchaseManager.shared
+    @ObservedObject private var purchaseManager = PurchaseManager.shared
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var successMessage: String?
     @State private var showingSubscriptionInfo = false
-    
-    init() {
-        print("PremiumView: Initializing...")
-    }
+    @State private var hasLoadedOnce = false
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 24) {
+                LazyVStack(spacing: 24, pinnedViews: []) {
                     // Hero Section
                     PremiumHeroSection()
                     
@@ -27,7 +24,6 @@ struct PremiumView: View {
                     } else if let error = purchaseManager.productLoadError {
                         ErrorView(error: error) {
                             Task {
-                                print("PremiumView: Retrying product load...")
                                 await purchaseManager.retryLoadingProducts()
                             }
                         }
@@ -81,7 +77,7 @@ struct PremiumView: View {
                             Label("Restore Purchases", systemImage: "arrow.clockwise.circle.fill")
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(.ultraThinMaterial)
+                                .background(Color(.systemGray6))
                                 .foregroundColor(.blue)
                                 .cornerRadius(12)
                         }
@@ -93,7 +89,7 @@ struct PremiumView: View {
                         Label("View Subscription Details", systemImage: "info.circle.fill")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(.ultraThinMaterial)
+                            .background(Color(.systemGray6))
                             .foregroundColor(.blue)
                             .cornerRadius(12)
                     }
@@ -112,7 +108,6 @@ struct PremiumView: View {
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Premium")
             .navigationBarTitleDisplayMode(.large)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .overlay {
                 if isLoading {
                     LoadingOverlay()
@@ -124,10 +119,12 @@ struct PremiumView: View {
                 }
             }
             .onAppear {
-                print("PremiumView: Appeared")
-                Task {
-                    print("PremiumView: Reloading products...")
-                    await purchaseManager.retryLoadingProducts()
+                // Only reload products if we haven't loaded them before
+                if !hasLoadedOnce {
+                    hasLoadedOnce = true
+                    Task {
+                        await purchaseManager.retryLoadingProducts()
+                    }
                 }
             }
             
@@ -142,10 +139,6 @@ struct PremiumView: View {
                         }) {
                             Label("Reset Premium Status", systemImage: "arrow.counterclockwise")
                         }
-                        
-                        // Button(role: .destructive, action: clearDatabase) {
-                        //     Label("Clear Database", systemImage: "trash.circle.fill")
-                        // }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -214,15 +207,14 @@ struct PremiumView: View {
 // MARK: - Supporting Views
 
 struct PremiumHeroSection: View {
-    @StateObject private var purchaseManager = PurchaseManager.shared
+    @ObservedObject private var purchaseManager = PurchaseManager.shared
     
     var body: some View {
         VStack(spacing: 20) {
             ZStack {
                 Circle()
-                    .fill(.ultraThinMaterial)
+                    .fill(Color(.systemGray6))
                     .frame(width: 100, height: 100)
-                    .shadow(color: .blue.opacity(0.2), radius: 20, y: 10)
                 
                 Image(systemName: purchaseManager.hasActiveSubscription ? "crown.fill" : "sparkles")
                     .font(.system(size: 60))
@@ -263,7 +255,8 @@ struct PremiumSection<Content: View>: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(Color(.systemBackground))
+                .shadow(color: .primary.opacity(0.05), radius: 2, y: 1)
         )
     }
 }
@@ -310,7 +303,7 @@ struct ErrorView: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(Color(.systemBackground))
         )
     }
 }
@@ -395,7 +388,7 @@ struct SubscriptionCard: View {
                     .foregroundStyle(.green)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(.ultraThinMaterial)
+                    .background(Color(.systemGray6))
                     .cornerRadius(12)
             } else {
                 Button(action: {
@@ -416,8 +409,8 @@ struct SubscriptionCard: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .yellow.opacity(0.1), radius: 15, y: 5)
+                .fill(Color(.systemBackground))
+                .shadow(color: .primary.opacity(0.1), radius: 3, y: 2)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -465,7 +458,7 @@ struct ProductCard: View {
                     .foregroundStyle(.green)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(.ultraThinMaterial)
+                    .background(Color(.systemGray6))
                     .cornerRadius(12)
             } else {
                 Button(action: {
@@ -486,8 +479,8 @@ struct ProductCard: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .blue.opacity(0.1), radius: 15, y: 5)
+                .fill(Color(.systemBackground))
+                .shadow(color: .primary.opacity(0.1), radius: 3, y: 2)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -507,7 +500,7 @@ struct StatusCard: View {
             // Icon
             ZStack {
                 Circle()
-                    .fill(isActive ? Color.green.opacity(0.1) : Color.secondary.opacity(0.1))
+                    .fill(isActive ? Color.green.opacity(0.1) : Color(.systemGray6))
                     .frame(width: 44, height: 44)
                 
                 Image(systemName: icon)
@@ -540,11 +533,7 @@ struct StatusCard: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                .fill(Color(.systemBackground))
         )
     }
 }

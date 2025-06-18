@@ -26,6 +26,7 @@ struct SettingsView: View {
     @State private var selectedBackup: BackupInfo?
     @State private var showingBackupSelection = false
     @State private var isLoadingBackups = false
+    @State private var debugInfo = "Initializing CloudKit debug..."
     
     @Query private var categories: [WorkoutCategory]
     @Query private var subcategories: [WorkoutSubcategory]
@@ -72,6 +73,17 @@ struct SettingsView: View {
             .onAppear {
                 NotificationManager.shared.checkNotificationStatus { authorized in
                     isNotificationAuthorized = authorized
+                }
+                
+                // Set initial debug info
+                let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+                debugInfo = "Environment: \(environment)\nStatus: Settings loaded\nContainer: iCloud.brettduplessis.TrainState\nTime: \(Date().formatted())"
+                
+                // Set up debug callback for CloudKit
+                CloudKitManager.shared.debugCallback = { message in
+                    DispatchQueue.main.async {
+                        self.debugInfo = message
+                    }
                 }
             }
         }
@@ -193,16 +205,48 @@ struct SettingsView: View {
     private var backupRestoreSection: some View {
         SettingsSection(title: "Backup & Restore", icon: "arrow.triangle.2.circlepath", color: .indigo) {
             VStack(spacing: 16) {
+                // Debug Info Card - Always visible for debugging
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
+                        Text("DEBUG INFO")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.blue)
+                        Spacer()
+                    }
+                    Text(debugInfo.isEmpty ? "Debug info not set" : debugInfo)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+                
                 if purchaseManager.hasActiveSubscription {
                     // Backup Button
                     Button(action: {
                         Task {
                             isBackingUp = true
+                            let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+                            debugInfo = "Environment: \(environment)\nStatus: Creating backup...\nContainer: iCloud.brettduplessis.TrainState"
+                            
+                            // Set up debug callback
+                            CloudKitManager.shared.debugCallback = { message in
+                                DispatchQueue.main.async {
+                                    self.debugInfo = message
+                                }
+                            }
+                            
                             do {
                                 try await CloudKitManager.shared.backupToCloud(context: modelContext)
                                 lastBackupDate = Date()
+                                debugInfo = "Environment: \(environment)\nStatus: BACKUP SUCCESS ✅\nLast backup: \(Date().formatted())"
                                 showingBackupSuccess = true
                             } catch {
+                                debugInfo = "Environment: \(environment)\nStatus: BACKUP ERROR ❌\nError: \(error.localizedDescription)"
                                 backupErrorMessage = error.localizedDescription
                                 showingBackupError = true
                             }
@@ -423,6 +467,15 @@ struct SettingsView: View {
     private func loadAvailableBackups() async {
         await MainActor.run {
             isLoadingBackups = true
+            let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+            debugInfo = "Environment: \(environment)\nStatus: Loading backups...\nContainer: iCloud.brettduplessis.TrainState"
+        }
+        
+        // Set up debug callback
+        CloudKitManager.shared.debugCallback = { message in
+            DispatchQueue.main.async {
+                self.debugInfo = message
+            }
         }
         
         do {
@@ -434,6 +487,8 @@ struct SettingsView: View {
         } catch {
             await MainActor.run {
                 isLoadingBackups = false
+                let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+                debugInfo = "Environment: \(environment)\nStatus: FINAL ERROR ❌\nError: \(error.localizedDescription)\nType: \(type(of: error))"
                 restoreErrorMessage = "Failed to load backups: \(error.localizedDescription)"
                 showingRestoreError = true
             }

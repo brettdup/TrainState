@@ -40,6 +40,7 @@ struct AnalyticsView: View {
     @State private var cachedFilteredWorkouts: (running: [Workout], strength: [Workout]) = (running: [], strength: [])
     @State private var cachedDailySummaries: [DailyWorkoutSummary] = []
     @State private var lastWorkoutsHash: Int = 0
+    @State private var lastWeekDisplayMode: WeekDisplayMode = .lastSevenDays
     @State private var showingPremiumPaywall = false
     private let calendar = Calendar.current
     
@@ -323,8 +324,12 @@ struct AnalyticsView: View {
     // MARK: - Cache Management
     private func updateCachedData() {
         let newHash = workouts.map { $0.id }.hashValue
-        if newHash != lastWorkoutsHash || cachedDailySummaries.isEmpty {
+        let hasWorkoutsChanged = newHash != lastWorkoutsHash
+        let hasDisplayModeChanged = selectedWeekDisplayMode != lastWeekDisplayMode
+        
+        if hasWorkoutsChanged || hasDisplayModeChanged || cachedDailySummaries.isEmpty {
             lastWorkoutsHash = newHash
+            lastWeekDisplayMode = selectedWeekDisplayMode
             cachedFilteredWorkouts = filteredWorkouts
             cachedDailySummaries = dailySummaries
         }

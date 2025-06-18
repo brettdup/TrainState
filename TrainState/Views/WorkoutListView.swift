@@ -192,6 +192,12 @@ struct WorkoutListView: View {
                     }
                 )
             }
+            .sheet(isPresented: $showingAddWorkout) {
+                AddWorkoutView()
+            }
+            .overlay(alignment: .bottomTrailing) {
+                addWorkoutButton
+            }
             .onAppear {
                 updateCachedData()
             }
@@ -359,6 +365,39 @@ struct WorkoutListView: View {
             }
         }
         .padding(.horizontal)
+    }
+    
+    // MARK: - Add Workout Button
+    private var addWorkoutButton: some View {
+        Button(action: {
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+            showingAddWorkout = true
+        }) {
+            Image(systemName: "plus")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.blue, Color.blue.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: Color.blue.opacity(0.4), radius: 16, y: 8)
+                )
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                )
+        }
+        .buttonStyle(ScaleButtonStyle())
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+        .accessibilityLabel("Add Workout")
     }
     
     // MARK: - Greeting

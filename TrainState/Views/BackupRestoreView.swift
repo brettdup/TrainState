@@ -25,6 +25,7 @@ struct BackupRestoreView: View {
     @State private var selectedBackup: BackupInfo?
     @State private var isLoadingBackups = false
     @State private var showingBackupSelection = false
+    @State private var debugInfo = "Initializing CloudKit debug..."
     
     var body: some View {
         NavigationView {
@@ -99,6 +100,26 @@ struct BackupRestoreView: View {
                 
                 // iCloud Backup Section
                 Section {
+                    // Debug Info Card - Always visible for debugging
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("DEBUG INFO")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(.blue)
+                            Spacer()
+                        }
+                        Text(debugInfo.isEmpty ? "Debug info not set" : debugInfo)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
+                    
                     // Backup to iCloud Button
                     Button(action: {
                         Task { await backupToCloud() }
@@ -230,7 +251,14 @@ struct BackupRestoreView: View {
                 await checkCloudStatus()
                 await loadAvailableBackups()
             }
+            .onAppear {
+                let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+                debugInfo = "Environment: \(environment)\nStatus: View appeared\nContainer: iCloud.brettduplessis.TrainState\nTime: \(Date().formatted())"
+            }
             .task {
+                let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+                debugInfo = "Environment: \(environment)\nStatus: Checking iCloud status...\nContainer: iCloud.brettduplessis.TrainState"
+                
                 await checkCloudStatus()
                 await loadAvailableBackups()
             }
@@ -322,11 +350,26 @@ struct BackupRestoreView: View {
             await MainActor.run {
                 availableBackups = backups
                 isLoadingBackups = false
+                
+                // Show debug info in UI
+                let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+                
+                if backups.isEmpty {
+                    debugInfo = "Environment: \(environment)\nStatus: No backups found\nPossible causes:\n• No backups created in Production\n• Different iCloud account\n• Schema deployment issue"
+                    cloudErrorMessage = "DEBUG: No backups found. Environment check:\n- Schema deployed to Production\n- Using correct iCloud account\n- Previous backups created in TestFlight"
+                    showingCloudError = true
+                } else {
+                    debugInfo = "Environment: \(environment)\nStatus: SUCCESS ✅\nFound: \(backups.count) backup(s)\nLatest: \(backups.first?.timestamp.formatted() ?? "N/A")"
+                    cloudSuccessMessage = "DEBUG: Found \(backups.count) backups in CloudKit Production environment"
+                    showingCloudSuccess = true
+                }
             }
         } catch {
             await MainActor.run {
+                let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
                 isLoadingBackups = false
-                cloudErrorMessage = "Error: Failed to load backups: \(error.localizedDescription)"
+                debugInfo = "Environment: \(environment)\nStatus: ERROR ❌\nError: \(error.localizedDescription)\nType: \(type(of: error))"
+                cloudErrorMessage = "DEBUG ERROR: \(error.localizedDescription)\n\nError type: \(type(of: error))\n\nFull error: \(error)"
                 showingCloudError = true
             }
         }
@@ -341,7 +384,7 @@ struct BackupRestoreView: View {
             try await CloudKitManager.shared.backupToCloud(context: modelContext)
             await MainActor.run {
                 isCloudBackingUp = false
-                cloudSuccessMessage = "Your data has been successfully backed up to iCloud."
+                cloudSuccessMessage = "DEBUG: Backup successful!\n- Environment: Production (TestFlight)\n- Data uploaded to CloudKit\n- Check backups list below"
                 showingCloudSuccess = true
             }
             // Reload available backups
@@ -349,7 +392,7 @@ struct BackupRestoreView: View {
         } catch let error as CloudKitError {
             await MainActor.run {
                 isCloudBackingUp = false
-                cloudErrorMessage = "Error: \(error.localizedDescription)"
+                cloudErrorMessage = "DEBUG BACKUP ERROR (CloudKit):\n\(error.localizedDescription)\n\nDetailed error: \(error)"
                 showingCloudError = true
                 
                 // Check for available backups when error occurs
@@ -364,7 +407,7 @@ struct BackupRestoreView: View {
         } catch {
             await MainActor.run {
                 isCloudBackingUp = false
-                cloudErrorMessage = "Error: An unexpected error occurred. Please try again later."
+                cloudErrorMessage = "DEBUG BACKUP ERROR (General):\n\(error.localizedDescription)\n\nError type: \(type(of: error))\n\nFull error: \(error)"
                 showingCloudError = true
                 
                 // Check for available backups when error occurs

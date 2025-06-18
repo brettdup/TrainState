@@ -2,11 +2,15 @@ import Foundation
 import CloudKit
 import SwiftData
 import UIKit
+import os.log
 
 class CloudKitManager {
     static let shared = CloudKitManager()
     private let container: CKContainer
     private let privateDatabase: CKDatabase
+    
+    // Debug callback to update UI
+    var debugCallback: ((String) -> Void)?
     
     private init() {
         if let bundleIdentifier = Bundle.main.bundleIdentifier {
@@ -17,12 +21,50 @@ class CloudKitManager {
             container = CKContainer.default()
         }
         privateDatabase = container.privateCloudDatabase
+        
+        // Log environment info for debugging
+        #if DEBUG
+        print("[CloudKit] Running in DEBUG mode - likely using Sandbox")
+        #else
+        print("[CloudKit] Running in RELEASE mode - likely using Production")
+        #endif
+        
+        // Check if running from TestFlight
+        if Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" {
+            print("[CloudKit] Detected TestFlight/Sandbox receipt")
+        } else {
+            print("[CloudKit] Detected App Store/Production receipt")
+        }
+    }
+    
+    // MARK: - Debug Helper
+    
+    private func updateDebug(_ message: String) {
+        print(message)
+        DispatchQueue.main.async {
+            self.debugCallback?(message)
+        }
     }
     
     // MARK: - Backup Operations
     
     func backupToCloud(context: ModelContext) async throws {
+        let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+        
+        updateDebug("Environment: \(environment)\nStatus: Starting backup...\nContainer: \(container.containerIdentifier ?? "unknown")")
+        
         print("[CloudKit] Starting backup to cloud")
+        
+        // Log environment info
+        #if DEBUG
+        print("[CloudKit] Backup: Running in DEBUG mode")
+        #else
+        print("[CloudKit] Backup: Running in RELEASE mode")
+        #endif
+        
+        // Test if we can create a simple record first
+        updateDebug("Environment: \(environment)\nStatus: Testing schema access...\nTrying to create test record")
+        
         // Fetch all data
         let workouts = try context.fetch(FetchDescriptor<Workout>())
         let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
@@ -30,9 +72,14 @@ class CloudKitManager {
         
         print("[CloudKit] Fetched data - Workouts: \(workouts.count), Categories: \(categories.count), Subcategories: \(subcategories.count)")
         
+        updateDebug("Environment: \(environment)\nStatus: Data fetched ✅\nWorkouts: \(workouts.count)\nCategories: \(categories.count)\nSubcategories: \(subcategories.count)")
+        
         // Create a new backup record with timestamp
         let timestamp = Date()
         let backupID = CKRecord.ID(recordName: "Backup_\(timestamp.timeIntervalSince1970)")
+        
+        updateDebug("Environment: \(environment)\nStatus: Creating CKRecord...\nRecord ID: \(backupID.recordName)")
+        
         let backupRecord = CKRecord(recordType: "Backup", recordID: backupID)
         
         // Add metadata
@@ -75,10 +122,13 @@ class CloudKitManager {
         backupRecord["categories"] = categoriesAsset
         backupRecord["subcategories"] = subcategoriesAsset
         
+        updateDebug("Environment: \(environment)\nStatus: Record prepared ✅\nSaving to CloudKit...\nRecord type: Backup")
+        
         // Save to CloudKit with detailed error handling
         do {
             try await privateDatabase.save(backupRecord)
             print("[CloudKit] Successfully saved backup record")
+            updateDebug("Environment: \(environment)\nStatus: BACKUP SUCCESS ✅\nRecord saved to CloudKit\nRecord ID: \(backupID.recordName)")
         } catch let error as CKError {
             print("[CloudKit] Detailed error information:")
             print("- Error code: \(error.code.rawValue)")
@@ -87,9 +137,12 @@ class CloudKitManager {
             print("- Client record: \(String(describing: error.clientRecord))")
             print("- Retry after: \(String(describing: error.retryAfterSeconds))")
             
+            updateDebug("Environment: \(environment)\nStatus: BACKUP ERROR ❌\nCode: \(error.code.rawValue)\nError: \(error.localizedDescription)\nRetry after: \(error.retryAfterSeconds ?? 0)s")
+            
             switch error.code {
             case .unknownItem:
                 print("[CloudKit] Schema deployment might not be complete yet")
+                updateDebug("Environment: \(environment)\nStatus: SCHEMA ERROR ❌\nIssue: Record type 'Backup' not found\nSolution: Deploy schema or wait for propagation")
             case .serverRecordChanged:
                 print("[CloudKit] Server record was changed")
             case .zoneNotFound:
@@ -104,6 +157,7 @@ class CloudKitManager {
                 print("[CloudKit] Quota exceeded")
             default:
                 print("[CloudKit] Other CloudKit error")
+                updateDebug("Environment: \(environment)\nStatus: CLOUDKIT ERROR ❌\nCode: \(error.code.rawValue)\nDescription: \(error.localizedDescription)")
             }
             throw error
         }
@@ -117,16 +171,29 @@ class CloudKitManager {
     // MARK: - Restore Operations
     
     func fetchAvailableBackups() async throws -> [BackupInfo] {
+        let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+        
+        updateDebug("Environment: \(environment)\nStatus: Starting backup fetch...\nContainer: \(container.containerIdentifier ?? "unknown")")
+        
         print("[CloudKit] Fetching available backups")
         print("[CloudKit] Container: \(container.containerIdentifier ?? "unknown")")
         print("[CloudKit] Database: \(privateDatabase)")
+        
+        // Force logging that will appear in device logs
+        NSLog("[CloudKit] Fetching backups - Container: %@", container.containerIdentifier ?? "unknown")
+        os_log("[CloudKit] Starting backup fetch process", log: OSLog.default, type: .default)
+        
+        updateDebug("Environment: \(environment)\nStatus: Checking iCloud account...\nContainer: \(container.containerIdentifier ?? "unknown")")
         
         // First check if we're signed into iCloud
         let accountStatus = try await container.accountStatus()
         guard accountStatus == .available else {
             print("[CloudKit] ❌ iCloud account not available. Status: \(accountStatus)")
+            updateDebug("Environment: \(environment)\nStatus: ERROR ❌\nIssue: iCloud account not available\nAccount Status: \(accountStatus.rawValue)")
             throw CloudKitError.accountNotAvailable(accountStatus)
         }
+        
+        updateDebug("Environment: \(environment)\nStatus: iCloud account available ✅\nCreating CloudKit query...\nContainer: \(container.containerIdentifier ?? "unknown")")
         
         // Use a field-based predicate since schema shows timestamp is queryable
         let oneYearAgo = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date.distantPast
@@ -136,9 +203,24 @@ class CloudKitManager {
         
         print("[CloudKit] Query: \(query) with predicate: \(predicate)")
         
+        updateDebug("Environment: \(environment)\nStatus: Executing CloudKit query...\nQuery: Backup records > 1 year ago\nContainer: \(container.containerIdentifier ?? "unknown")")
+        
         do {
             let (results, _) = try await privateDatabase.records(matching: query)
+            print("[CloudKit] Query executed successfully")
             print("[CloudKit] Found \(results.count) backup records")
+            
+            updateDebug("Environment: \(environment)\nStatus: Query successful ✅\nFound: \(results.count) backup records\nContainer: \(container.containerIdentifier ?? "unknown")")
+            
+            if results.isEmpty {
+                print("[CloudKit] ⚠️ No backup records found in this environment")
+                print("[CloudKit] This could mean:")
+                print("[CloudKit] - No backups have been created in Production environment")
+                print("[CloudKit] - Backups exist only in Sandbox environment")
+                print("[CloudKit] - Different iCloud account being used")
+                
+                updateDebug("Environment: \(environment)\nStatus: No backups found ⚠️\nPossible causes:\n• No backups in \(environment)\n• Different iCloud account\n• Schema issue")
+            }
             
             var backups: [BackupInfo] = []
             
@@ -205,6 +287,13 @@ class CloudKitManager {
             let sortedBackups = backups.sorted { $0.timestamp > $1.timestamp }
             
             print("[CloudKit] ✅ Returning \(sortedBackups.count) valid backups")
+            
+            if sortedBackups.isEmpty {
+                updateDebug("Environment: \(environment)\nStatus: No valid backups ⚠️\nFound \(results.count) records but none were valid\nContainer: \(container.containerIdentifier ?? "unknown")")
+            } else {
+                updateDebug("Environment: \(environment)\nStatus: SUCCESS ✅\nValid backups: \(sortedBackups.count)\nLatest: \(sortedBackups.first?.timestamp.formatted() ?? "N/A")")
+            }
+            
             return sortedBackups
             
         } catch let error as CKError {
@@ -215,6 +304,8 @@ class CloudKitManager {
                 print("- Underlying error: \(underlyingError.localizedDescription)")
             }
             
+            updateDebug("Environment: \(environment)\nStatus: CloudKit ERROR ❌\nCode: \(error.code.rawValue)\nError: \(error.localizedDescription)\nContainer: \(container.containerIdentifier ?? "unknown")")
+            
             switch error.code {
             case .notAuthenticated:
                 throw CloudKitError.notAuthenticated
@@ -223,13 +314,22 @@ class CloudKitManager {
             case .zoneNotFound:
                 throw CloudKitError.zoneNotFound
             case .unknownItem:
-                throw CloudKitError.schemaNotDeployed
+                print("[CloudKit] Unknown item - Schema likely not deployed to current environment")
+                print("[CloudKit] If this is TestFlight, ensure schema is deployed to PRODUCTION")
+                let debugError = CloudKitError.queryFailed(NSError(domain: "CloudKitDebug", code: 404, userInfo: [
+                    NSLocalizedDescriptionKey: "Schema not deployed to \(environment) environment. Error code: \(error.code.rawValue)"
+                ]))
+                throw debugError
             case .invalidArguments:
                 print("[CloudKit] Invalid arguments - trying alternative fetch method...")
+                print("[CloudKit] This may indicate schema mismatch between environments")
                 // Try a completely different approach
                 return try await fetchBackupsAlternativeMethod()
             default:
-                throw CloudKitError.queryFailed(error)
+                let debugError = CloudKitError.queryFailed(NSError(domain: "CloudKitDebug", code: Int(error.code.rawValue), userInfo: [
+                    NSLocalizedDescriptionKey: "CloudKit error in \(environment): \(error.localizedDescription) (Code: \(error.code.rawValue))"
+                ]))
+                throw debugError
             }
         } catch {
             print("[CloudKit] ❌ Unexpected error during query: \(error)")
