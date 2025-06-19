@@ -50,6 +50,9 @@ struct SettingsView: View {
                             // Workout Organization
                             workoutOrganizationSection
                             
+                            // Premium
+                            premiumSection
+                            
                             // Backup & Restore
                             backupRestoreSection
                             
@@ -202,6 +205,62 @@ struct SettingsView: View {
         }
     }
     
+    private var premiumSection: some View {
+        SettingsSection(title: "Premium", icon: "star.fill", color: .purple) {
+            VStack(spacing: 16) {
+                if purchaseManager.hasActiveSubscription {
+                    // Active subscription status
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Premium Active")
+                                .font(.headline)
+                            Text("Enjoy all premium features")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.green.opacity(0.1))
+                    )
+                    
+                    NavigationLink(destination: PremiumView()) {
+                        SettingsRow(icon: "gear", title: "Manage Subscription")
+                    }
+                } else {
+                    // Upgrade to premium
+                    NavigationLink(destination: PremiumView()) {
+                        HStack {
+                            Image(systemName: "star.fill")
+                                .foregroundColor(.purple)
+                                .frame(width: 24)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Upgrade to Premium")
+                                    .font(.headline)
+                                Text("Unlock cloud sync and advanced features")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+        }
+    }
+    
     private var backupRestoreSection: some View {
         SettingsSection(title: "Backup & Restore", icon: "arrow.triangle.2.circlepath", color: .indigo) {
             VStack(spacing: 16) {
@@ -228,7 +287,7 @@ struct SettingsView: View {
                 if purchaseManager.hasActiveSubscription {
                     // Backup Button
                     Button(action: {
-                        Task {
+                        Task { @MainActor in
                             isBackingUp = true
                             let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
                             debugInfo = "Environment: \(environment)\nStatus: Creating backup...\nContainer: iCloud.brettduplessis.TrainState"

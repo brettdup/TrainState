@@ -42,136 +42,101 @@ struct AnalyticsView: View {
     @State private var lastWorkoutsHash: Int = 0
     @State private var lastWeekDisplayMode: WeekDisplayMode = .lastSevenDays
     @State private var showingPremiumPaywall = false
+    @State private var animateCards = false
     private let calendar = Calendar.current
     
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(.systemGroupedBackground)
-                    .ignoresSafeArea()
+                // Modern gradient background
+                LinearGradient(
+                    colors: [
+                        Color(.systemBackground),
+                        Color.blue.opacity(0.03),
+                        Color.purple.opacity(0.02)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
                 ScrollView {
-                    VStack(spacing: 16) {
-                        // Week Display Mode Picker - Show for all users
-                        Picker("Week Display", selection: $selectedWeekDisplayMode) {
-                            ForEach(WeekDisplayMode.allCases) { mode in
-                                Text(mode.rawValue).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .padding(.horizontal)
-                        .disabled(!purchaseManager.hasActiveSubscription)
-                        .opacity(purchaseManager.hasActiveSubscription ? 1.0 : 0.6)
+                    LazyVStack(spacing: 24) {
+                        // Modern time period selector
+                        ModernTimePeriodSelector(
+                            selectedMode: $selectedWeekDisplayMode,
+                            isPremium: purchaseManager.hasActiveSubscription
+                        )
+                        .padding(.horizontal, 20)
+                        .scaleEffect(animateCards ? 1 : 0.95)
+                        .opacity(animateCards ? 1 : 0)
+                        .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1), value: animateCards)
                         
                         if purchaseManager.hasActiveSubscription {
-                            // Premium Content
-                            // Last Logged Subcategories
-                            NavigationLink {
-                                SubcategoryLastLoggedView()
-                            } label: {
-                                HStack(spacing: 16) {
-                                    Image(systemName: "clock.fill")
-                                        .font(.title2)
-                                        .foregroundStyle(.blue)
-                                    
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Last Logged Subcategories")
-                                            .font(.headline)
-                                        Text("Track when you last performed each exercise")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    Image(systemName: "chevron.right")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .padding(16)
-                                .background(.ultraThinMaterial)
-                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal)
-                            
-                            // Weekly Summary Card
-                            WeeklySummaryCard(filteredWorkouts: cachedFilteredWorkouts)
-                                .containerRelativeFrame(.horizontal)
-                            
-                            // Activity Chart
-                            ActivityChartView(dailySummaries: cachedDailySummaries)
-                                .frame(height: 220)
-                                .containerRelativeFrame(.horizontal)
-                            
-                            // Daily Breakdown
-                            DailyBreakdownView(dailySummaries: cachedDailySummaries, calendar: calendar)
-                                .containerRelativeFrame(.horizontal)
-                            
-                            // Activity Streaks
-                            StreakCardView(
-                                currentStreak: calculateCurrentStreak(workouts: workouts, calendar: calendar),
-                                longestStreak: calculateLongestStreak(workouts: workouts, calendar: calendar)
-                            )
-                            .containerRelativeFrame(.horizontal)
-                        } else {
-                            // Free Content - Basic Overview
-                            VStack(spacing: 20) {
-                                // Basic Weekly Summary (limited)
-                                WeeklySummaryCard(filteredWorkouts: cachedFilteredWorkouts)
-                                    .containerRelativeFrame(.horizontal)
+                            // Premium Content with modern design
+                            Group {
+                                // Hero stats overview
+                                HeroStatsView(
+                                    filteredWorkouts: cachedFilteredWorkouts,
+                                    currentStreak: calculateCurrentStreak(workouts: workouts, calendar: calendar),
+                                    longestStreak: calculateLongestStreak(workouts: workouts, calendar: calendar)
+                                )
+                                .scaleEffect(animateCards ? 1 : 0.95)
+                                .opacity(animateCards ? 1 : 0)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2), value: animateCards)
                                 
-                                // Premium Upsell Card
-                                Button(action: {
-                                    showingPremiumPaywall = true
-                                }) {
-                                    VStack(spacing: 16) {
-                                        Image(systemName: "chart.line.uptrend.xyaxis")
-                                            .font(.system(size: 40))
-                                            .foregroundColor(.blue)
-                                        
-                                        Text("Unlock Advanced Analytics")
-                                            .font(.title2.weight(.bold))
-                                            .multilineTextAlignment(.center)
-                                        
-                                        Text("Get detailed insights with charts, streaks, daily breakdowns, and more")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                            .multilineTextAlignment(.center)
-                                        
-                                        HStack {
-                                            Image(systemName: "star.fill")
-                                            Text("Upgrade to Premium")
-                                                .font(.headline)
-                                        }
-                                        .padding()
-                                        .background(Color.blue)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(12)
-                                    }
-                                    .padding(24)
-                                    .background(.ultraThinMaterial)
-                                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                            .stroke(Color.blue.opacity(0.2), lineWidth: 1)
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal)
+                                // Enhanced activity chart
+                                ModernActivityChartView(dailySummaries: cachedDailySummaries)
+                                    .scaleEffect(animateCards ? 1 : 0.95)
+                                    .opacity(animateCards ? 1 : 0)
+                                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.3), value: animateCards)
+                                
+                                // Modern weekly breakdown
+                                ModernWeeklyBreakdownView(
+                                    dailySummaries: cachedDailySummaries,
+                                    calendar: calendar
+                                )
+                                .scaleEffect(animateCards ? 1 : 0.95)
+                                .opacity(animateCards ? 1 : 0)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: animateCards)
+                                
+                                // Quick access features
+                                QuickAccessFeaturesView()
+                                    .scaleEffect(animateCards ? 1 : 0.95)
+                                    .opacity(animateCards ? 1 : 0)
+                                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.5), value: animateCards)
+                            }
+                        } else {
+                            // Enhanced free content with premium preview
+                            Group {
+                                // Basic stats overview
+                                BasicStatsOverview(filteredWorkouts: cachedFilteredWorkouts)
+                                    .scaleEffect(animateCards ? 1 : 0.95)
+                                    .opacity(animateCards ? 1 : 0)
+                                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2), value: animateCards)
+                                
+                                // Enhanced premium upsell
+                                ModernPremiumUpsellCard(showingPremiumPaywall: $showingPremiumPaywall)
+                                    .scaleEffect(animateCards ? 1 : 0.95)
+                                    .opacity(animateCards ? 1 : 0)
+                                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.3), value: animateCards)
                             }
                         }
                     }
-                    .padding(.vertical)
+                    .padding(.bottom, 40)
                 }
+                .scrollIndicators(.hidden)
                 .navigationTitle("Analytics")
                 .navigationBarTitleDisplayMode(.large)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-
-                .scrollContentBackground(.hidden)
+                .toolbarBackground(.clear, for: .navigationBar)
+                .background(.clear)
             }
         }
         .onAppear {
             updateCachedData()
+            withAnimation(.easeOut(duration: 0.8).delay(0.3)) {
+                animateCards = true
+            }
         }
         .onChange(of: workouts) { _, _ in
             updateCachedData()
@@ -336,7 +301,761 @@ struct AnalyticsView: View {
     }
 }
 
-// MARK: - Supporting Views
+// MARK: - Modern Supporting Views
+
+struct ModernTimePeriodSelector: View {
+    @Binding var selectedMode: WeekDisplayMode
+    let isPremium: Bool
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Time Period")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+                
+                if !isPremium {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lock.fill")
+                            .font(.caption)
+                        Text("Premium")
+                            .font(.caption.weight(.medium))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.orange.opacity(0.1))
+                    .foregroundStyle(.orange)
+                    .clipShape(Capsule())
+                }
+            }
+            
+            Picker("Week Display", selection: $selectedMode) {
+                ForEach(WeekDisplayMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(!isPremium)
+            .opacity(isPremium ? 1.0 : 0.6)
+        }
+        .padding(20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .primary.opacity(0.06), radius: 20, x: 0, y: 8)
+    }
+}
+
+struct HeroStatsView: View {
+    let filteredWorkouts: (running: [Workout], strength: [Workout])
+    let currentStreak: Int
+    let longestStreak: Int
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Hero numbers
+            HStack(spacing: 16) {
+                HeroStatCard(
+                    title: "Total Workouts",
+                    value: "\(filteredWorkouts.running.count + filteredWorkouts.strength.count)",
+                    icon: "figure.run",
+                    gradient: LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                
+                HeroStatCard(
+                    title: "Current Streak",
+                    value: "\(currentStreak)",
+                    subtitle: "days",
+                    icon: "flame.fill",
+                    gradient: LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+            }
+            
+            // Workout type breakdown
+            HStack(spacing: 16) {
+                AnalyticsWorkoutTypeCard(
+                    title: "Running",
+                    workouts: filteredWorkouts.running,
+                    color: .blue,
+                    icon: "figure.run"
+                )
+                
+                AnalyticsWorkoutTypeCard(
+                    title: "Strength",
+                    workouts: filteredWorkouts.strength,
+                    color: .purple,
+                    icon: "dumbbell.fill"
+                )
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+}
+
+struct HeroStatCard: View {
+    let title: String
+    let value: String
+    let subtitle: String?
+    let icon: String
+    let gradient: LinearGradient
+    
+    init(title: String, value: String, subtitle: String? = nil, icon: String, gradient: LinearGradient) {
+        self.title = title
+        self.value = value
+        self.subtitle = subtitle
+        self.icon = icon
+        self.gradient = gradient
+    }
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Icon with glow
+            ZStack {
+                Circle()
+                    .fill(gradient)
+                    .frame(width: 50, height: 50)
+                    .blur(radius: 10)
+                    .opacity(0.6)
+                
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 44, height: 44)
+                
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .shadow(color: .blue.opacity(0.8), radius: 6)
+            }
+            
+            VStack(spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(value)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    
+                    if let subtitle = subtitle {
+                        Text(subtitle)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+                
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(gradient.opacity(0.8))
+                
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(.white.opacity(0.2), lineWidth: 1)
+            }
+        )
+        .shadow(color: .blue.opacity(0.3), radius: 20, x: 0, y: 10)
+    }
+}
+
+struct AnalyticsWorkoutTypeCard: View {
+    let title: String
+    let workouts: [Workout]
+    let color: Color
+    let icon: String
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(color)
+                
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Workouts")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    
+                    Spacer()
+                    
+                    Text("\(workouts.count)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+                
+                HStack {
+                    Text("Duration")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    
+                    Spacer()
+                    
+                    Text(formatDuration(workouts.reduce(0) { $0 + $1.duration }))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+                
+                if title == "Running" {
+                    let totalDistance = workouts.compactMap { $0.distance }.reduce(0, +)
+                    if totalDistance > 0 {
+                        HStack {
+                            Text("Distance")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            
+                            Spacer()
+                            
+                            Text(formatDistance(totalDistance))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                } else {
+                    let calories = workouts.compactMap { $0.calories }.reduce(0, +)
+                    if calories > 0 {
+                        HStack {
+                            Text("Calories")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            
+                            Spacer()
+                            
+                            Text("\(Int(calories))")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .primary.opacity(0.04), radius: 15, x: 0, y: 5)
+    }
+}
+
+struct ModernActivityChartView: View {
+    let dailySummaries: [DailyWorkoutSummary]
+    @State private var animateChart = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Activity Overview")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.primary)
+                    
+                    Text("Weekly workout duration")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                // Quick stats
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(dailySummaries.filter { $0.hasAnyActivity }.count)")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.blue)
+                    
+                    Text("active days")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+            
+            // Enhanced chart
+            Chart {
+                ForEach(dailySummaries) { summary in
+                    BarMark(
+                        x: .value("Date", summary.date, unit: .day),
+                        y: .value("Duration", animateChart ? summary.totalDuration / 60 : 0)
+                    )
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.blue, .blue.opacity(0.6)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .cornerRadius(6)
+                }
+            }
+            .frame(height: 180)
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day)) { value in
+                    AxisValueLabel(format: .dateTime.weekday(.abbreviated))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .chartYAxis {
+                AxisMarks { value in
+                    AxisValueLabel("\(value.index * 30)m")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.vertical, 24)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .primary.opacity(0.06), radius: 25, x: 0, y: 10)
+        .padding(.horizontal, 20)
+        .onAppear {
+            withAnimation(.easeOut(duration: 1.2).delay(0.5)) {
+                animateChart = true
+            }
+        }
+    }
+}
+
+struct ModernWeeklyBreakdownView: View {
+    let dailySummaries: [DailyWorkoutSummary]
+    let calendar: Calendar
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack {
+                Text("Daily Breakdown")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            
+            LazyVStack(spacing: 12) {
+                ForEach(dailySummaries) { summary in
+                    ModernDailyRow(summary: summary, calendar: calendar)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.vertical, 24)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .primary.opacity(0.06), radius: 25, x: 0, y: 10)
+        .padding(.horizontal, 20)
+    }
+}
+
+struct ModernDailyRow: View {
+    let summary: DailyWorkoutSummary
+    let calendar: Calendar
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // Date indicator
+            VStack(spacing: 4) {
+                Text(calendar.shortWeekdaySymbols[calendar.component(.weekday, from: summary.date) - 1])
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(summary.hasAnyActivity ? .blue : .secondary)
+                
+                Circle()
+                    .fill(summary.hasAnyActivity ? .blue : .secondary.opacity(0.3))
+                    .frame(width: 8, height: 8)
+            }
+            .frame(width: 40)
+            
+            // Content
+            if summary.hasAnyActivity {
+                VStack(spacing: 8) {
+                    HStack {
+                        Text(summary.date, format: .dateTime.day().month(.abbreviated))
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                        
+                        Spacer()
+                        
+                        Text(formatDuration(summary.totalDuration))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.blue)
+                    }
+                    
+                    if summary.runningDuration > 0 || summary.strengthDuration > 0 {
+                        HStack(spacing: 12) {
+                            if summary.runningDuration > 0 {
+                                CompactActivityIndicator(
+                                    icon: "figure.run",
+                                    value: formatDistance(summary.runningDistance),
+                                    color: .blue
+                                )
+                            }
+                            
+                            if summary.strengthDuration > 0 {
+                                CompactActivityIndicator(
+                                    icon: "dumbbell.fill",
+                                    value: "\(Int(summary.strengthCalories))cal",
+                                    color: .purple
+                                )
+                            }
+                            
+                            Spacer()
+                        }
+                    }
+                }
+            } else {
+                HStack {
+                    Text(summary.date, format: .dateTime.day().month(.abbreviated))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    
+                    Spacer()
+                    
+                    Text("Rest day")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            summary.hasAnyActivity ?
+            Color.blue.opacity(0.06) :
+            Color.clear,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    summary.hasAnyActivity ?
+                    Color.blue.opacity(0.1) :
+                    Color.clear,
+                    lineWidth: 1
+                )
+        )
+    }
+}
+
+struct CompactActivityIndicator: View {
+    let icon: String
+    let value: String
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(color)
+            
+            Text(value)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.1), in: Capsule())
+    }
+}
+
+struct QuickAccessFeaturesView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Quick Access")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            
+            LazyVGrid(columns: [
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ], spacing: 16) {
+                NavigationLink {
+                    SubcategoryLastLoggedView()
+                } label: {
+                    QuickAccessCard(
+                        icon: "clock.fill",
+                        title: "Last Logged",
+                        subtitle: "Exercise tracking",
+                        color: .orange
+                    )
+                }
+                .buttonStyle(.plain)
+                
+                QuickAccessCard(
+                    icon: "chart.line.uptrend.xyaxis",
+                    title: "Insights",
+                    subtitle: "Coming soon",
+                    color: .purple
+                )
+                .opacity(0.6)
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.vertical, 24)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .primary.opacity(0.06), radius: 25, x: 0, y: 10)
+        .padding(.horizontal, 20)
+    }
+}
+
+struct QuickAccessCard: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.2))
+                    .frame(width: 50, height: 50)
+                
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+            
+            VStack(spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
+    }
+}
+
+struct BasicStatsOverview: View {
+    let filteredWorkouts: (running: [Workout], strength: [Workout])
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack {
+                Text("This Week")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+                
+                Text("\(filteredWorkouts.running.count + filteredWorkouts.strength.count) workouts")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.blue)
+            }
+            .padding(.horizontal, 24)
+            
+            HStack(spacing: 16) {
+                BasicStatCard(
+                    title: "Running",
+                    count: filteredWorkouts.running.count,
+                    icon: "figure.run",
+                    color: .blue
+                )
+                
+                BasicStatCard(
+                    title: "Strength",
+                    count: filteredWorkouts.strength.count,
+                    icon: "dumbbell.fill",
+                    color: .purple
+                )
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.vertical, 24)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .primary.opacity(0.06), radius: 25, x: 0, y: 10)
+        .padding(.horizontal, 20)
+    }
+}
+
+struct BasicStatCard: View {
+    let title: String
+    let count: Int
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(color)
+            
+            Text("\(count)")
+                .font(.title.weight(.bold))
+                .foregroundStyle(.primary)
+            
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(color.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+struct ModernPremiumUpsellCard: View {
+    @Binding var showingPremiumPaywall: Bool
+    @State private var animateGradient = false
+    
+    var body: some View {
+        Button(action: { showingPremiumPaywall = true }) {
+            VStack(spacing: 24) {
+                // Animated icon
+                ZStack {
+                    Circle()
+                        .fill(
+                            AngularGradient(
+                                colors: [.blue, .purple, .pink, .orange, .blue],
+                                center: .center
+                            )
+                        )
+                        .frame(width: 80, height: 80)
+                        .blur(radius: 20)
+                        .opacity(0.6)
+                        .scaleEffect(animateGradient ? 1.2 : 1.0)
+                        .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: animateGradient)
+                    
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 70, height: 70)
+                    
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .shadow(color: .blue.opacity(0.8), radius: 8)
+                }
+                
+                VStack(spacing: 12) {
+                    Text("Unlock Advanced Analytics")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                    
+                    Text("Get detailed insights with interactive charts, activity streaks, daily breakdowns, and much more")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(2)
+                }
+                
+                // Feature highlights
+                VStack(spacing: 12) {
+                    FeatureHighlight(icon: "chart.bar.fill", text: "Interactive Charts & Graphs")
+                    FeatureHighlight(icon: "flame.fill", text: "Activity Streaks & Goals")
+                    FeatureHighlight(icon: "calendar.badge.clock", text: "Detailed Daily Breakdowns")
+                }
+                
+                // CTA Button
+                HStack(spacing: 8) {
+                    Image(systemName: "star.fill")
+                        .font(.headline)
+                    
+                    Text("Upgrade to Premium")
+                        .font(.headline.weight(.semibold))
+                }
+                .foregroundColor(.black)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+                .background(.white, in: Capsule())
+                .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
+            }
+            .padding(32)
+            .background(
+                ZStack {
+                    LinearGradient(
+                        colors: [.blue.opacity(0.8), .purple.opacity(0.9)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    
+                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                    
+                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                        .stroke(.white.opacity(0.2), lineWidth: 1)
+                }
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+            .shadow(color: .blue.opacity(0.3), radius: 30, x: 0, y: 15)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 20)
+        .onAppear {
+            animateGradient = true
+        }
+    }
+}
+
+struct FeatureHighlight: View {
+    let icon: String
+    let text: String
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 20)
+            
+            Text(text)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+// MARK: - Legacy Supporting Views
 struct WeeklySummaryCard: View {
     let filteredWorkouts: (running: [Workout], strength: [Workout])
     

@@ -55,63 +55,85 @@ class CloudKitManager {
         
         print("[CloudKit] Starting backup to cloud")
         
-        // Log environment info
-        #if DEBUG
-        print("[CloudKit] Backup: Running in DEBUG mode")
-        #else
-        print("[CloudKit] Backup: Running in RELEASE mode")
-        #endif
+        // MARK: - Fetch and Export Data on MainActor
+        let (workoutExports, categoryExports, subcategoryExports) = try await MainActor.run {
+            print("[CloudKit] Fetching data on MainActor")
+            
+            // Fetch all data with prefetched relationships
+            var workoutDescriptor = FetchDescriptor<Workout>()
+            workoutDescriptor.relationshipKeyPathsForPrefetching = [\.categories, \.subcategories]
+            
+            var subcategoryDescriptor = FetchDescriptor<WorkoutSubcategory>()
+            subcategoryDescriptor.relationshipKeyPathsForPrefetching = [\.workouts]
+            
+            // Perform all fetches
+            let workouts = try context.fetch(workoutDescriptor)
+            let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
+            let subcategories = try context.fetch(subcategoryDescriptor)
+            
+            print("[CloudKit] Fetched data - Workouts: \(workouts.count), Categories: \(categories.count), Subcategories: \(subcategories.count)")
+            
+            updateDebug("Environment: \(environment)\nStatus: Data fetched ✅\nWorkouts: \(workouts.count)\nCategories: \(categories.count)\nSubcategories: \(subcategories.count)")
+            
+            // Immediately convert to export models to avoid holding SwiftData references
+            let workoutExports = workouts.map { WorkoutExport(from: $0) }
+            let categoryExports = categories.map { WorkoutCategoryExport(from: $0) }
+            let subcategoryExports = subcategories.map { WorkoutSubcategoryExport(from: $0) }
+            
+            return (workoutExports, categoryExports, subcategoryExports)
+        }
         
-        // Test if we can create a simple record first
-        updateDebug("Environment: \(environment)\nStatus: Testing schema access...\nTrying to create test record")
-        
-        // Fetch all data
-        let workouts = try context.fetch(FetchDescriptor<Workout>())
-        let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
-        let subcategories = try context.fetch(FetchDescriptor<WorkoutSubcategory>())
-        
-        print("[CloudKit] Fetched data - Workouts: \(workouts.count), Categories: \(categories.count), Subcategories: \(subcategories.count)")
-        
-        updateDebug("Environment: \(environment)\nStatus: Data fetched ✅\nWorkouts: \(workouts.count)\nCategories: \(categories.count)\nSubcategories: \(subcategories.count)")
-        
-        // Create a new backup record with timestamp
+        // MARK: - Create CloudKit Record
         let timestamp = Date()
         let backupID = CKRecord.ID(recordName: "Backup_\(timestamp.timeIntervalSince1970)")
-        
-        updateDebug("Environment: \(environment)\nStatus: Creating CKRecord...\nRecord ID: \(backupID.recordName)")
-        
         let backupRecord = CKRecord(recordType: "Backup", recordID: backupID)
         
         // Add metadata
         backupRecord["timestamp"] = timestamp
         backupRecord["deviceName"] = UIDevice.current.name
-        backupRecord["workoutCount"] = workouts.count
-        backupRecord["categoryCount"] = categories.count
-        backupRecord["subcategoryCount"] = subcategories.count
-        backupRecord["assignedSubcategoryCount"] = subcategories.filter { $0.workouts?.count ?? 0 > 0 }.count
+        backupRecord["workoutCount"] = workoutExports.count
+        backupRecord["categoryCount"] = categoryExports.count
+        backupRecord["subcategoryCount"] = subcategoryExports.count
+        backupRecord["assignedSubcategoryCount"] = subcategoryExports.filter { $0.id != UUID() }.count
         
-        // Encode data using export structures
+        // MARK: - Encode Data
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         
-        let workoutExports = workouts.map { WorkoutExport(from: $0) }
-        let workoutsData = try encoder.encode(workoutExports)
+        let workoutsData: Data
+        let categoriesData: Data
+        let subcategoriesData: Data
         
-        let categoryExports = categories.map { WorkoutCategoryExport(from: $0) }
-        let categoriesData = try encoder.encode(categoryExports)
+        do {
+            workoutsData = try encoder.encode(workoutExports)
+            categoriesData = try encoder.encode(categoryExports)
+            subcategoriesData = try encoder.encode(subcategoryExports)
+        } catch {
+            print("[CloudKit] ❌ Failed to encode data: \(error)")
+            throw CloudKitError.invalidBackupData
+        }
         
-        let subcategoryExports = subcategories.map { WorkoutSubcategoryExport(from: $0) }
-        let subcategoriesData = try encoder.encode(subcategoryExports)
-        
-        // Create temporary files
+        // MARK: - Create Temporary Files
         let tempDir = FileManager.default.temporaryDirectory
-        let workoutsURL = tempDir.appendingPathComponent("workouts.json")
-        let categoriesURL = tempDir.appendingPathComponent("categories.json")
-        let subcategoriesURL = tempDir.appendingPathComponent("subcategories.json")
+        let workoutsURL = tempDir.appendingPathComponent("workouts_\(UUID().uuidString).json")
+        let categoriesURL = tempDir.appendingPathComponent("categories_\(UUID().uuidString).json")
+        let subcategoriesURL = tempDir.appendingPathComponent("subcategories_\(UUID().uuidString).json")
         
-        try workoutsData.write(to: workoutsURL)
-        try categoriesData.write(to: categoriesURL)
-        try subcategoriesData.write(to: subcategoriesURL)
+        // Use defer to ensure cleanup
+        defer {
+            try? FileManager.default.removeItem(at: workoutsURL)
+            try? FileManager.default.removeItem(at: categoriesURL)
+            try? FileManager.default.removeItem(at: subcategoriesURL)
+        }
+        
+        do {
+            try workoutsData.write(to: workoutsURL)
+            try categoriesData.write(to: categoriesURL)
+            try subcategoriesData.write(to: subcategoriesURL)
+        } catch {
+            print("[CloudKit] ❌ Failed to write temporary files: \(error)")
+            throw CloudKitError.invalidBackupData
+        }
         
         // Create CKAssets
         let workoutsAsset = CKAsset(fileURL: workoutsURL)
@@ -124,48 +146,32 @@ class CloudKitManager {
         
         updateDebug("Environment: \(environment)\nStatus: Record prepared ✅\nSaving to CloudKit...\nRecord type: Backup")
         
-        // Save to CloudKit with detailed error handling
+        // MARK: - Save to CloudKit
         do {
             try await privateDatabase.save(backupRecord)
-            print("[CloudKit] Successfully saved backup record")
+            print("[CloudKit] ✅ Successfully saved backup record")
             updateDebug("Environment: \(environment)\nStatus: BACKUP SUCCESS ✅\nRecord saved to CloudKit\nRecord ID: \(backupID.recordName)")
         } catch let error as CKError {
-            print("[CloudKit] Detailed error information:")
+            print("[CloudKit] ❌ CloudKit error:")
             print("- Error code: \(error.code.rawValue)")
             print("- Error description: \(error.localizedDescription)")
-            print("- Server record: \(String(describing: error.serverRecord))")
-            print("- Client record: \(String(describing: error.clientRecord))")
-            print("- Retry after: \(String(describing: error.retryAfterSeconds))")
             
-            updateDebug("Environment: \(environment)\nStatus: BACKUP ERROR ❌\nCode: \(error.code.rawValue)\nError: \(error.localizedDescription)\nRetry after: \(error.retryAfterSeconds ?? 0)s")
+            updateDebug("Environment: \(environment)\nStatus: BACKUP ERROR ❌\nCode: \(error.code.rawValue)\nError: \(error.localizedDescription)")
             
             switch error.code {
             case .unknownItem:
                 print("[CloudKit] Schema deployment might not be complete yet")
-                updateDebug("Environment: \(environment)\nStatus: SCHEMA ERROR ❌\nIssue: Record type 'Backup' not found\nSolution: Deploy schema or wait for propagation")
-            case .serverRecordChanged:
-                print("[CloudKit] Server record was changed")
-            case .zoneNotFound:
-                print("[CloudKit] Zone not found")
-            case .networkFailure, .networkUnavailable:
-                print("[CloudKit] Network issue")
+                throw CloudKitError.schemaNotDeployed
             case .notAuthenticated:
-                print("[CloudKit] Not authenticated with iCloud")
-            case .permissionFailure:
-                print("[CloudKit] Permission issue")
-            case .quotaExceeded:
-                print("[CloudKit] Quota exceeded")
+                throw CloudKitError.notAuthenticated
+            case .networkFailure, .networkUnavailable:
+                throw CloudKitError.networkUnavailable
+            case .zoneNotFound:
+                throw CloudKitError.zoneNotFound
             default:
-                print("[CloudKit] Other CloudKit error")
-                updateDebug("Environment: \(environment)\nStatus: CLOUDKIT ERROR ❌\nCode: \(error.code.rawValue)\nDescription: \(error.localizedDescription)")
+                throw CloudKitError.queryFailed(error)
             }
-            throw error
         }
-        
-        // Clean up temporary files
-        try? FileManager.default.removeItem(at: workoutsURL)
-        try? FileManager.default.removeItem(at: categoriesURL)
-        try? FileManager.default.removeItem(at: subcategoriesURL)
     }
     
     // MARK: - Restore Operations

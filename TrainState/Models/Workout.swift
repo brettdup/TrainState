@@ -106,8 +106,19 @@ struct WorkoutExport: Codable {
         self.calories = workout.calories
         self.distance = workout.distance
         self.notes = workout.notes
-        self.categoryIds = workout.categories?.map { $0.id }
-        self.subcategoryIds = workout.subcategories?.map { $0.id }
+        
+        // Safely access relationships with nil checks to avoid SwiftData crashes
+        if let categories = workout.categories {
+            self.categoryIds = categories.map { $0.id }
+        } else {
+            self.categoryIds = nil
+        }
+        
+        if let subcategories = workout.subcategories {
+            self.subcategoryIds = subcategories.map { $0.id }
+        } else {
+            self.subcategoryIds = nil
+        }
     }
 }
 

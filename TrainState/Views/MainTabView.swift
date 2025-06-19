@@ -22,11 +22,6 @@ struct MainTabView: View {
                     Label("Analytics", systemImage: "chart.bar")
                 }
             
-            PremiumView()
-                .tabItem {
-                    Label("Premium", systemImage: "star.fill")
-                }
-            
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
