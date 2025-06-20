@@ -16,6 +16,7 @@ struct AddWorkoutView: View {
     @State private var selectedCategories: [WorkoutCategory] = []
     @State private var selectedSubcategories: [WorkoutSubcategory] = []
     @State private var showingCategorySelection = false
+    @State private var isSaving = false
     
     // Duration picker state
     @State private var hours = 1
@@ -378,10 +379,16 @@ struct AddWorkoutView: View {
     private var saveButton: some View {
         Button(action: saveWorkout) {
             HStack(spacing: 12) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 20, weight: .semibold))
+                if isSaving {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.white)
+                } else {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                }
                 
-                Text("Save Workout")
+                Text(isSaving ? "Saving..." : "Save Workout")
                     .font(.headline.weight(.semibold))
             }
             .foregroundStyle(.white)
@@ -404,6 +411,7 @@ struct AddWorkoutView: View {
             )
         }
         .buttonStyle(ScaleButtonStyle())
+        .disabled(isSaving)
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
     }
@@ -436,55 +444,68 @@ struct AddWorkoutView: View {
     }
     
     private func saveWorkout() {
-        let caloriesValue = Double(calories.trimmingCharacters(in: .whitespacesAndNewlines))
-        let distanceValue: Double?
+        guard !isSaving else { return }
         
-        if let dist = Double(distance.trimmingCharacters(in: .whitespacesAndNewlines)) {
-            // Convert to meters for storage
-            switch workoutType {
-            case .running, .cycling:
-                distanceValue = dist * 1000 // km to meters
-            case .swimming:
-                distanceValue = dist // already in meters
-            default:
-                distanceValue = nil
+        isSaving = true
+        
+        // Add a small delay to show the loading state (for better UX feedback)
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            
+            await MainActor.run {
+                let caloriesValue = Double(calories.trimmingCharacters(in: .whitespacesAndNewlines))
+                let distanceValue: Double?
+                
+                if let dist = Double(distance.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    // Convert to meters for storage
+                    switch workoutType {
+                    case .running, .cycling:
+                        distanceValue = dist * 1000 // km to meters
+                    case .swimming:
+                        distanceValue = dist // already in meters
+                    default:
+                        distanceValue = nil
+                    }
+                } else {
+                    distanceValue = nil
+                }
+                
+                let newWorkout = Workout(
+                    type: workoutType,
+                    startDate: startDate,
+                    duration: duration,
+                    calories: caloriesValue,
+                    distance: distanceValue,
+                    notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines),
+                    categories: selectedCategories.isEmpty ? nil : selectedCategories,
+                    subcategories: selectedSubcategories.isEmpty ? nil : selectedSubcategories
+                )
+                
+                // Add relationships
+                for category in selectedCategories {
+                    newWorkout.addCategory(category)
+                }
+                
+                for subcategory in selectedSubcategories {
+                    newWorkout.addSubcategory(subcategory)
+                }
+                
+                modelContext.insert(newWorkout)
+                
+                do {
+                    try modelContext.save()
+                    
+                    // Haptic feedback
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.success)
+                    
+                    isSaving = false
+                    dismiss()
+                } catch {
+                    print("Error saving workout: \(error)")
+                    isSaving = false
+                }
             }
-        } else {
-            distanceValue = nil
-        }
-        
-        let newWorkout = Workout(
-            type: workoutType,
-            startDate: startDate,
-            duration: duration,
-            calories: caloriesValue,
-            distance: distanceValue,
-            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines),
-            categories: selectedCategories.isEmpty ? nil : selectedCategories,
-            subcategories: selectedSubcategories.isEmpty ? nil : selectedSubcategories
-        )
-        
-        // Add relationships
-        for category in selectedCategories {
-            newWorkout.addCategory(category)
-        }
-        
-        for subcategory in selectedSubcategories {
-            newWorkout.addSubcategory(subcategory)
-        }
-        
-        modelContext.insert(newWorkout)
-        
-        do {
-            try modelContext.save()
-            
-            // Haptic feedback
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
-            
-            dismiss()
-        } catch {
-            print("Error saving workout: \(error)")
         }
     }
 }

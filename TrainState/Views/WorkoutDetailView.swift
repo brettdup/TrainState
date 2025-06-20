@@ -6,7 +6,6 @@ struct WorkoutDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Bindable var workout: Workout
-    @State private var isEditing = false
     @State private var isEditingCategorySheet = false
     @State private var showRouteSheet = false
     @State private var decodedRoute: [CLLocation] = []
@@ -45,9 +44,6 @@ struct WorkoutDetailView: View {
                     scrollOffset = value
                 }
             }
-            
-            // Floating action buttons
-            floatingActions
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
@@ -58,11 +54,6 @@ struct WorkoutDetailView: View {
                     .font(.headline.weight(.semibold))
                     .opacity(scrollOffset < -50 ? 1 : 0)
                     .animation(.easeInOut(duration: 0.2), value: scrollOffset)
-            }
-        }
-        .sheet(isPresented: $isEditing) {
-            NavigationStack {
-                EditWorkoutView(workout: workout)
             }
         }
         .sheet(isPresented: $isEditingCategorySheet) {
@@ -95,111 +86,114 @@ struct WorkoutDetailView: View {
     
     // MARK: - Hero Section
     private var heroSection: some View {
-        VStack(spacing: 24) {
-            // Main workout icon and type
-            VStack(spacing: 16) {
+        VStack(spacing: 20) {
+            // Main workout info in a more compact layout
+            HStack(spacing: 16) {
+                // Workout icon
                 ZStack {
-                    // Animated gradient background
                     Circle()
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    workoutTypeColor.opacity(0.2),
-                                    workoutTypeColor.opacity(0.1)
+                                    workoutTypeColor.opacity(0.15),
+                                    workoutTypeColor.opacity(0.05)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 80, height: 80)
-                        .blur(radius: 16)
-                        .scaleEffect(1.1)
+                        .frame(width: 56, height: 56)
                     
-                    // Glass circle with icon
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 72, height: 72)
-                        .overlay(
-                            Circle()
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.white.opacity(0.3),
-                                            Color.white.opacity(0.1)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1
-                                )
-                        )
-                        .shadow(color: workoutTypeColor.opacity(0.2), radius: 12, y: 6)
-                        .overlay(
-                            Image(systemName: WorkoutTypeHelper.iconForType(workout.type))
-                                .font(.system(size: 32, weight: .semibold))
-                                .foregroundStyle(workoutTypeColor)
-                                .shadow(color: workoutTypeColor.opacity(0.3), radius: 6, y: 2)
-                        )
+                    Image(systemName: WorkoutTypeHelper.iconForType(workout.type))
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(workoutTypeColor)
                 }
                 
-                VStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(workout.type.rawValue)
-                        .font(.largeTitle.weight(.bold))
+                        .font(.title2.weight(.bold))
                         .foregroundStyle(.primary)
                     
                     Text(DateFormatHelper.friendlyDateTime(workout.startDate))
-                        .font(.title3)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                
+                Spacer()
             }
             
-            // Key metrics in horizontal scrollable format
-            keyMetricsRow
+            // Key metrics - different layouts based on available data
+            if let calories = workout.calories {
+                // Compact 3-column layout when calories are available
+                compactMetricsLayout
+            } else {
+                // Minimal 2-column layout when no calories
+                minimalMetricsLayout
+            }
         }
         .padding(.horizontal, 20)
     }
     
-    // MARK: - Key Metrics Row
-    private var keyMetricsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 16) {
-                // Duration (always shown)
-                MetricCard(
-                    icon: "clock.fill",
-                    title: "Duration",
-                    value: DurationFormatHelper.formatDuration(workout.duration),
-                    color: .blue
+    // MARK: - Compact Metrics Layout (with calories)
+    private var compactMetricsLayout: some View {
+        HStack(spacing: 12) {
+            // Duration
+            CompactMetricCard(
+                icon: "clock.fill",
+                value: DurationFormatHelper.formatDuration(workout.duration),
+                color: .blue
+            )
+            
+            // Calories
+            if let calories = workout.calories {
+                CompactMetricCard(
+                    icon: "flame.fill",
+                    value: "\(Int(calories))",
+                    color: .orange
                 )
-                
-                // Calories (if available)
-                if let calories = workout.calories {
-                    MetricCard(
-                        icon: "flame.fill",
-                        title: "Calories",
-                        value: "\(Int(calories))",
-                        color: .orange
-                    )
-                }
-                
-                // Distance (if available)
-                if let distance = workout.distance {
-                    MetricCard(
-                        icon: "figure.walk",
-                        title: "Distance",
-                        value: String(format: "%.1f km", distance / 1000),
-                        color: .green
-                    )
-                }
-                
-                // Date
-                MetricCard(
+            }
+            
+            // Distance or Date (whichever is more relevant)
+            if let distance = workout.distance {
+                CompactMetricCard(
+                    icon: "figure.walk",
+                    value: String(format: "%.1f km", distance / 1000),
+                    color: .green
+                )
+            } else {
+                CompactMetricCard(
                     icon: "calendar",
-                    title: "Date",
                     value: DateFormatHelper.formattedDate(workout.startDate),
                     color: .purple
                 )
             }
-            .padding(.horizontal, 20)
+        }
+    }
+    
+    // MARK: - Minimal Metrics Layout (without calories)
+    private var minimalMetricsLayout: some View {
+        HStack(spacing: 16) {
+            // Duration
+            MinimalMetricCard(
+                icon: "clock.fill",
+                value: DurationFormatHelper.formatDuration(workout.duration),
+                color: .blue
+            )
+            
+            // Distance or Date
+            if let distance = workout.distance {
+                MinimalMetricCard(
+                    icon: "figure.walk",
+                    value: String(format: "%.1f km", distance / 1000),
+                    color: .green
+                )
+            } else {
+                MinimalMetricCard(
+                    icon: "calendar",
+                    value: DateFormatHelper.formattedDate(workout.startDate),
+                    color: .purple
+                )
+            }
         }
     }
     
@@ -249,14 +243,33 @@ struct WorkoutDetailView: View {
     
     // MARK: - Categories Section
     private var categoriesSection: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 24) {
             // Header with edit button
             HStack {
-                Text("Categories & Subcategories")
-                    .font(.title3.weight(.semibold))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Categories & Subcategories")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.primary)
+                    
+                    Text("Organize your workout")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
                 Spacer()
+                
                 if !(workout.categories?.isEmpty ?? true) || !(workout.subcategories?.isEmpty ?? true) {
-                    EditCategoriesButton(action: { isEditingCategorySheet = true })
+                    Button(action: { isEditingCategorySheet = true }) {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundStyle(.blue)
+                            .background(
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 32, height: 32)
+                            )
+                    }
+                    .buttonStyle(ScaleButtonStyle())
                 }
             }
             
@@ -264,59 +277,25 @@ struct WorkoutDetailView: View {
             if (workout.categories?.isEmpty ?? true) && (workout.subcategories?.isEmpty ?? true) {
                 AddCategoriesButton(action: { isEditingCategorySheet = true })
             } else {
-                if let categories = workout.categories, !categories.isEmpty {
-                    CategoryChips(categories: categories)
-                }
-                if let subcategories = workout.subcategories, !subcategories.isEmpty {
-                    SubcategoryChips(subcategories: subcategories)
+                VStack(spacing: 20) {
+                    // Categories section
+                    if let categories = workout.categories, !categories.isEmpty {
+                        CategoriesGroup(title: "Categories", items: categories)
+                    }
+                    
+                    // Subcategories section
+                    if let subcategories = workout.subcategories, !subcategories.isEmpty {
+                        SubcategoriesGroup(title: "Subcategories", items: subcategories)
+                    }
                 }
             }
         }
         .padding(24)
-    }
-    
-    // MARK: - Floating Actions
-    private var floatingActions: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                
-                // Edit button
-                Button(action: {
-                    let generator = UIImpactFeedbackGenerator(style: .medium)
-                    generator.impactOccurred()
-                    isEditing = true
-                }) {
-                    Label("Edit", systemImage: "pencil")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 14)
-                        .background(
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            workoutTypeColor,
-                                            workoutTypeColor.opacity(0.8)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .shadow(color: workoutTypeColor.opacity(0.4), radius: 12, y: 6)
-                        )
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                        )
-                }
-                .buttonStyle(ScaleButtonStyle())
-            }
-            .padding(.trailing, 20)
-            .padding(.bottom, 20)
-        }
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .primary.opacity(0.05), radius: 16, y: 8)
+        )
     }
     
     // MARK: - Helpers
@@ -371,20 +350,6 @@ private struct MetricCard: View {
     }
 }
 
-private struct EditCategoriesButton: View {
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "pencil.circle.fill")
-                .font(.system(size: 32))
-                .foregroundStyle(.blue)
-                .background(Circle().fill(.ultraThinMaterial))
-        }
-        .buttonStyle(ScaleButtonStyle())
-    }
-}
-
 private struct AddCategoriesButton: View {
     let action: () -> Void
     
@@ -428,66 +393,6 @@ private struct AddCategoriesButton: View {
     }
 }
 
-private struct CategoryChips: View {
-    let categories: [WorkoutCategory]
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            ForEach(categories) { category in
-                CategoryChip(category: category)
-            }
-        }
-    }
-    
-    private func CategoryChip(category: WorkoutCategory) -> some View {
-        Text(category.name)
-            .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(chipBackground)
-            .foregroundStyle(.primary)
-    }
-    
-    private var chipBackground: some View {
-        Capsule()
-            .fill(.ultraThinMaterial)
-            .overlay(
-                Capsule()
-                    .stroke(.primary.opacity(0.2), lineWidth: 1)
-            )
-    }
-}
-
-private struct SubcategoryChips: View {
-    let subcategories: [WorkoutSubcategory]
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            ForEach(subcategories) { subcategory in
-                SubcategoryChip(subcategory: subcategory)
-            }
-        }
-    }
-    
-    private func SubcategoryChip(subcategory: WorkoutSubcategory) -> some View {
-        Text(subcategory.name)
-            .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(chipBackground)
-            .foregroundStyle(.primary)
-    }
-    
-    private var chipBackground: some View {
-        Capsule()
-            .fill(.ultraThinMaterial)
-            .overlay(
-                Capsule()
-                    .stroke(.primary.opacity(0.2), lineWidth: 1)
-            )
-    }
-}
-
 private struct NotesSection: View {
     let notes: String
     
@@ -522,6 +427,245 @@ private struct NotesSection: View {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .primary.opacity(0.05), radius: 16, y: 8)
+        )
+    }
+}
+
+private struct CategoriesGroup: View {
+    let title: String
+    let items: [WorkoutCategory]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Section header
+            HStack {
+                Image(systemName: "tag.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.blue)
+                
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+                
+                Text("\(items.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                    )
+            }
+            
+            // Categories grid
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12)
+            ], spacing: 12) {
+                ForEach(items) { category in
+                    CategoryCard(category: category)
+                }
+            }
+        }
+    }
+}
+
+private struct SubcategoriesGroup: View {
+    let title: String
+    let items: [WorkoutSubcategory]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Section header
+            HStack {
+                Image(systemName: "tag")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.green)
+                
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+                
+                Text("\(items.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                    )
+            }
+            
+            // Subcategories grid
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12)
+            ], spacing: 12) {
+                ForEach(items) { subcategory in
+                    SubcategoryCard(subcategory: subcategory)
+                }
+            }
+        }
+    }
+}
+
+private struct CategoryCard: View {
+    let category: WorkoutCategory
+    
+    var body: some View {
+        let color = Color(hex: category.color) ?? .blue
+        
+        VStack(spacing: 12) {
+            // Icon with background
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                color.opacity(0.2),
+                                color.opacity(0.1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 48, height: 48)
+                
+                Image(systemName: "tag.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+            
+            // Category name
+            Text(category.name)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(color.opacity(0.2), lineWidth: 1)
+                )
+        )
+        .shadow(color: color.opacity(0.1), radius: 8, y: 4)
+    }
+}
+
+private struct SubcategoryCard: View {
+    let subcategory: WorkoutSubcategory
+    
+    var body: some View {
+        let color = Color.green
+        
+        VStack(spacing: 12) {
+            // Icon with background
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                color.opacity(0.2),
+                                color.opacity(0.1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 48, height: 48)
+                
+                Image(systemName: "tag")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+            
+            // Subcategory name
+            Text(subcategory.name)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(color.opacity(0.2), lineWidth: 1)
+                )
+        )
+        .shadow(color: color.opacity(0.1), radius: 8, y: 4)
+    }
+}
+
+private struct CompactMetricCard: View {
+    let icon: String
+    let value: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(color)
+            
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(color.opacity(0.15), lineWidth: 1)
+                )
+        )
+    }
+}
+
+private struct MinimalMetricCard: View {
+    let icon: String
+    let value: String
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(color)
+            
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(color.opacity(0.15), lineWidth: 1)
+                )
         )
     }
 }

@@ -150,8 +150,7 @@ struct WorkoutListView: View {
                         }
                     } label: {
                         if isLoading {
-                            ProgressView()
-                                .controlSize(.small)
+                            InlineLoadingView(size: 16)
                         } else if showToast {
                             Image(systemName: "checkmark")
                                 .foregroundStyle(.green)
@@ -414,28 +413,97 @@ struct WorkoutListView: View {
     
     private func removeDuplicateWorkouts() {
         let allWorkouts = workouts
-        var seenIDs = Set<UUID>()
+        var workoutsToKeep: [Workout] = []
         var duplicatesToDelete: [Workout] = []
         
+        // Strategy 1: Remove exact ID duplicates
+        var seenIDs = Set<UUID>()
         for workout in allWorkouts {
             if seenIDs.contains(workout.id) {
                 duplicatesToDelete.append(workout)
             } else {
                 seenIDs.insert(workout.id)
+                workoutsToKeep.append(workout)
             }
         }
         
-        print("Found \(duplicatesToDelete.count) duplicate workouts to remove")
+        // Strategy 2: Remove fuzzy duplicates (same time, duration, type but different IDs)
+        // This handles CloudKit sync duplicates
+        var finalWorkouts: [Workout] = []
+        var processedWorkouts = Set<String>()
         
-        for duplicate in duplicatesToDelete {
-            modelContext.delete(duplicate)
+        for workout in workoutsToKeep {
+            // Create a signature based on workout characteristics
+            let signature = "\(workout.type.rawValue)_\(Int(workout.startDate.timeIntervalSince1970))_\(Int(workout.duration))"
+            
+            if processedWorkouts.contains(signature) {
+                // This is a potential duplicate - do more detailed checking
+                let timeTolerance: TimeInterval = 5
+                let durationTolerance: TimeInterval = 5
+                
+                let isDuplicate = finalWorkouts.contains { existing in
+                    let timeMatch = abs(existing.startDate.timeIntervalSince1970 - workout.startDate.timeIntervalSince1970) < timeTolerance
+                    let durationMatch = abs(existing.duration - workout.duration) < durationTolerance
+                    let typeMatch = existing.type == workout.type
+                    
+                    // Check calories and distance for additional confidence
+                    var caloriesMatch = true
+                    if let existingCalories = existing.calories, let workoutCalories = workout.calories {
+                        caloriesMatch = abs(existingCalories - workoutCalories) < 50
+                    }
+                    
+                    var distanceMatch = true
+                    if let existingDistance = existing.distance, let workoutDistance = workout.distance {
+                        distanceMatch = abs(existingDistance - workoutDistance) < 100
+                    }
+                    
+                    return timeMatch && durationMatch && typeMatch && caloriesMatch && distanceMatch
+                }
+                
+                if isDuplicate {
+                    duplicatesToDelete.append(workout)
+                    print("Found fuzzy duplicate workout: \(workout.type.rawValue) at \(workout.startDate)")
+                } else {
+                    finalWorkouts.append(workout)
+                    processedWorkouts.insert(signature)
+                }
+            } else {
+                finalWorkouts.append(workout)
+                processedWorkouts.insert(signature)
+            }
         }
         
-        do {
-            try modelContext.save()
-            print("Successfully removed duplicate workouts")
-        } catch {
-            print("Error removing duplicates: \(error)")
+        print("Found \(duplicatesToDelete.count) duplicate workouts to remove (ID duplicates + fuzzy duplicates)")
+        
+        if !duplicatesToDelete.isEmpty {
+            for duplicate in duplicatesToDelete {
+                modelContext.delete(duplicate)
+            }
+            
+            do {
+                try modelContext.save()
+                print("Successfully removed \(duplicatesToDelete.count) duplicate workouts")
+                
+                // Show success message
+                DispatchQueue.main.async {
+                    self.toastMessage = "Removed \(duplicatesToDelete.count) duplicate workouts"
+                    self.showToast = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        self.showToast = false
+                    }
+                }
+            } catch {
+                print("Error removing duplicates: \(error)")
+            }
+        } else {
+            print("No duplicate workouts found")
+            DispatchQueue.main.async {
+                self.toastMessage = "No duplicates found"
+                self.showToast = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    self.showToast = false
+                }
+            }
         }
     }
     
@@ -446,8 +514,34 @@ struct WorkoutListView: View {
         }
         
         print("[UI] Calling unified HealthKit import logic from WorkoutListView.refreshData")
+        
+        // Check if user has premium and CloudKit might be syncing
+        let isPremium = purchaseManager.hasActiveSubscription
+        if isPremium {
+            print("[UI] Premium user detected - checking CloudKit sync status before HealthKit import")
+            
+            // Wait for any ongoing CloudKit sync to complete
+            await CloudKitManager.shared.waitForSyncCompletion()
+            
+            // Check if there are recent CloudKit operations that might conflict
+            do {
+                let cloudStatus = try await CloudKitManager.shared.checkCloudStatus()
+                if !cloudStatus {
+                    print("[UI] CloudKit unavailable for premium user - proceeding with HealthKit only")
+                }
+            } catch {
+                print("[UI] CloudKit status check failed: \(error.localizedDescription)")
+            }
+        }
+        
         do {
             let workoutCountBefore = workouts.count
+            
+            // For premium users, be more conservative with imports to avoid CloudKit conflicts
+            if isPremium {
+                print("[UI] Premium user - using enhanced deduplication for HealthKit import")
+            }
+            
             try await HealthKitManager.shared.importWorkoutsToCoreData(context: modelContext)
             let workoutCountAfter = workouts.count
             
@@ -459,6 +553,9 @@ struct WorkoutListView: View {
                 // Show well done sheet if new workouts were imported
                 if workoutCountAfter > workoutCountBefore {
                     showingWellDoneSheet = true
+                    print("[UI] Imported \(workoutCountAfter - workoutCountBefore) new workouts")
+                } else {
+                    print("[UI] No new workouts imported - all up to date")
                 }
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

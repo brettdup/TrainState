@@ -10,6 +10,7 @@ final class UserSettings {
     var notificationTime: Date?
     var darkModeEnabled: Bool = false
     var measurementSystem: MeasurementSystem = MeasurementSystem.metric
+    var hasInitializedDefaultCategories: Bool = false
     
     init(
         id: UUID = UUID(),

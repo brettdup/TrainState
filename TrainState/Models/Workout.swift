@@ -72,7 +72,7 @@ final class Workout {
 }
 
 // Make WorkoutType codable for export/import functionality
-enum WorkoutType: String, Codable, CaseIterable {
+enum WorkoutType: String, Codable, CaseIterable, Identifiable {
     case strength = "Strength Training"
     case cardio = "Cardio"
     case yoga = "Yoga"
@@ -80,6 +80,8 @@ enum WorkoutType: String, Codable, CaseIterable {
     case cycling = "Cycling"
     case swimming = "Swimming"
     case other = "Other"
+
+    public var id: Self { self }
 }
 
 // MARK: - Codable Extensions for Export/Import

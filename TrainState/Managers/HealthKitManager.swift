@@ -126,7 +126,7 @@ class HealthKitManager: ObservableObject {
         healthStore.execute(query)
     }
     
-    func importWorkoutsToCoreData(context: ModelContext) async throws {
+    func importWorkoutsToCoreData(context: ModelContext, onRoutesStarted: (() -> Void)? = nil, onAllComplete: (() -> Void)? = nil) async throws {
         // Fetch workouts from HealthKit
         let workouts = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKWorkout], Error>) in
             fetchWorkouts { workouts, error in
@@ -147,17 +147,21 @@ class HealthKitManager: ObservableObject {
         var processedWorkouts = 0
         var runningWorkoutsToRoute: [(hkWorkout: HKWorkout, workout: Workout)] = []
 
+        // Enhanced tolerance for time and duration comparison (more lenient for CloudKit synced data)
+        let timeTolerance: TimeInterval = 5 // 5 seconds
+        let durationTolerance: TimeInterval = 5 // 5 seconds
+
         for hkWorkout in sortedWorkouts {
             print("[HealthKit] Importing workout: \(hkWorkout.uuid) type: \(hkWorkout.workoutActivityType.rawValue) name: \(hkWorkout.workoutActivityType.name)")
             var distance: Double? = nil
             distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
 
-            // Enhanced deduplication: check for both healthKitUUID and exact workout matches
+            // Enhanced deduplication: check for both healthKitUUID and fuzzy match on startDate/duration/type
             let uuid = hkWorkout.uuid
             let startDate = hkWorkout.startDate
             let duration = hkWorkout.duration
             
-            // First check by healthKitUUID
+            // First check by healthKitUUID (most reliable)
             let existingByUUID = try? context.fetch(
                 FetchDescriptor<Workout>(predicate: #Predicate { $0.healthKitUUID == uuid })
             )
@@ -166,17 +170,51 @@ class HealthKitManager: ObservableObject {
                 continue
             }
             
-            // Second check by exact match (startDate, duration, type) for workouts that might not have healthKitUUID
+            // Second check by fuzzy match (startDate, duration, type) for workouts that might not have healthKitUUID
+            // This is crucial for CloudKit-synced workouts that may have been restored without healthKitUUID
             let workoutType = convertFromHKWorkoutActivityType(hkWorkout.workoutActivityType)
-            let existingByData = try? context.fetch(
+            let startDateLower = startDate.addingTimeInterval(-timeTolerance)
+            let startDateUpper = startDate.addingTimeInterval(timeTolerance)
+            let durationLower = duration - durationTolerance
+            let durationUpper = duration + durationTolerance
+            
+            // More comprehensive fuzzy matching including optional distance and calories
+            let possibleMatches = try? context.fetch(
                 FetchDescriptor<Workout>(predicate: #Predicate { workout in
-                    workout.startDate == startDate && 
-                    workout.duration == duration && 
-                    workout.type == workoutType
+                    workout.type == workoutType &&
+                    workout.startDate >= startDateLower && workout.startDate <= startDateUpper &&
+                    workout.duration >= durationLower && workout.duration <= durationUpper
                 })
             )
-            if existingByData?.isEmpty == false {
-                print("[HealthKit] Skipping duplicate workout by data match: \(hkWorkout.uuid)")
+            
+            let fuzzyMatch = possibleMatches?.first(where: { candidate in
+                // Time and duration match
+                let timeMatch = abs(candidate.startDate.timeIntervalSince1970 - startDate.timeIntervalSince1970) < timeTolerance
+                let durationMatch = abs(candidate.duration - duration) < durationTolerance
+                
+                // Optional: check calories and distance for additional confidence
+                var caloriesMatch = true
+                if let hkCalories = hkWorkout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
+                   let candidateCalories = candidate.calories {
+                    caloriesMatch = abs(candidateCalories - hkCalories) < 50 // 50 calorie tolerance
+                }
+                
+                var distanceMatch = true
+                if let hkDistance = distance, let candidateDistance = candidate.distance {
+                    distanceMatch = abs(candidateDistance - hkDistance) < 100 // 100 meter tolerance
+                }
+                
+                return timeMatch && durationMatch && caloriesMatch && distanceMatch
+            })
+            
+            if fuzzyMatch != nil {
+                print("[HealthKit] Skipping duplicate workout by enhanced fuzzy match: \(hkWorkout.uuid)")
+                // Update the existing workout with healthKitUUID if it doesn't have one
+                if fuzzyMatch?.healthKitUUID == nil {
+                    fuzzyMatch?.healthKitUUID = uuid
+                    try? context.save()
+                    print("[HealthKit] Updated existing workout with healthKitUUID: \(uuid)")
+                }
                 continue
             }
 
@@ -206,6 +244,10 @@ class HealthKitManager: ObservableObject {
             try await Task.sleep(for: .milliseconds(10))
         }
         try? context.save()
+
+        // Notify UI that route fetching is starting
+        NotificationCenter.default.post(name: NSNotification.Name("ImportRoutesStarted"), object: nil)
+        onRoutesStarted?()
 
         // Fetch routes for running workouts in parallel after main import
         await withTaskGroup(of: Void.self) { group in
@@ -249,6 +291,10 @@ class HealthKitManager: ObservableObject {
                 }
             }
         }
+
+        // Notify UI that all import work is complete
+        NotificationCenter.default.post(name: NSNotification.Name("ImportAllComplete"), object: nil)
+        onAllComplete?()
     }
     
     private func convertToHKWorkoutActivityType(_ type: WorkoutType) -> HKWorkoutActivityType {

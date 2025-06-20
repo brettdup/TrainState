@@ -13,6 +13,7 @@ struct OnboardingView: View {
     @State private var errorMessage: String?
     @State private var animateIcon = false
     @State private var showContent = false
+    @State private var isFinalizingRoutes = false
     
     private let steps = [
         OnboardingStep(
@@ -66,7 +67,8 @@ struct OnboardingView: View {
                                 isActive: index == currentStep,
                                 isImporting: isImporting,
                                 importProgress: importProgress,
-                                showImportUI: index == 1
+                                showImportUI: index == 1,
+                                isFinalizingRoutes: isFinalizingRoutes
                             )
                             .opacity(index == currentStep ? 1 : 0)
                             .scaleEffect(index == currentStep ? 1 : 0.8)
@@ -118,6 +120,12 @@ struct OnboardingView: View {
         .onAppear {
             // Initialize default data when onboarding starts
             DataInitializationManager.shared.initializeAppData(context: modelContext)
+            // Set persistent flag after initialization
+            let descriptor = FetchDescriptor<UserSettings>()
+            if let userSettings = try? modelContext.fetch(descriptor).first {
+                userSettings.hasInitializedDefaultCategories = true
+                try? modelContext.save()
+            }
             
             // Set up notification observer for import progress
             NotificationCenter.default.addObserver(
@@ -145,6 +153,7 @@ struct OnboardingView: View {
         withAnimation(.spring()) {
             isImporting = true
             importProgress = 0.0
+            isFinalizingRoutes = false
         }
         
         Task {
@@ -160,19 +169,27 @@ struct OnboardingView: View {
                     return
                 }
                 
-                // Then import workouts
-                try await HealthKitManager.shared.importWorkoutsToCoreData(context: modelContext)
+                // Then import workouts (with new callbacks)
+                try await HealthKitManager.shared.importWorkoutsToCoreData(
+                    context: modelContext,
+                    onRoutesStarted: {
+                        DispatchQueue.main.async {
+                            isFinalizingRoutes = true
+                        }
+                    },
+                    onAllComplete: {
+                        DispatchQueue.main.async {
+                            isImporting = false
+                            importProgress = 1.0
+                            isFinalizingRoutes = false
+                        }
+                    }
+                )
                 
                 await MainActor.run {
-                    withAnimation(.spring()) {
-                        isImporting = false
-                        importProgress = 1.0
-                    }
-                    
                     // Celebrate completion with haptic feedback
                     let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                     impactFeedback.impactOccurred()
-                    
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                         withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
                             currentStep += 1
@@ -184,8 +201,8 @@ struct OnboardingView: View {
                     withAnimation(.spring()) {
                         isImporting = false
                         importProgress = 1.0
+                        isFinalizingRoutes = false
                     }
-                    
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                         withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
                             currentStep += 1
@@ -314,13 +331,14 @@ struct StepContentView: View {
     let isImporting: Bool
     let importProgress: Double
     let showImportUI: Bool
+    let isFinalizingRoutes: Bool
     @State private var iconScale: CGFloat = 0.8
     @State private var showText = false
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 32) {
-                Spacer(minLength: 40)
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                Spacer(minLength: geometry.size.height * 0.04)
                 
                 // Animated icon with glow effect
                 ZStack {
@@ -345,6 +363,7 @@ struct StepContentView: View {
                         .animation(.spring(response: 0.8, dampingFraction: 0.6).repeatForever(autoreverses: true), value: iconScale)
                 }
                 .scaleEffect(isActive ? 1 : 0.8)
+                .frame(height: 140)
                 
                 // Content card
                 VStack(spacing: 20) {
@@ -354,6 +373,9 @@ struct StepContentView: View {
                         .foregroundStyle(.white)
                         .opacity(showText ? 1 : 0)
                         .offset(y: showText ? 0 : 20)
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(2)
+                        .layoutPriority(1)
                     
                     Text(step.description)
                         .font(.title3)
@@ -367,6 +389,7 @@ struct StepContentView: View {
                     if showImportUI {
                         ImportProgressView(
                             isImporting: isImporting,
+                            isFinalizingRoutes: isFinalizingRoutes,
                             progress: importProgress,
                             gradient: step.gradient
                         )
@@ -376,9 +399,11 @@ struct StepContentView: View {
                     }
                 }
                 .padding(.horizontal, 32)
+                .frame(maxWidth: .infinity)
                 
-                Spacer(minLength: 120)
+                Spacer(minLength: geometry.size.height * 0.10)
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .onAppear {
             if isActive {
@@ -404,6 +429,7 @@ struct StepContentView: View {
 
 struct ImportProgressView: View {
     let isImporting: Bool
+    let isFinalizingRoutes: Bool
     let progress: Double
     let gradient: LinearGradient
     @State private var pulseAnimation = false
@@ -418,6 +444,7 @@ struct ImportProgressView: View {
         "Processing your data...",
         "Organizing workouts...",
         "Almost finished...",
+        "Finalizing routes...",
         "Import complete! 🎉"
     ]
     
@@ -574,27 +601,20 @@ struct ImportProgressView: View {
             rotationDegrees = 360
             updateStatusMessage()
         }
-        .onChange(of: progress) { _, newProgress in
+        .onChange(of: progress) { _, _ in
             updateStatusMessage()
-            
-            // Show success state when complete
-            if newProgress >= 1.0 && !showSuccess {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    withAnimation(.spring(response: 0.8, dampingFraction: 0.6)) {
-                        showSuccess = true
-                    }
-                    
-                    // Haptic feedback
-                    let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
-                    impactFeedback.impactOccurred()
-                }
-            }
+            checkForCompletion()
+        }
+        .onChange(of: isFinalizingRoutes) { _, _ in
+            checkForCompletion()
         }
     }
     
     private var currentStatusMessage: String {
         if showSuccess {
             return statusMessages.last ?? "Complete!"
+        } else if isFinalizingRoutes {
+            return statusMessages[5] // "Finalizing routes..."
         } else {
             return statusMessages[currentStatusIndex]
         }
@@ -622,6 +642,19 @@ struct ImportProgressView: View {
         if newIndex != currentStatusIndex {
             withAnimation(.easeInOut(duration: 0.3)) {
                 currentStatusIndex = newIndex
+            }
+        }
+    }
+    
+    private func checkForCompletion() {
+        if progress >= 1.0 && !isFinalizingRoutes && !showSuccess {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                withAnimation(.spring(response: 0.8, dampingFraction: 0.6)) {
+                    showSuccess = true
+                }
+                // Haptic feedback
+                let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
+                impactFeedback.impactOccurred()
             }
         }
     }

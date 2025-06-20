@@ -70,7 +70,6 @@ struct AnalyticsView: View {
                         .padding(.horizontal, 20)
                         .scaleEffect(animateCards ? 1 : 0.95)
                         .opacity(animateCards ? 1 : 0)
-                        .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1), value: animateCards)
                         
                         if purchaseManager.hasActiveSubscription {
                             // Premium Content with modern design
@@ -83,13 +82,11 @@ struct AnalyticsView: View {
                                 )
                                 .scaleEffect(animateCards ? 1 : 0.95)
                                 .opacity(animateCards ? 1 : 0)
-                                .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2), value: animateCards)
                                 
                                 // Enhanced activity chart
                                 ModernActivityChartView(dailySummaries: cachedDailySummaries)
                                     .scaleEffect(animateCards ? 1 : 0.95)
                                     .opacity(animateCards ? 1 : 0)
-                                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.3), value: animateCards)
                                 
                                 // Modern weekly breakdown
                                 ModernWeeklyBreakdownView(
@@ -97,14 +94,12 @@ struct AnalyticsView: View {
                                     calendar: calendar
                                 )
                                 .scaleEffect(animateCards ? 1 : 0.95)
-                                .opacity(animateCards ? 1 : 0)
-                                .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4), value: animateCards)
+                                    .opacity(animateCards ? 1 : 0)
                                 
                                 // Quick access features
                                 QuickAccessFeaturesView()
                                     .scaleEffect(animateCards ? 1 : 0.95)
                                     .opacity(animateCards ? 1 : 0)
-                                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.5), value: animateCards)
                             }
                         } else {
                             // Enhanced free content with premium preview
@@ -113,13 +108,11 @@ struct AnalyticsView: View {
                                 BasicStatsOverview(filteredWorkouts: cachedFilteredWorkouts)
                                     .scaleEffect(animateCards ? 1 : 0.95)
                                     .opacity(animateCards ? 1 : 0)
-                                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2), value: animateCards)
                                 
                                 // Enhanced premium upsell
                                 ModernPremiumUpsellCard(showingPremiumPaywall: $showingPremiumPaywall)
                                     .scaleEffect(animateCards ? 1 : 0.95)
                                     .opacity(animateCards ? 1 : 0)
-                                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.3), value: animateCards)
                             }
                         }
                     }
@@ -134,9 +127,7 @@ struct AnalyticsView: View {
         }
         .onAppear {
             updateCachedData()
-            withAnimation(.easeOut(duration: 0.8).delay(0.3)) {
-                animateCards = true
-            }
+            animateCards = true
         }
         .onChange(of: workouts) { _, _ in
             updateCachedData()
@@ -180,47 +171,6 @@ struct AnalyticsView: View {
             let sunday = calendar.date(byAdding: .day, value: 6, to: monday)!
             return (monday, calendar.date(byAdding: .day, value: 1, to: sunday)!)
         }
-    }
-    
-    private var filteredWorkouts: (running: [Workout], strength: [Workout]) {
-        let range = dateRange
-        let filtered = workouts.filter { $0.startDate >= range.start && $0.startDate < range.end }
-        return (
-            running: filtered.filter { $0.type == .running },
-            strength: filtered.filter { $0.type == .strength }
-        )
-    }
-    
-    private var dailySummaries: [DailyWorkoutSummary] {
-        let range = dateRange
-        var summaries: [DailyWorkoutSummary] = []
-        
-        var currentDate = range.start
-        while currentDate < range.end {
-            let dayStart = calendar.startOfDay(for: currentDate)
-            let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
-            
-            let runningWorkouts = filteredWorkouts.running.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
-            let strengthWorkouts = filteredWorkouts.strength.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
-            
-            let runningDuration = runningWorkouts.reduce(0) { $0 + $1.duration }
-            let runningDistance = runningWorkouts.compactMap { $0.distance }.reduce(0, +)
-            
-            let strengthDuration = strengthWorkouts.reduce(0) { $0 + $1.duration }
-            let strengthCalories = strengthWorkouts.compactMap { $0.calories }.reduce(0, +)
-            
-            summaries.append(DailyWorkoutSummary(
-                date: dayStart,
-                runningDuration: runningDuration,
-                runningDistance: runningDistance,
-                strengthDuration: strengthDuration,
-                strengthCalories: strengthCalories
-            ))
-            
-            currentDate = dayEnd
-        }
-        
-        return summaries.sorted { $0.date > $1.date }
     }
     
     private func calculateCurrentStreak(workouts: [Workout], calendar: Calendar) -> Int {
@@ -291,12 +241,40 @@ struct AnalyticsView: View {
         let newHash = workouts.map { $0.id }.hashValue
         let hasWorkoutsChanged = newHash != lastWorkoutsHash
         let hasDisplayModeChanged = selectedWeekDisplayMode != lastWeekDisplayMode
-        
+
         if hasWorkoutsChanged || hasDisplayModeChanged || cachedDailySummaries.isEmpty {
             lastWorkoutsHash = newHash
             lastWeekDisplayMode = selectedWeekDisplayMode
-            cachedFilteredWorkouts = filteredWorkouts
-            cachedDailySummaries = dailySummaries
+
+            // Filtering logic (was filteredWorkouts)
+            let range = dateRange
+            let filtered = workouts.filter { $0.startDate >= range.start && $0.startDate < range.end }
+            let running = filtered.filter { $0.type == .running }
+            let strength = filtered.filter { $0.type == .strength }
+            cachedFilteredWorkouts = (running: running, strength: strength)
+
+            // Daily summaries logic (was dailySummaries)
+            var summaries: [DailyWorkoutSummary] = []
+            var currentDate = range.start
+            while currentDate < range.end {
+                let dayStart = calendar.startOfDay(for: currentDate)
+                let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
+                let runningWorkouts = running.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
+                let strengthWorkouts = strength.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
+                let runningDuration = runningWorkouts.reduce(0) { $0 + $1.duration }
+                let runningDistance = runningWorkouts.compactMap { $0.distance }.reduce(0, +)
+                let strengthDuration = strengthWorkouts.reduce(0) { $0 + $1.duration }
+                let strengthCalories = strengthWorkouts.compactMap { $0.calories }.reduce(0, +)
+                summaries.append(DailyWorkoutSummary(
+                    date: dayStart,
+                    runningDuration: runningDuration,
+                    runningDistance: runningDistance,
+                    strengthDuration: strengthDuration,
+                    strengthCalories: strengthCalories
+                ))
+                currentDate = dayEnd
+            }
+            cachedDailySummaries = summaries.sorted { $0.date > $1.date }
         }
     }
 }
@@ -341,12 +319,11 @@ struct ModernTimePeriodSelector: View {
             .opacity(isPremium ? 1.0 : 0.6)
         }
         .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: .primary.opacity(0.06), radius: 20, x: 0, y: 8)
     }
 }
 
@@ -393,6 +370,11 @@ struct HeroStatsView: View {
             }
         }
         .padding(.horizontal, 20)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
+        )
     }
 }
 
@@ -452,19 +434,11 @@ struct HeroStatCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(gradient.opacity(0.8))
-                
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(.white.opacity(0.2), lineWidth: 1)
-            }
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: .blue.opacity(0.3), radius: 20, x: 0, y: 10)
     }
 }
 
@@ -548,18 +522,16 @@ struct AnalyticsWorkoutTypeCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: .primary.opacity(0.04), radius: 15, x: 0, y: 5)
     }
 }
 
 struct ModernActivityChartView: View {
     let dailySummaries: [DailyWorkoutSummary]
-    @State private var animateChart = false
     
     var body: some View {
         VStack(spacing: 20) {
@@ -594,7 +566,7 @@ struct ModernActivityChartView: View {
                 ForEach(dailySummaries) { summary in
                     BarMark(
                         x: .value("Date", summary.date, unit: .day),
-                        y: .value("Duration", animateChart ? summary.totalDuration / 60 : 0)
+                        y: .value("Duration", summary.totalDuration / 60)
                     )
                     .foregroundStyle(
                         LinearGradient(
@@ -622,18 +594,11 @@ struct ModernActivityChartView: View {
             .padding(.horizontal, 20)
         }
         .padding(.vertical, 24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: .primary.opacity(0.06), radius: 25, x: 0, y: 10)
-        .padding(.horizontal, 20)
-        .onAppear {
-            withAnimation(.easeOut(duration: 1.2).delay(0.5)) {
-                animateChart = true
-            }
-        }
     }
 }
 
@@ -660,13 +625,11 @@ struct ModernWeeklyBreakdownView: View {
             .padding(.horizontal, 16)
         }
         .padding(.vertical, 24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: .primary.opacity(0.06), radius: 25, x: 0, y: 10)
-        .padding(.horizontal, 20)
     }
 }
 
@@ -819,13 +782,11 @@ struct QuickAccessFeaturesView: View {
             .padding(.horizontal, 20)
         }
         .padding(.vertical, 24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: .primary.opacity(0.06), radius: 25, x: 0, y: 10)
-        .padding(.horizontal, 20)
     }
 }
 
@@ -859,10 +820,10 @@ struct QuickAccessCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
         )
     }
 }
@@ -903,13 +864,11 @@ struct BasicStatsOverview: View {
             .padding(.horizontal, 20)
         }
         .padding(.vertical, 24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: .primary.opacity(0.06), radius: 25, x: 0, y: 10)
-        .padding(.horizontal, 20)
     }
 }
 
@@ -935,10 +894,10 @@ struct BasicStatCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(color.opacity(0.2), lineWidth: 1)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
         )
     }
 }
@@ -962,8 +921,6 @@ struct ModernPremiumUpsellCard: View {
                         .frame(width: 80, height: 80)
                         .blur(radius: 20)
                         .opacity(0.6)
-                        .scaleEffect(animateGradient ? 1.2 : 1.0)
-                        .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: animateGradient)
                     
                     Circle()
                         .fill(.ultraThinMaterial)
@@ -1007,7 +964,6 @@ struct ModernPremiumUpsellCard: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
                 .background(.white, in: Capsule())
-                .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
             }
             .padding(32)
             .background(
@@ -1020,13 +976,9 @@ struct ModernPremiumUpsellCard: View {
                     
                     RoundedRectangle(cornerRadius: 32, style: .continuous)
                         .fill(.ultraThinMaterial)
-                    
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .stroke(.white.opacity(0.2), lineWidth: 1)
                 }
             )
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-            .shadow(color: .blue.opacity(0.3), radius: 30, x: 0, y: 15)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 20)

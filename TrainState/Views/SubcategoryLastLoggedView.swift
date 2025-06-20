@@ -8,9 +8,26 @@ struct SubcategoryLastLoggedView: View {
     @Query private var subcategories: [WorkoutSubcategory]
     
     @State private var selectedWorkoutType: WorkoutType = .strength
-    @State private var animateCards = false
     @State private var searchText = ""
     @State private var showingFilterOptions = false
+    @State private var lastLoggedCache: [UUID: Date] = [:]
+    
+    private func buildLastLoggedCache() -> [UUID: Date] {
+        var cache: [UUID: Date] = [:]
+        for workout in workouts {
+            guard let subcats = workout.subcategories else { continue }
+            for subcat in subcats {
+                if let existing = cache[subcat.id] {
+                    if workout.startDate > existing {
+                        cache[subcat.id] = workout.startDate
+                    }
+                } else {
+                    cache[subcat.id] = workout.startDate
+                }
+            }
+        }
+        return cache
+    }
     
     private var filteredSubcategories: [WorkoutSubcategory] {
         let relevantCategoryIds = categories
@@ -32,19 +49,7 @@ struct SubcategoryLastLoggedView: View {
     }
     
     private func getLastLoggedDate(for subcategory: WorkoutSubcategory) -> Date? {
-        let subcategoryId = subcategory.id
-        let descriptor = FetchDescriptor<Workout>(
-            predicate: #Predicate { workout in
-                workout.subcategories?.contains { $0.id == subcategoryId } ?? false
-            },
-            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
-        )
-        
-        if let lastWorkout = try? modelContext.fetch(descriptor).first {
-            return lastWorkout.startDate
-        }
-        
-        return nil
+        lastLoggedCache[subcategory.id]
     }
     
     private func formatDate(_ date: Date?) -> String {
@@ -178,21 +183,12 @@ struct SubcategoryLastLoggedView: View {
                         getLastLoggedDate: getLastLoggedDate,
                         getDaysSinceLastLogged: getDaysSinceLastLogged
                     )
-                    .scaleEffect(animateCards ? 1 : 0.95)
-                    .opacity(animateCards ? 1 : 0)
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1), value: animateCards)
                     
                     // Modern workout type selector
                     ModernWorkoutTypeSelector(selectedType: $selectedWorkoutType)
-                        .scaleEffect(animateCards ? 1 : 0.95)
-                        .opacity(animateCards ? 1 : 0)
-                        .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2), value: animateCards)
                     
                     // Search bar
                     SearchBarView(searchText: $searchText)
-                        .scaleEffect(animateCards ? 1 : 0.95)
-                        .opacity(animateCards ? 1 : 0)
-                        .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.3), value: animateCards)
                     
                     // Grouped exercise cards
                     ForEach(Array(groupedSubcategories.enumerated()), id: \.offset) { index, group in
@@ -206,9 +202,6 @@ struct SubcategoryLastLoggedView: View {
                             getStatusMessage: getStatusMessage,
                             formatDate: formatDate
                         )
-                        .scaleEffect(animateCards ? 1 : 0.95)
-                        .opacity(animateCards ? 1 : 0)
-                        .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.4 + Double(index) * 0.1), value: animateCards)
                     }
                     
                     // Bottom spacing
@@ -222,9 +215,13 @@ struct SubcategoryLastLoggedView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(.clear, for: .navigationBar)
         .onAppear {
-            withAnimation(.easeOut(duration: 0.8).delay(0.2)) {
-                animateCards = true
-            }
+            lastLoggedCache = buildLastLoggedCache()
+        }
+        .onChange(of: workouts) { _, _ in
+            lastLoggedCache = buildLastLoggedCache()
+        }
+        .onChange(of: subcategories) { _, _ in
+            lastLoggedCache = buildLastLoggedCache()
         }
     }
 }
@@ -294,13 +291,8 @@ struct HeaderStatsView: View {
             .padding(.horizontal, 20)
         }
         .padding(.vertical, 24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
-        )
-        .shadow(color: .primary.opacity(0.06), radius: 25, x: 0, y: 10)
-        .padding(.horizontal, 20)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.gray.opacity(0.12), lineWidth: 1))
     }
 }
 
@@ -327,11 +319,8 @@ struct ExerciseStatCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
-        .background(color.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(color.opacity(0.2), lineWidth: 1)
-        )
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.gray.opacity(0.12), lineWidth: 1))
     }
 }
 
@@ -363,13 +352,8 @@ struct ModernWorkoutTypeSelector: View {
             }
         }
         .padding(.vertical, 20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
-        )
-        .shadow(color: .primary.opacity(0.04), radius: 15, x: 0, y: 5)
-        .padding(.horizontal, 20)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.gray.opacity(0.12), lineWidth: 1))
     }
 }
 
@@ -406,12 +390,6 @@ struct WorkoutTypeChip: View {
                 in: Capsule()
             )
             .foregroundStyle(isSelected ? .white : .primary)
-            .shadow(
-                color: isSelected ? chipColor.opacity(0.3) : .clear,
-                radius: isSelected ? 8 : 0,
-                x: 0,
-                y: isSelected ? 4 : 0
-            )
         }
         .buttonStyle(.plain)
         .scaleEffect(isSelected ? 1.05 : 1.0)
@@ -457,13 +435,8 @@ struct SearchBarView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
-        )
-        .shadow(color: .primary.opacity(0.04), radius: 10, x: 0, y: 4)
-        .padding(.horizontal, 20)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.gray.opacity(0.12), lineWidth: 1))
     }
 }
 
@@ -543,13 +516,8 @@ struct ExerciseGroupSection: View {
             .padding(.horizontal, 16)
         }
         .padding(.vertical, 20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.1), lineWidth: 1)
-        )
-        .shadow(color: .primary.opacity(0.04), radius: 15, x: 0, y: 6)
-        .padding(.horizontal, 20)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.gray.opacity(0.12), lineWidth: 1))
     }
 }
 

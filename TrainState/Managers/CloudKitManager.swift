@@ -12,6 +12,11 @@ class CloudKitManager {
     // Debug callback to update UI
     var debugCallback: ((String) -> Void)?
     
+    // Sync state tracking to prevent race conditions
+    @Published private(set) var isSyncing = false
+    @Published private(set) var lastSyncDate: Date?
+    private let syncQueue = DispatchQueue(label: "cloudkit.sync", qos: .utility)
+    
     private init() {
         if let bundleIdentifier = Bundle.main.bundleIdentifier {
             print("[CloudKit] Initializing with bundle identifier: \(bundleIdentifier)")
@@ -49,6 +54,9 @@ class CloudKitManager {
     // MARK: - Backup Operations
     
     func backupToCloud(context: ModelContext) async throws {
+        setSyncState(true)
+        defer { setSyncState(false) }
+        
         let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
         
         updateDebug("Environment: \(environment)\nStatus: Starting backup...\nContainer: \(container.containerIdentifier ?? "unknown")")
@@ -201,146 +209,96 @@ class CloudKitManager {
         
         updateDebug("Environment: \(environment)\nStatus: iCloud account available ✅\nCreating CloudKit query...\nContainer: \(container.containerIdentifier ?? "unknown")")
         
-        // Use a field-based predicate since schema shows timestamp is queryable
-        let oneYearAgo = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date.distantPast
-        let predicate = NSPredicate(format: "timestamp > %@", oneYearAgo as NSDate)
-        let query = CKQuery(recordType: "Backup", predicate: predicate)
-        query.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
-        
-        print("[CloudKit] Query: \(query) with predicate: \(predicate)")
-        
-        updateDebug("Environment: \(environment)\nStatus: Executing CloudKit query...\nQuery: Backup records > 1 year ago\nContainer: \(container.containerIdentifier ?? "unknown")")
-        
+        // Use optimized query strategy - try simple query first, fallback if needed
         do {
-            let (results, _) = try await privateDatabase.records(matching: query)
-            print("[CloudKit] Query executed successfully")
-            print("[CloudKit] Found \(results.count) backup records")
-            
-            updateDebug("Environment: \(environment)\nStatus: Query successful ✅\nFound: \(results.count) backup records\nContainer: \(container.containerIdentifier ?? "unknown")")
-            
-            if results.isEmpty {
-                print("[CloudKit] ⚠️ No backup records found in this environment")
-                print("[CloudKit] This could mean:")
-                print("[CloudKit] - No backups have been created in Production environment")
-                print("[CloudKit] - Backups exist only in Sandbox environment")
-                print("[CloudKit] - Different iCloud account being used")
-                
-                updateDebug("Environment: \(environment)\nStatus: No backups found ⚠️\nPossible causes:\n• No backups in \(environment)\n• Different iCloud account\n• Schema issue")
-            }
-            
-            var backups: [BackupInfo] = []
-            
-            for (recordID, result) in results {
-                switch result {
-                case .success(let record):
-                    print("[CloudKit] ✅ Record fetched: \(recordID.recordName)")
-                    
-                    // Validate all required fields exist
-                    guard let timestamp = record["timestamp"] as? Date else {
-                        print("[CloudKit] ❌ Missing timestamp in record: \(recordID.recordName)")
-                        continue
-                    }
-                    guard let deviceName = record["deviceName"] as? String else {
-                        print("[CloudKit] ❌ Missing deviceName in record: \(recordID.recordName)")
-                        continue
-                    }
-                    guard let workoutCount = record["workoutCount"] as? Int else {
-                        print("[CloudKit] ❌ Missing workoutCount in record: \(recordID.recordName)")
-                        continue
-                    }
-                    guard let categoryCount = record["categoryCount"] as? Int else {
-                        print("[CloudKit] ❌ Missing categoryCount in record: \(recordID.recordName)")
-                        continue
-                    }
-                    guard let subcategoryCount = record["subcategoryCount"] as? Int else {
-                        print("[CloudKit] ❌ Missing subcategoryCount in record: \(recordID.recordName)")
-                        continue
-                    }
-                    guard let assignedSubcategoryCount = record["assignedSubcategoryCount"] as? Int else {
-                        print("[CloudKit] ❌ Missing assignedSubcategoryCount in record: \(recordID.recordName)")
-                        continue
-                    }
-                    
-                    // Validate that assets exist
-                    guard record["workouts"] as? CKAsset != nil,
-                          record["categories"] as? CKAsset != nil,
-                          record["subcategories"] as? CKAsset != nil else {
-                        print("[CloudKit] ❌ Missing required assets in record: \(recordID.recordName)")
-                        continue
-                    }
-                    
-                    let backupInfo = BackupInfo(
-                        recordID: record.recordID,
-                        timestamp: timestamp,
-                        deviceName: deviceName,
-                        workoutCount: workoutCount,
-                        categoryCount: categoryCount,
-                        subcategoryCount: subcategoryCount,
-                        assignedSubcategoryCount: assignedSubcategoryCount
-                    )
-                    backups.append(backupInfo)
-                    print("[CloudKit] ✅ Added backup from \(deviceName) with \(workoutCount) workouts at \(timestamp)")
-                    
-                case .failure(let error):
-                    print("[CloudKit] ❌ Record fetch error for \(recordID.recordName): \(error)")
-                    if let ckError = error as? CKError {
-                        print("[CloudKit] CloudKit error code: \(ckError.code.rawValue)")
-                    }
-                }
-            }
-            
-            // Sort backups manually by timestamp (most recent first)
-            let sortedBackups = backups.sorted { $0.timestamp > $1.timestamp }
-            
-            print("[CloudKit] ✅ Returning \(sortedBackups.count) valid backups")
-            
-            if sortedBackups.isEmpty {
-                updateDebug("Environment: \(environment)\nStatus: No valid backups ⚠️\nFound \(results.count) records but none were valid\nContainer: \(container.containerIdentifier ?? "unknown")")
-            } else {
-                updateDebug("Environment: \(environment)\nStatus: SUCCESS ✅\nValid backups: \(sortedBackups.count)\nLatest: \(sortedBackups.first?.timestamp.formatted() ?? "N/A")")
-            }
-            
-            return sortedBackups
-            
+            return try await fetchBackupsOptimized()
         } catch let error as CKError {
-            print("[CloudKit] ❌ CloudKit query failed:")
-            print("- Error code: \(error.code.rawValue)")
-            print("- Error description: \(error.localizedDescription)")
-            if let underlyingError = error.userInfo[NSUnderlyingErrorKey] as? Error {
-                print("- Underlying error: \(underlyingError.localizedDescription)")
-            }
+            print("[CloudKit] ❌ Primary query failed with CloudKit error: \(error.localizedDescription)")
+            print("[CloudKit] Error code: \(error.code.rawValue)")
             
-            updateDebug("Environment: \(environment)\nStatus: CloudKit ERROR ❌\nCode: \(error.code.rawValue)\nError: \(error.localizedDescription)\nContainer: \(container.containerIdentifier ?? "unknown")")
-            
+            // Handle specific error cases with targeted fallbacks
             switch error.code {
-            case .notAuthenticated:
-                throw CloudKitError.notAuthenticated
-            case .networkFailure, .networkUnavailable:
-                throw CloudKitError.networkUnavailable
-            case .zoneNotFound:
-                throw CloudKitError.zoneNotFound
             case .unknownItem:
-                print("[CloudKit] Unknown item - Schema likely not deployed to current environment")
-                print("[CloudKit] If this is TestFlight, ensure schema is deployed to PRODUCTION")
-                let debugError = CloudKitError.queryFailed(NSError(domain: "CloudKitDebug", code: 404, userInfo: [
-                    NSLocalizedDescriptionKey: "Schema not deployed to \(environment) environment. Error code: \(error.code.rawValue)"
-                ]))
-                throw debugError
+                print("[CloudKit] Schema not found - trying alternative query...")
+                updateDebug("Environment: \(environment)\nStatus: Schema not deployed ⚠️\nTrying alternative method...")
+                return try await fetchBackupsWithoutSorting()
             case .invalidArguments:
-                print("[CloudKit] Invalid arguments - trying alternative fetch method...")
-                print("[CloudKit] This may indicate schema mismatch between environments")
-                // Try a completely different approach
-                return try await fetchBackupsAlternativeMethod()
+                print("[CloudKit] Invalid arguments - trying simpler query...")
+                updateDebug("Environment: \(environment)\nStatus: Invalid query ⚠️\nTrying simpler approach...")
+                return try await fetchBackupsWithoutSorting()
+            case .zoneNotFound:
+                print("[CloudKit] Zone not found")
+                throw CloudKitError.zoneNotFound
             default:
-                let debugError = CloudKitError.queryFailed(NSError(domain: "CloudKitDebug", code: Int(error.code.rawValue), userInfo: [
-                    NSLocalizedDescriptionKey: "CloudKit error in \(environment): \(error.localizedDescription) (Code: \(error.code.rawValue))"
-                ]))
-                throw debugError
+                updateDebug("Environment: \(environment)\nStatus: ERROR ❌\nCode: \(error.code.rawValue)\nError: \(error.localizedDescription)")
+                throw CloudKitError.queryFailed(error)
             }
         } catch {
             print("[CloudKit] ❌ Unexpected error during query: \(error)")
             throw CloudKitError.queryFailed(error)
         }
+    }
+    
+    // MARK: - Optimized Primary Query Method
+    private func fetchBackupsOptimized() async throws -> [BackupInfo] {
+        print("[CloudKit] Using optimized primary query method")
+        
+        // Use a simple, efficient query with date filtering
+        let oneYearAgo = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date.distantPast
+        let predicate = NSPredicate(format: "timestamp > %@", oneYearAgo as NSDate)
+        let query = CKQuery(recordType: "Backup", predicate: predicate)
+        query.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
+        
+        let (results, _) = try await privateDatabase.records(matching: query)
+        print("[CloudKit] Optimized query found \(results.count) backup records")
+        
+        // Convert dictionary to array of tuples for processing
+        let resultArray = Array(results)
+        return try processBackupResults(resultArray)
+    }
+    
+    // MARK: - Process Results Helper
+    private func processBackupResults(_ results: [(CKRecord.ID, Result<CKRecord, Error>)]) throws -> [BackupInfo] {
+        var backups: [BackupInfo] = []
+        
+        for (recordID, result) in results {
+            switch result {
+            case .success(let record):
+                // Validate all required fields exist efficiently
+                guard let timestamp = record["timestamp"] as? Date,
+                      let deviceName = record["deviceName"] as? String,
+                      let workoutCount = record["workoutCount"] as? Int,
+                      let categoryCount = record["categoryCount"] as? Int,
+                      let subcategoryCount = record["subcategoryCount"] as? Int,
+                      let assignedSubcategoryCount = record["assignedSubcategoryCount"] as? Int,
+                      record["workouts"] as? CKAsset != nil,
+                      record["categories"] as? CKAsset != nil,
+                      record["subcategories"] as? CKAsset != nil else {
+                    print("[CloudKit] ❌ Invalid record data: \(recordID.recordName)")
+                    continue
+                }
+                
+                let backupInfo = BackupInfo(
+                    recordID: record.recordID,
+                    timestamp: timestamp,
+                    deviceName: deviceName,
+                    workoutCount: workoutCount,
+                    categoryCount: categoryCount,
+                    subcategoryCount: subcategoryCount,
+                    assignedSubcategoryCount: assignedSubcategoryCount
+                )
+                backups.append(backupInfo)
+                
+            case .failure(let error):
+                print("[CloudKit] ❌ Record fetch error for \(recordID.recordName): \(error)")
+            }
+        }
+        
+        // Sort backups by timestamp (most recent first)
+        let sortedBackups = backups.sorted { $0.timestamp > $1.timestamp }
+        print("[CloudKit] ✅ Processed \(sortedBackups.count) valid backups")
+        
+        return sortedBackups
     }
     
     private func fetchBackupsWithoutSorting() async throws -> [BackupInfo] {
@@ -507,6 +465,9 @@ class CloudKitManager {
     }
     
     func restoreFromCloud(backupInfo: BackupInfo, context: ModelContext) async throws {
+        setSyncState(true)
+        defer { setSyncState(false) }
+        
         print("[CloudKit] Starting restore from backup: \(backupInfo.recordID.recordName)")
         
         do {
@@ -755,6 +716,98 @@ class CloudKitManager {
         } catch {
             print("[CloudKit] ❌ Error checking iCloud status: \(error)")
             throw CloudKitError.accountStatusCheckFailed(error)
+        }
+    }
+    
+    // MARK: - Delete Backup
+    /// Deletes a backup record from CloudKit given a BackupInfo
+    func deleteBackup(_ backup: BackupInfo) async throws {
+        print("[CloudKit] Deleting backup: \(backup.recordID.recordName)")
+        do {
+            try await privateDatabase.deleteRecord(withID: backup.recordID)
+            print("[CloudKit] ✅ Successfully deleted backup: \(backup.recordID.recordName)")
+            updateDebug("Deleted backup: \(backup.recordID.recordName)")
+        } catch let error as CKError {
+            print("[CloudKit] ❌ Failed to delete backup: \(error.localizedDescription)")
+            updateDebug("Failed to delete backup: \(backup.recordID.recordName)\nError: \(error.localizedDescription)")
+            throw CloudKitError.queryFailed(error)
+        } catch {
+            print("[CloudKit] ❌ Unexpected error deleting backup: \(error)")
+            throw CloudKitError.queryFailed(error)
+        }
+    }
+    
+    /// Deletes multiple backup records from CloudKit efficiently in parallel
+    func deleteBackups(_ backups: [BackupInfo]) async throws -> [BackupInfo] {
+        guard !backups.isEmpty else { return [] }
+        
+        print("[CloudKit] Deleting \(backups.count) backups in parallel")
+        
+        // Use TaskGroup for parallel deletion
+        let results = await withTaskGroup(of: (BackupInfo, Result<Void, Error>).self, returning: [(BackupInfo, Result<Void, Error>)].self) { group in
+            for backup in backups {
+                group.addTask {
+                    let result: Result<Void, Error>
+                    do {
+                        try await self.privateDatabase.deleteRecord(withID: backup.recordID)
+                        result = .success(())
+                    } catch {
+                        result = .failure(error)
+                    }
+                    return (backup, result)
+                }
+            }
+            
+            var results: [(BackupInfo, Result<Void, Error>)] = []
+            for await result in group {
+                results.append(result)
+            }
+            return results
+        }
+        
+        // Process results and track failures
+        var failedBackups: [BackupInfo] = []
+        var successCount = 0
+        
+        for (backup, result) in results {
+            switch result {
+            case .success:
+                print("[CloudKit] ✅ Successfully deleted backup: \(backup.recordID.recordName)")
+                successCount += 1
+            case .failure(let error):
+                print("[CloudKit] ❌ Failed to delete backup \(backup.recordID.recordName): \(error.localizedDescription)")
+                failedBackups.append(backup)
+            }
+        }
+        
+        updateDebug("Batch deletion complete: \(successCount)/\(backups.count) successful")
+        
+        if !failedBackups.isEmpty {
+            let errorMessage = "Failed to delete \(failedBackups.count) out of \(backups.count) backups"
+            throw CloudKitError.queryFailed(NSError(domain: "CloudKitBatchDelete", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage]))
+        }
+        
+        return failedBackups
+    }
+    
+    // MARK: - Sync State Management
+    
+    func waitForSyncCompletion() async {
+        while isSyncing {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+    
+    var isSyncInProgress: Bool {
+        return isSyncing
+    }
+    
+    private func setSyncState(_ syncing: Bool) {
+        DispatchQueue.main.async {
+            self.isSyncing = syncing
+            if !syncing {
+                self.lastSyncDate = Date()
+            }
         }
     }
 }

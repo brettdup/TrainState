@@ -28,6 +28,13 @@ struct SettingsView: View {
     @State private var isLoadingBackups = false
     @State private var debugInfo = "Initializing CloudKit debug..."
     
+    // Add new state for manage backups sheet
+    @State private var showingManageBackups = false
+    
+    // Add deletion state for better UX
+    @State private var isDeletingBackups = false
+    @State private var deletionProgress: Float = 0.0
+    
     @Query private var categories: [WorkoutCategory]
     @Query private var subcategories: [WorkoutSubcategory]
     @Query private var workouts: [Workout]
@@ -346,6 +353,21 @@ struct SettingsView: View {
                             Spacer()
                         }
                     }
+                    
+                    // Add Manage Backups button
+                    Button(action: {
+                        Task {
+                            await loadAvailableBackups()
+                            showingManageBackups = true
+                        }
+                    }) {
+                        SettingsRow(
+                            icon: "tray.full",
+                            title: "Manage Backups",
+                            subtitle: "View and delete old backups"
+                        )
+                    }
+                    .disabled(isBackingUp || isRestoring)
                 } else {
                     Button(action: { showingPremiumPaywall = true }) {
                         SettingsRow(
@@ -424,6 +446,131 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showingPremiumPaywall) {
             PremiumSheet(isPresented: $showingPremiumPaywall)
+        }
+        .sheet(isPresented: $showingManageBackups) {
+            NavigationView {
+                ZStack {
+                    List {
+                        if isLoadingBackups {
+                            HStack {
+                                Spacer()
+                                VStack(spacing: 12) {
+                                    ProgressView()
+                                    Text("Loading backups...")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .listRowBackground(Color.clear)
+                        } else if availableBackups.isEmpty {
+                            HStack {
+                                Spacer()
+                                VStack(spacing: 8) {
+                                    Image(systemName: "tray")
+                                        .font(.largeTitle)
+                                        .foregroundColor(.secondary)
+                                    Text("No backups available")
+                                        .font(.headline)
+                                        .foregroundColor(.secondary)
+                                    Text("Create your first backup to get started")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .padding()
+                                Spacer()
+                            }
+                            .listRowBackground(Color.clear)
+                        } else {
+                            ForEach(availableBackups) { backup in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(backup.deviceName)
+                                                .font(.headline)
+                                            Text(backup.timestamp, style: .relative)
+                                                .font(.subheadline)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        
+                                        // Show backup size indicator
+                                        VStack(alignment: .trailing, spacing: 2) {
+                                            Text("\(backup.workoutCount)")
+                                                .font(.title3.weight(.semibold))
+                                                .foregroundColor(.primary)
+                                            Text("workouts")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    
+                                    HStack(spacing: 16) {
+                                        Label("\(backup.categoryCount)", systemImage: "folder.fill")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        
+                                        Label("\(backup.subcategoryCount)", systemImage: "tag.fill")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        
+                                        if backup.assignedSubcategoryCount > 0 {
+                                            Label("\(backup.assignedSubcategoryCount)", systemImage: "tag.circle.fill")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        Spacer()
+                                    }
+                                }
+                                .padding(.vertical, 8)
+                                .opacity(isDeletingBackups ? 0.6 : 1.0)
+                            }
+                            .onDelete(perform: isDeletingBackups ? nil : deleteBackups)
+                        }
+                    }
+                    .disabled(isDeletingBackups)
+                    
+                    // Deletion overlay
+                    if isDeletingBackups {
+                        ZStack {
+                            Color.black.opacity(0.3)
+                                .ignoresSafeArea()
+                            
+                            VStack(spacing: 16) {
+                                ProgressView()
+                                    .scaleEffect(1.2)
+                                
+                                Text("Deleting backups...")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                
+                                Text("Please wait while we remove the selected backups")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .padding(24)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(.ultraThinMaterial)
+                            )
+                            .shadow(radius: 20)
+                        }
+                    }
+                }
+                .navigationTitle("Manage Backups")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Done") {
+                            showingManageBackups = false
+                        }
+                        .disabled(isDeletingBackups)
+                    }
+                }
+            }
         }
     }
     
@@ -524,6 +671,9 @@ struct SettingsView: View {
     }
     
     private func loadAvailableBackups() async {
+        // Prevent concurrent loading
+        if isLoadingBackups { return }
+        
         await MainActor.run {
             isLoadingBackups = true
             let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
@@ -542,6 +692,7 @@ struct SettingsView: View {
             await MainActor.run {
                 availableBackups = backups
                 isLoadingBackups = false
+                debugInfo = "Successfully loaded \(backups.count) backup(s)"
             }
         } catch {
             await MainActor.run {
@@ -570,6 +721,45 @@ struct SettingsView: View {
                 isRestoring = false
                 restoreErrorMessage = "Failed to restore from iCloud: \(error.localizedDescription)"
                 showingRestoreError = true
+            }
+        }
+    }
+
+    // Add deleteBackups helper
+    private func deleteBackups(at offsets: IndexSet) {
+        let backupsToDelete = offsets.map { availableBackups[$0] }
+        
+        // Set deletion state for UI feedback
+        isDeletingBackups = true
+        
+        // Immediately remove from UI for responsive feedback
+        availableBackups.remove(atOffsets: offsets)
+        
+        Task {
+            do {
+                // Use batch deletion for better performance
+                let failedBackups = try await CloudKitManager.shared.deleteBackups(backupsToDelete)
+                
+                await MainActor.run {
+                    isDeletingBackups = false
+                    
+                    // If some deletions failed, add them back to the list
+                    if !failedBackups.isEmpty {
+                        availableBackups.append(contentsOf: failedBackups)
+                        availableBackups.sort { $0.timestamp > $1.timestamp }
+                        debugInfo = "Some backups could not be deleted. \(failedBackups.count) deletion(s) failed."
+                    } else {
+                        debugInfo = "Successfully deleted \(backupsToDelete.count) backup(s)"
+                    }
+                }
+            } catch {
+                // If the entire batch failed, restore all items and show error
+                await MainActor.run {
+                    isDeletingBackups = false
+                    availableBackups.append(contentsOf: backupsToDelete)
+                    availableBackups.sort { $0.timestamp > $1.timestamp }
+                    debugInfo = "Failed to delete backups: \(error.localizedDescription)"
+                }
             }
         }
     }

@@ -29,8 +29,7 @@ struct MainTabView: View {
         }
         .tint(.blue)
         .onAppear {
-            // Initialize default data on first app launch
-            DataInitializationManager.shared.initializeAppData(context: modelContext)
+            // Removed duplicate initialization call
         }
         .toolbarBackground(.clear, for: .tabBar)
     }
