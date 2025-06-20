@@ -4,8 +4,8 @@ struct SubcategoryChip: View {
     let subcategory: WorkoutSubcategory
     
     var body: some View {
-        // Since subcategory no longer has direct category reference, use default blue color
-        let color = Color.blue
+        // Use the parent category's color if available, otherwise default to blue
+        let color = Color(hex: subcategory.category?.color ?? "") ?? .blue
         HStack(spacing: 6) {
             Image(systemName: "tag")
                 .font(.caption2.weight(.semibold))

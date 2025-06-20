@@ -5,13 +5,25 @@ import SwiftUI
 struct WorkoutTypeHelper {
     static func iconForType(_ type: WorkoutType) -> String {
         switch type {
-        case .strength: return "dumbbell.fill"
-        case .cardio: return "heart.circle.fill"
-        case .yoga: return "figure.mind.and.body"
-        case .running: return "figure.run"
-        case .cycling: return "bicycle"
-        case .swimming: return "figure.pool.swim"
-        case .other: return "star.fill"
+        case .strength: "figure.strengthtraining.traditional"
+        case .cardio: "heart.fill"
+        case .yoga: "figure.yoga"
+        case .running: "figure.run"
+        case .cycling: "figure.outdoor.cycle"
+        case .swimming: "figure.pool.swim"
+        case .other: "ellipsis"
+        }
+    }
+
+    static func colorForType(_ type: WorkoutType) -> Color {
+        switch type {
+        case .strength: .purple
+        case .cardio: .red
+        case .yoga: .mint
+        case .running: .blue
+        case .cycling: .green
+        case .swimming: .cyan
+        case .other: .orange
         }
     }
 }

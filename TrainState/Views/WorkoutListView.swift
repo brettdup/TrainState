@@ -684,14 +684,16 @@ struct WorkoutRow: View {
         let now = Date()
 
         if calendar.isDateInToday(date) {
-            formatter.dateFormat = "'today at' h:mm a"
+            formatter.dateFormat = "'Today at' h:mm a"
             return formatter.string(from: date)
         } else if calendar.isDateInYesterday(date) {
-            formatter.dateFormat = "'yesterday at' h:mm a"
+            formatter.dateFormat = "'Yesterday at' h:mm a"
+            return formatter.string(from: date)
+        } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
+            formatter.dateFormat = "EEEE 'at' h:mm a" // e.g., "Monday at 3:30 PM"
             return formatter.string(from: date)
         } else {
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .short
+            formatter.dateFormat = "E, MMM d 'at' h:mm a"
             return formatter.string(from: date)
         }
     }

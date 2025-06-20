@@ -501,15 +501,14 @@ private struct SubcategoriesGroup: View {
                             .fill(.ultraThinMaterial)
                     )
             }
-            
-            // Subcategories grid
-            LazyVGrid(columns: [
-                GridItem(.flexible(), spacing: 12),
-                GridItem(.flexible(), spacing: 12)
-            ], spacing: 12) {
-                ForEach(items) { subcategory in
-                    SubcategoryCard(subcategory: subcategory)
+            // Subcategories chips in a wrapping layout
+            if !items.isEmpty {
+                WrappingHStackLayout(horizontalSpacing: 8, verticalSpacing: 8) {
+                    ForEach(items) { subcategory in
+                        SubcategoryChip(subcategory: subcategory)
+                    }
                 }
+                .padding(.top, 4)
             }
         }
     }
@@ -544,54 +543,6 @@ private struct CategoryCard: View {
             
             // Category name
             Text(category.name)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(color.opacity(0.2), lineWidth: 1)
-                )
-        )
-        .shadow(color: color.opacity(0.1), radius: 8, y: 4)
-    }
-}
-
-private struct SubcategoryCard: View {
-    let subcategory: WorkoutSubcategory
-    
-    var body: some View {
-        let color = Color.green
-        
-        VStack(spacing: 12) {
-            // Icon with background
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                color.opacity(0.2),
-                                color.opacity(0.1)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 48, height: 48)
-                
-                Image(systemName: "tag")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(color)
-            }
-            
-            // Subcategory name
-            Text(subcategory.name)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
@@ -683,8 +634,29 @@ private struct ScrollOffsetPreferenceKey: PreferenceKey {
 #Preview {
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
     let container = try! ModelContainer(for: Workout.self, configurations: config)
-    let workout = Workout(type: .strength, duration: 3600)
-    
+    // Create sample categories
+    let category1 = WorkoutCategory(name: "Push", color: "#E53935", workoutType: .strength)
+    let category2 = WorkoutCategory(name: "Pull", color: "#1E88E5", workoutType: .strength)
+    // Create sample subcategories
+    let sub1 = WorkoutSubcategory(name: "Bench Press")
+    let sub2 = WorkoutSubcategory(name: "Incline Press")
+    let sub3 = WorkoutSubcategory(name: "Pull-ups")
+    let sub4 = WorkoutSubcategory(name: "Rows")
+    // Assign categories to subcategories (optional, for relationship integrity)
+    sub1.category = category1
+    sub2.category = category1
+    sub3.category = category2
+    sub4.category = category2
+    // Create a workout with categories and subcategories
+    let workout = Workout(
+        type: .strength,
+        duration: 3600,
+        calories: 500,
+        distance: 2000,
+        notes: "Felt strong today. Focused on form.",
+        categories: [category1, category2],
+        subcategories: [sub1, sub2, sub3, sub4]
+    )
     return NavigationStack {
         WorkoutDetailView(workout: workout)
     }
