@@ -358,87 +358,14 @@ struct HealthSettingsView: View {
     
     private func importUnimportedWorkouts() {
         guard !isImporting else { return }
-        
+
         isImporting = true
         importProgress = 0.0
-        
+
         Task {
             do {
-                // First, request authorization
-                let success = try await healthKitManager.requestAuthorizationAsync()
-                if !success {
-                    errorMessage = "Please enable HealthKit access in Settings to import workouts"
-                    showError = true
-                    isImporting = false
-                    return
-                }
-                
-                // Fetch all workouts from HealthKit
-                let healthStore = HKHealthStore()
-                let workoutType = HKObjectType.workoutType()
-                let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-                
-                let workouts = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKWorkout], Error>) in
-                    let query = HKSampleQuery(
-                        sampleType: workoutType,
-                        predicate: nil,
-                        limit: HKObjectQueryNoLimit,
-                        sortDescriptors: [sortDescriptor]
-                    ) { _, samples, error in
-                        if let error = error {
-                            continuation.resume(throwing: error)
-                            return
-                        }
-                        let workouts = samples as? [HKWorkout] ?? []
-                        continuation.resume(returning: workouts)
-                    }
-                    healthStore.execute(query)
-                }
-                
-                // Get all existing workout UUIDs in a single query
-                let fetchDescriptor = FetchDescriptor<Workout>(
-                    sortBy: [SortDescriptor(\.startDate, order: .reverse)]
-                )
-                let existingWorkouts = try modelContext.fetch(fetchDescriptor)
-                let existingUUIDs = Set(existingWorkouts.compactMap { $0.healthKitUUID })
-                
-                // Filter out already imported workouts
-                let unimportedWorkouts = workouts.filter { !existingUUIDs.contains($0.uuid) }
-                
-                // Process workouts in batches
-                let batchSize = 20
-                let totalBatches = (unimportedWorkouts.count + batchSize - 1) / batchSize
-                
-                for batchIndex in 0..<totalBatches {
-                    let startIndex = batchIndex * batchSize
-                    let endIndex = min(startIndex + batchSize, unimportedWorkouts.count)
-                    let batchWorkouts = unimportedWorkouts[startIndex..<endIndex]
-                    
-                    // Create and insert workouts for this batch
-                    for workout in batchWorkouts {
-                        let newWorkoutType = mapHKWorkoutActivityTypeToWorkoutType(workout.workoutActivityType)
-                        
-                        let newWorkout = Workout(
-                            type: newWorkoutType,
-                            startDate: workout.startDate,
-                            duration: workout.duration,
-                            calories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
-                            distance: workout.workoutActivityType == .running ? workout.totalDistance?.doubleValue(for: .meter()) : nil,
-                            healthKitUUID: workout.uuid
-                        )
-                        
-                        modelContext.insert(newWorkout)
-                    }
-                    
-                    // Save after each batch
-                    try modelContext.save()
-                    
-                    // Update progress on main thread
-                    await MainActor.run {
-                        importProgress = Double(endIndex) / Double(unimportedWorkouts.count)
-                    }
-                }
-                
+                try await healthKitManager.importWorkoutsToCoreData(context: modelContext)
+
                 await MainActor.run {
                     isImporting = false
                     importProgress = 1.0
