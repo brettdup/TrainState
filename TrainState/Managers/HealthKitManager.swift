@@ -165,6 +165,7 @@ class HealthKitManager: ObservableObject {
 
         let totalWorkouts = sortedWorkouts.count
         var processedWorkouts = 0
+        var lastProgressUpdate = 0.0
         var runningWorkoutsToRoute: [(hkWorkout: HKWorkout, workout: Workout)] = []
 
         for hkWorkout in sortedWorkouts {
@@ -199,11 +200,14 @@ class HealthKitManager: ObservableObject {
 
             processedWorkouts += 1
             let progress = Double(processedWorkouts) / Double(totalWorkouts)
-            NotificationCenter.default.post(
-                name: NSNotification.Name("ImportProgressUpdated"),
-                object: nil,
-                userInfo: ["progress": progress]
-            )
+            if progress - lastProgressUpdate >= 0.05 || processedWorkouts == totalWorkouts {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("ImportProgressUpdated"),
+                    object: nil,
+                    userInfo: ["progress": progress]
+                )
+                lastProgressUpdate = progress
+            }
 
             if processedWorkouts % 20 == 0 {
                 try context.save()

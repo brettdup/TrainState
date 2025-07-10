@@ -3,7 +3,7 @@ import SwiftData
 import HealthKit
 
 struct OnboardingView: View {
-    @StateObject private var healthKitManager = HealthKitManager()
+    @StateObject private var healthKitManager = HealthKitManager.shared
     @Environment(\.modelContext) private var modelContext
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var currentStep = 0

@@ -15,7 +15,7 @@ struct HealthSettingsView: View {
     
     @Environment(\.modelContext) private var modelContext
     
-    private let healthKitManager = HealthKitManager()
+    private let healthKitManager = HealthKitManager.shared
     
     var body: some View {
         ZStack {
@@ -331,16 +331,16 @@ struct HealthSettingsView: View {
         }
     }
     
-    private func importWorkouts() {
+    private func performImport() {
         guard !isImporting else { return }
-        
+
         isImporting = true
         importProgress = 0.0
-        
+
         Task {
             do {
                 try await healthKitManager.importWorkoutsToCoreData(context: modelContext)
-                
+
                 await MainActor.run {
                     isImporting = false
                     importProgress = 1.0
@@ -355,30 +355,13 @@ struct HealthSettingsView: View {
             }
         }
     }
-    
+
+    private func importWorkouts() {
+        performImport()
+    }
+
     private func importUnimportedWorkouts() {
-        guard !isImporting else { return }
-
-        isImporting = true
-        importProgress = 0.0
-
-        Task {
-            do {
-                try await healthKitManager.importWorkoutsToCoreData(context: modelContext)
-
-                await MainActor.run {
-                    isImporting = false
-                    importProgress = 1.0
-                    lastSyncDate = Date()
-                }
-            } catch {
-                await MainActor.run {
-                    isImporting = false
-                    errorMessage = "Failed to import workouts: \(error.localizedDescription)"
-                    showError = true
-                }
-            }
-        }
+        performImport()
     }
     
     private func mapHKWorkoutActivityTypeToWorkoutType(_ activityType: HKWorkoutActivityType) -> WorkoutType {
