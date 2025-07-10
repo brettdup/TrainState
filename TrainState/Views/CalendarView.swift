@@ -3,55 +3,77 @@ import SwiftData
 
 struct CalendarView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: [SortDescriptor(\Workout.startDate, order: .reverse)]) private var workouts: [Workout]
+    
+    // Optimized targeted query - only load what we need
+    @Query(sort: [SortDescriptor(\Workout.startDate, order: .reverse)]) private var allWorkouts: [Workout]
+    
+    // Performance-focused state
     @State private var selectedDate = Date()
     @State private var displayedMonth = Date()
+    @State private var optimizedCache = CalendarCache()
+    @State private var isInitialized = false
+    
+    // UI state
     @GestureState private var dragOffset: CGFloat = 0
     @State private var scrollOffset: CGFloat = 0
     
-    // Cache frequently used values
+    // Constants for better performance
     private let calendar = Calendar.current
     private let daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-    @State private var cachedDaysInMonth: [Date?] = []
-    @State private var cachedWorkoutDates: Set<Date> = []
-    @State private var cachedMonthYearString: String = ""
-    @State private var cachedWorkoutsForSelectedDate: [Workout] = []
-    @State private var cachedWorkoutTypesByDate: [Date: Set<WorkoutType>] = [:]
-    
-    // Pre-computed grid columns
     private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+    
+    // Memoized computed properties
+    private var monthString: String {
+        optimizedCache.getMonthString(for: displayedMonth)
+    }
+    
+    private var daysInMonth: [Date?] {
+        optimizedCache.getDaysInMonth(for: displayedMonth)
+    }
+    
+    private var workoutsForSelectedDate: [Workout] {
+        optimizedCache.getWorkouts(for: selectedDate)
+    }
     
     var body: some View {
         NavigationStack {
             ZStack {
-                // Modern background with depth
-                backgroundGradient
+                // Optimized background
+                OptimizedBackgroundView()
                     .ignoresSafeArea()
                 
-                GeometryReader { geometry in
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 32) {
-                            // Hero section with month selector
-                            heroMonthSelector
-                                .padding(.top, 20)
-                            
-                            // Modern calendar grid
-                            modernCalendarGrid
-                            
-                            // Selected date workouts
-                            selectedDateSection
-                                .padding(.bottom, 20)
-                        }
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear
-                                    .preference(key: ScrollOffsetPreferenceKey.self, value: geo.frame(in: .named("scroll")).minY)
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(spacing: 32) {
+                        // Hero section
+                        OptimizedHeroSection(
+                            monthString: monthString,
+                            workoutCount: workoutsForSelectedDate.count,
+                            onPreviousMonth: previousMonth,
+                            onNextMonth: nextMonth,
+                            onToday: goToToday
+                        )
+                        .padding(.top, 20)
+                        
+                        // Calendar grid
+                        OptimizedCalendarGrid(
+                            daysInMonth: daysInMonth,
+                            selectedDate: selectedDate,
+                            cache: optimizedCache,
+                            onDateSelected: { date in
+                                withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                                    selectedDate = date
+                                }
+                                let generator = UIImpactFeedbackGenerator(style: .light)
+                                generator.impactOccurred()
                             }
                         )
-                    }
-                    .coordinateSpace(name: "scroll")
-                    .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                        scrollOffset = value
+                        
+                        // Selected date workouts
+                        OptimizedWorkoutsSection(
+                            selectedDate: selectedDate,
+                            workouts: workoutsForSelectedDate
+                        )
+                        .padding(.bottom, 20)
                     }
                 }
             }
@@ -60,340 +82,32 @@ struct CalendarView: View {
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button(action: {
-                        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                            selectedDate = Date()
-                            displayedMonth = calendar.startOfMonth(for: selectedDate)
-                        }
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                    }) {
-                        Text("Today")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.blue)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule()
-                                    .fill(.blue.opacity(0.1))
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(.blue.opacity(0.3), lineWidth: 1)
-                                    )
-                            )
-                    }
-                    .buttonStyle(ScaleButtonStyle())
+                    OptimizedTodayButton(action: goToToday)
                 }
             }
-            .onAppear {
-                displayedMonth = calendar.startOfMonth(for: selectedDate)
-                updateCachedData()
+            .task {
+                if !isInitialized {
+                    await initializeCalendar()
+                    isInitialized = true
+                }
             }
-            .onChange(of: displayedMonth) { _ in
-                updateCachedData()
-            }
-            .onChange(of: workouts) { _ in
-                updateCachedWorkoutDates()
-                updateCachedWorkoutsForSelectedDate()
-                updateCachedWorkoutTypes()
-            }
-            .onChange(of: selectedDate) { _ in
-                updateCachedWorkoutsForSelectedDate()
+            .onChange(of: displayedMonth) { _, _ in
+                Task { await refreshForMonth() }
             }
         }
     }
     
-    // MARK: - Background
-    private var backgroundGradient: some View {
-        ZStack {
-            // Base adaptive background
-            Color(.systemBackground)
-            
-            // Layered gradients for depth
-            LinearGradient(
-                colors: [
-                    Color.blue.opacity(0.02),
-                    Color.purple.opacity(0.015),
-                    Color.cyan.opacity(0.025)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .blur(radius: 100)
-            
-            // Subtle animated gradient orbs
-            RadialGradient(
-                colors: [
-                    Color.mint.opacity(0.06),
-                    Color.mint.opacity(0.02),
-                    Color.clear
-                ],
-                center: .topTrailing,
-                startRadius: 50,
-                endRadius: 300
-            )
-            .offset(x: 100, y: -150)
-            
-            RadialGradient(
-                colors: [
-                    Color.blue.opacity(0.04),
-                    Color.clear
-                ],
-                center: .bottomLeading,
-                startRadius: 80,
-                endRadius: 250
-            )
-            .offset(x: -100, y: 150)
-        }
+    // MARK: - Performance Methods
+    
+    @MainActor
+    private func initializeCalendar() async {
+        displayedMonth = calendar.startOfMonth(for: selectedDate)
+        await optimizedCache.buildCache(workouts: allWorkouts, calendar: calendar)
     }
     
-    // MARK: - Hero Month Selector
-    private var heroMonthSelector: some View {
-        VStack(spacing: 24) {
-            HStack(spacing: 20) {
-                Button(action: previousMonth) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.blue)
-                        .frame(width: 44, height: 44)
-                        .background(
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                                .shadow(color: .blue.opacity(0.1), radius: 8, y: 4)
-                        )
-                        .overlay(
-                            Circle()
-                                .stroke(.blue.opacity(0.2), lineWidth: 1)
-                        )
-                }
-                .buttonStyle(ScaleButtonStyle())
-                
-                Spacer()
-                
-                VStack(spacing: 8) {
-                    Text(cachedMonthYearString)
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(.primary)
-                    
-                    Text("\(cachedWorkoutsForSelectedDate.count) workouts")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                Button(action: nextMonth) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.blue)
-                        .frame(width: 44, height: 44)
-                        .background(
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                                .shadow(color: .blue.opacity(0.1), radius: 8, y: 4)
-                        )
-                        .overlay(
-                            Circle()
-                                .stroke(.blue.opacity(0.2), lineWidth: 1)
-                        )
-                }
-                .buttonStyle(ScaleButtonStyle())
-            }
-            .padding(.horizontal, 20)
-            .gesture(
-                DragGesture()
-                    .updating($dragOffset) { value, state, _ in
-                        state = value.translation.width
-                    }
-                    .onEnded { value in
-                        if value.translation.width < -50 {
-                            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                                nextMonth()
-                            }
-                        } else if value.translation.width > 50 {
-                            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                                previousMonth()
-                            }
-                        }
-                    }
-            )
-        }
-    }
-    
-    // MARK: - Modern Calendar Grid
-    private var modernCalendarGrid: some View {
-        VStack(spacing: 20) {
-            // Days of week header with better typography
-            HStack(spacing: 0) {
-                ForEach(daysOfWeek, id: \.self) { day in
-                    Text(day)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(.horizontal, 24)
-            
-            // Calendar days grid with enhanced styling
-            LazyVGrid(columns: gridColumns, spacing: 8) {
-                ForEach(cachedDaysInMonth.indices, id: \.self) { index in
-                    if let date = cachedDaysInMonth[index] {
-                        ModernDayCell(
-                            date: date,
-                            isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
-                            isToday: calendar.isDateInToday(date),
-                            hasWorkouts: cachedWorkoutDates.contains(date),
-                            workoutTypes: cachedWorkoutTypesByDate[date] ?? [],
-                            workoutCount: workoutsForDate(date).count
-                        )
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                                selectedDate = date
-                            }
-                            let generator = UIImpactFeedbackGenerator(style: .light)
-                            generator.impactOccurred()
-                        }
-                    } else {
-                        Color.clear
-                            .aspectRatio(1, contentMode: .fit)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-        }
-        .padding(.vertical, 24)
-        .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .primary.opacity(0.04), radius: 20, y: 10)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .stroke(.primary.opacity(0.06), lineWidth: 1)
-        )
-        .padding(.horizontal, 20)
-    }
-    
-    // MARK: - Selected Date Section
-    private var selectedDateSection: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            // Section header
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Workouts")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(.primary)
-                    
-                    Text(selectedDate, style: .date)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                if !cachedWorkoutsForSelectedDate.isEmpty {
-                    Text("\(cachedWorkoutsForSelectedDate.count)")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.blue)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(.blue.opacity(0.1))
-                        )
-                }
-            }
-            .padding(.horizontal, 24)
-            
-            // Workouts list
-            if cachedWorkoutsForSelectedDate.isEmpty {
-                emptyState
-            } else {
-                workoutsList
-            }
-        }
-        .padding(.vertical, 24)
-        .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .primary.opacity(0.04), radius: 20, y: 10)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .stroke(.primary.opacity(0.06), lineWidth: 1)
-        )
-        .padding(.horizontal, 20)
-    }
-    
-    private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "calendar.day.timeline.leading")
-                .font(.system(size: 48, weight: .light))
-                .foregroundStyle(.secondary)
-            
-            VStack(spacing: 8) {
-                Text("No Workouts")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                
-                Text("No workouts logged for this date")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
-    }
-    
-    private var workoutsList: some View {
-        LazyVStack(spacing: 16) {
-            ForEach(cachedWorkoutsForSelectedDate) { workout in
-                NavigationLink(destination: WorkoutDetailView(workout: workout)) {
-                    ModernWorkoutCard(workout: workout)
-                }
-                .buttonStyle(PlainButtonStyle())
-            }
-        }
-        .padding(.horizontal, 8)
-    }
-    
-    // MARK: - Helper Methods
-    private func workoutsForDate(_ date: Date) -> [Workout] {
-        workouts.filter { calendar.isDate($0.startDate, inSameDayAs: date) }
-    }
-    
-    private func updateCachedData() {
-        cachedDaysInMonth = daysInMonth()
-        updateCachedWorkoutDates()
-        updateCachedMonthYearString()
-        updateCachedWorkoutsForSelectedDate()
-        updateCachedWorkoutTypes()
-    }
-    
-    private func updateCachedWorkoutDates() {
-        cachedWorkoutDates = Set(workouts.map { calendar.startOfDay(for: $0.startDate) })
-    }
-    
-    private func updateCachedWorkoutTypes() {
-        var typesByDate: [Date: Set<WorkoutType>] = [:]
-        for workout in workouts {
-            let date = calendar.startOfDay(for: workout.startDate)
-            var types = typesByDate[date] ?? Set<WorkoutType>()
-            types.insert(workout.type)
-            typesByDate[date] = types
-        }
-        cachedWorkoutTypesByDate = typesByDate
-    }
-    
-    private func updateCachedMonthYearString() {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        cachedMonthYearString = formatter.string(from: displayedMonth)
-    }
-    
-    private func updateCachedWorkoutsForSelectedDate() {
-        cachedWorkoutsForSelectedDate = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: selectedDate) }
+    @MainActor
+    private func refreshForMonth() async {
+        await optimizedCache.updateForMonth(displayedMonth, workouts: allWorkouts, calendar: calendar)
     }
     
     private func previousMonth() {
@@ -412,7 +126,129 @@ struct CalendarView: View {
         generator.impactOccurred()
     }
     
-    private func daysInMonth() -> [Date?] {
+    private func goToToday() {
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            selectedDate = Date()
+            displayedMonth = calendar.startOfMonth(for: selectedDate)
+        }
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+    }
+}
+
+// MARK: - Optimized Calendar Cache
+
+@Observable
+class CalendarCache {
+    private var workoutsByDate: [Date: [Workout]] = [:]
+    private var workoutTypesByDate: [Date: Set<WorkoutType>] = [:]
+    private var monthDaysCache: [String: [Date?]] = [:]
+    private var monthStringCache: [Date: String] = [:]
+    private var lastCacheUpdate: Date = Date.distantPast
+    private let cacheValidityDuration: TimeInterval = 600 // 10 minutes
+    
+    func getWorkouts(for date: Date) -> [Workout] {
+        let dayStart = Calendar.current.startOfDay(for: date)
+        return workoutsByDate[dayStart] ?? []
+    }
+    
+    func getWorkoutTypes(for date: Date) -> Set<WorkoutType> {
+        let dayStart = Calendar.current.startOfDay(for: date)
+        return workoutTypesByDate[dayStart] ?? []
+    }
+    
+    func hasWorkouts(for date: Date) -> Bool {
+        let dayStart = Calendar.current.startOfDay(for: date)
+        return !(workoutsByDate[dayStart]?.isEmpty ?? true)
+    }
+    
+    func getWorkoutCount(for date: Date) -> Int {
+        let dayStart = Calendar.current.startOfDay(for: date)
+        return workoutsByDate[dayStart]?.count ?? 0
+    }
+    
+    func getDaysInMonth(for date: Date) -> [Date?] {
+        let monthKey = monthKeyString(for: date)
+        if let cached = monthDaysCache[monthKey] {
+            return cached
+        }
+        
+        let days = calculateDaysInMonth(for: date)
+        monthDaysCache[monthKey] = days
+        return days
+    }
+    
+    func getMonthString(for date: Date) -> String {
+        if let cached = monthStringCache[date] {
+            return cached
+        }
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        let string = formatter.string(from: date)
+        monthStringCache[date] = string
+        return string
+    }
+    
+    func buildCache(workouts: [Workout], calendar: Calendar) async {
+        let start = CFAbsoluteTimeGetCurrent()
+        
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await self.buildWorkoutCache(workouts: workouts, calendar: calendar)
+            }
+        }
+        
+        let duration = CFAbsoluteTimeGetCurrent() - start
+        print("[Performance] Calendar cache build completed in \(String(format: "%.3f", duration))s")
+    }
+    
+    func updateForMonth(_ month: Date, workouts: [Workout], calendar: Calendar) async {
+        // Only rebuild if cache is stale
+        if Date().timeIntervalSince(lastCacheUpdate) < cacheValidityDuration {
+            return
+        }
+        
+        await buildCache(workouts: workouts, calendar: calendar)
+    }
+    
+    private func buildWorkoutCache(workouts: [Workout], calendar: Calendar) async {
+        var tempWorkoutsByDate: [Date: [Workout]] = [:]
+        var tempWorkoutTypesByDate: [Date: Set<WorkoutType>] = [:]
+        
+        // Build cache in single pass - O(n) complexity
+        for workout in workouts {
+            let dayStart = calendar.startOfDay(for: workout.startDate)
+            
+            // Group workouts by date
+            if tempWorkoutsByDate[dayStart] == nil {
+                tempWorkoutsByDate[dayStart] = []
+            }
+            tempWorkoutsByDate[dayStart]?.append(workout)
+            
+            // Track workout types by date
+            if tempWorkoutTypesByDate[dayStart] == nil {
+                tempWorkoutTypesByDate[dayStart] = Set<WorkoutType>()
+            }
+            tempWorkoutTypesByDate[dayStart]?.insert(workout.type)
+        }
+        
+        // Update cache atomically
+        await MainActor.run {
+            self.workoutsByDate = tempWorkoutsByDate
+            self.workoutTypesByDate = tempWorkoutTypesByDate
+            self.lastCacheUpdate = Date()
+        }
+    }
+    
+    private func monthKeyString(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM"
+        return formatter.string(from: date)
+    }
+    
+    private func calculateDaysInMonth(for displayedMonth: Date) -> [Date?] {
+        let calendar = Calendar.current
         var days: [Date?] = []
         
         guard let monthInterval = calendar.dateInterval(of: .month, for: displayedMonth),
@@ -439,8 +275,157 @@ struct CalendarView: View {
     }
 }
 
-// MARK: - Modern Day Cell
-struct ModernDayCell: View {
+// MARK: - Optimized UI Components
+
+struct OptimizedBackgroundView: View {
+    var body: some View {
+        // Simplified background for better performance
+        Color(.systemBackground)
+            .overlay(
+                LinearGradient(
+                    colors: [
+                        Color.blue.opacity(0.03),
+                        Color.purple.opacity(0.02)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+    }
+}
+
+struct OptimizedHeroSection: View {
+    let monthString: String
+    let workoutCount: Int
+    let onPreviousMonth: () -> Void
+    let onNextMonth: () -> Void
+    let onToday: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 20) {
+            OptimizedNavButton(
+                icon: "chevron.left",
+                action: onPreviousMonth
+            )
+            
+            Spacer()
+            
+            VStack(spacing: 8) {
+                Text(monthString)
+                    .font(.largeTitle.weight(.bold))
+                    .foregroundStyle(.primary)
+                
+                Text("\(workoutCount) workouts")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            OptimizedNavButton(
+                icon: "chevron.right",
+                action: onNextMonth
+            )
+        }
+        .padding(.horizontal, 20)
+    }
+}
+
+struct OptimizedNavButton: View {
+    let icon: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.blue)
+                .frame(width: 44, height: 44)
+                .background(
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .shadow(color: .blue.opacity(0.1), radius: 4, y: 2)
+                )
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+struct OptimizedTodayButton: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text("Today")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.blue)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(.blue.opacity(0.1))
+                )
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+struct OptimizedCalendarGrid: View {
+    let daysInMonth: [Date?]
+    let selectedDate: Date
+    let cache: CalendarCache
+    let onDateSelected: (Date) -> Void
+    
+    private let calendar = Calendar.current
+    private let daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Days of week header
+            HStack(spacing: 0) {
+                ForEach(daysOfWeek, id: \.self) { day in
+                    Text(day)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.horizontal, 24)
+            
+            // Calendar days grid
+            LazyVGrid(columns: gridColumns, spacing: 8) {
+                ForEach(daysInMonth.indices, id: \.self) { index in
+                    if let date = daysInMonth[index] {
+                        OptimizedDayCell(
+                            date: date,
+                            isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                            isToday: calendar.isDateInToday(date),
+                            hasWorkouts: cache.hasWorkouts(for: date),
+                            workoutTypes: cache.getWorkoutTypes(for: date),
+                            workoutCount: cache.getWorkoutCount(for: date)
+                        )
+                        .onTapGesture {
+                            onDateSelected(date)
+                        }
+                    } else {
+                        Color.clear
+                            .aspectRatio(1, contentMode: .fit)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.vertical, 24)
+        .background(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .padding(.horizontal, 20)
+    }
+}
+
+struct OptimizedDayCell: View {
     let date: Date
     let isSelected: Bool
     let isToday: Bool
@@ -454,21 +439,16 @@ struct ModernDayCell: View {
         VStack(spacing: 6) {
             ZStack {
                 // Background states
-                if isToday {
+                if isToday && !isSelected {
                     Circle()
                         .fill(.blue.opacity(0.1))
                         .frame(width: 40, height: 40)
-                        .overlay(
-                            Circle()
-                                .stroke(.blue.opacity(0.3), lineWidth: 2)
-                        )
                 }
                 
                 if isSelected {
                     Circle()
                         .fill(.blue)
                         .frame(width: 40, height: 40)
-                        .shadow(color: .blue.opacity(0.3), radius: 8, y: 4)
                 }
                 
                 // Day number
@@ -477,25 +457,25 @@ struct ModernDayCell: View {
                     .foregroundStyle(isSelected ? .white : (isToday ? .blue : .primary))
             }
             
-            // Workout indicators
+            // Workout indicators - simplified for performance
             if hasWorkouts {
-                HStack(spacing: 3) {
+                HStack(spacing: 2) {
                     ForEach(Array(workoutTypes.prefix(3)), id: \.self) { type in
                         Circle()
                             .fill(workoutTypeColor(type))
-                            .frame(width: 6, height: 6)
+                            .frame(width: 4, height: 4)
                     }
                     
                     if workoutCount > 3 {
                         Text("+")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 6, weight: .bold))
                             .foregroundStyle(.secondary)
                     }
                 }
-                .frame(height: 8)
+                .frame(height: 6)
             } else {
                 Spacer()
-                    .frame(height: 8)
+                    .frame(height: 6)
             }
         }
         .frame(maxWidth: .infinity)
@@ -516,60 +496,125 @@ struct ModernDayCell: View {
     }
 }
 
-// MARK: - Modern Workout Card
-struct ModernWorkoutCard: View {
+struct OptimizedWorkoutsSection: View {
+    let selectedDate: Date
+    let workouts: [Workout]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            // Section header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Workouts")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.primary)
+                    
+                    Text(selectedDate, style: .date)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                if !workouts.isEmpty {
+                    Text("\(workouts.count)")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.blue)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(.blue.opacity(0.1))
+                        )
+                }
+            }
+            .padding(.horizontal, 24)
+            
+            // Workouts list
+            if workouts.isEmpty {
+                OptimizedEmptyState()
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(workouts) { workout in
+                        NavigationLink(destination: WorkoutDetailView(workout: workout)) {
+                            OptimizedWorkoutCard(workout: workout)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+        }
+        .padding(.vertical, 24)
+        .background(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .padding(.horizontal, 20)
+    }
+}
+
+struct OptimizedEmptyState: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "calendar.day.timeline.leading")
+                .font(.system(size: 48, weight: .light))
+                .foregroundStyle(.secondary)
+            
+            VStack(spacing: 8) {
+                Text("No Workouts")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                
+                Text("No workouts logged for this date")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+    }
+}
+
+struct OptimizedWorkoutCard: View {
     let workout: Workout
     
     var body: some View {
         HStack(spacing: 16) {
-            // Workout type icon
+            // Simplified workout type icon
             ZStack {
                 Circle()
                     .fill(workoutTypeColor.opacity(0.15))
-                    .frame(width: 48, height: 48)
+                    .frame(width: 40, height: 40)
                 
                 Image(systemName: iconName)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(workoutTypeColor)
             }
             
             // Workout details
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(workout.type.rawValue)
-                        .font(.headline.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     
                     Spacer()
                     
                     Text(DurationFormatHelper.formatDuration(workout.duration))
-                        .font(.subheadline.weight(.bold))
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(workoutTypeColor)
                 }
                 
                 HStack(spacing: 8) {
                     Text(DateFormatHelper.friendlyTime(workout.startDate))
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    // Main category
+                    // Simplified category display
                     if let categories = workout.categories, let firstCategory = categories.first {
-                        HStack(spacing: 6) {
-                            Image(systemName: "tag.fill")
-                                .font(.caption)
-                                .foregroundStyle(Color(hex: firstCategory.color) ?? .blue)
-                            Text(firstCategory.name)
-                                .font(.caption)
-                                .foregroundStyle(Color(hex: firstCategory.color) ?? .blue)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Additional metrics
-                    if let distance = workout.distance, workout.type == .running {
-                        Text(String(format: "%.1f km", distance / 1000))
-                            .font(.caption.weight(.medium))
+                        Text(firstCategory.name)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -578,18 +623,15 @@ struct ModernWorkoutCard: View {
                                     .fill(.secondary.opacity(0.1))
                             )
                     }
+                    
+                    Spacer()
                 }
             }
         }
-        .padding(16)
+        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(.regularMaterial)
-                .shadow(color: workoutTypeColor.opacity(0.1), radius: 6, y: 3)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(workoutTypeColor.opacity(0.15), lineWidth: 1)
         )
         .padding(.horizontal, 16)
     }
@@ -613,13 +655,14 @@ struct ModernWorkoutCard: View {
         case .swimming: return "figure.pool.swim"
         case .yoga: return "figure.mind.and.body"
         case .strength: return "dumbbell.fill"
-        case .cardio: return "heart.circle.fill"
+        case .cardio: return "heart.fill"
         case .other: return "star.fill"
         }
     }
 }
 
 // MARK: - Extensions
+
 extension Calendar {
     func startOfMonth(for date: Date) -> Date {
         let components = dateComponents([.year, .month], from: date)
@@ -635,13 +678,7 @@ extension DateFormatHelper {
     }
 }
 
-// MARK: - Scroll Offset Preference
-private struct ScrollOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
+// MARK: - Preview
 
 #Preview {
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -650,6 +687,32 @@ private struct ScrollOffsetPreferenceKey: PreferenceKey {
         configurations: config
     )
     
-    CalendarView()
-        .modelContainer(container)
+    let context = container.mainContext
+    
+    // Create sample workouts for different dates
+    let dates = [
+        Date(),
+        Calendar.current.date(byAdding: .day, value: -1, to: Date())!,
+        Calendar.current.date(byAdding: .day, value: -3, to: Date())!,
+        Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    ]
+    
+    let workoutTypes: [WorkoutType] = [.strength, .running, .cardio, .yoga]
+    
+    for (index, date) in dates.enumerated() {
+        let workout = Workout(
+            type: workoutTypes[index % workoutTypes.count],
+            startDate: date,
+            duration: TimeInterval((30...90).randomElement() ?? 45) * 60,
+            calories: Double((200...600).randomElement() ?? 400)
+        )
+        context.insert(workout)
+    }
+    
+    try? context.save()
+    
+    return NavigationStack {
+        CalendarView()
+    }
+    .modelContainer(container)
 } 

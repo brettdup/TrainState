@@ -7,9 +7,7 @@ struct WorkoutListView: View {
     @Query(sort: [SortDescriptor(\Workout.startDate, order: .reverse)]) private var workouts: [Workout]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var showingAddWorkout = false
-    @State private var itemsToShow = 30
     @State private var selectedFilter = "All"
-    @State private var showingWorkoutDetail = false
     @State private var selectedWorkoutForDetail: Workout?
     @State private var showingWellDoneSheet = false
     @State private var isRefreshing = false
@@ -23,17 +21,10 @@ struct WorkoutListView: View {
     
     private let healthStore = HKHealthStore()
     
-    // Pagination state
-    @State private var currentPage = 1
-    @State private var isLoadingMore = false
-    private let itemsPerPage = 10
-    
     // Toast feedback state
     @State private var showToast = false
     @State private var toastMessage = ""
     @State private var isLoading = false
-    
-    @Namespace private var namespace
     
     // MARK: - Stats
     var workoutsThisMonth: [Workout] {
@@ -48,94 +39,71 @@ struct WorkoutListView: View {
         cachedStrengthCount
     }
     
-    var totalStrengthCount: Int {
-        workouts.filter { $0.type == .strength }.count
-    }
-    
-    var daysInCurrentMonth: Int {
-        let calendar = Calendar.current
-        let now = Date()
-        let range = calendar.range(of: .day, in: .month, for: now)!
-        return range.count
-    }
-    
-    var daysPassedInCurrentMonth: Int {
-        let calendar = Calendar.current
-        let now = Date()
-        return calendar.component(.day, from: now)
-    }
-    
     var filteredWorkouts: [Workout] {
-        var result: [Workout]
-        
         switch selectedFilter {
         case "Strength":
-            result = workouts.filter { $0.type == .strength }
+            return workouts.filter { $0.type == .strength }
         case "Running":
-            result = workouts.filter { $0.type == .running }
+            return workouts.filter { $0.type == .running }
         case "Cardio":
-            result = workouts.filter { $0.type == .cardio }
-        case "All":
-            result = Array(workouts)
+            return workouts.filter { $0.type == .cardio }
         default:
-            result = Array(workouts)
+            return Array(workouts)
         }
-        
-        // Note: Premium limits are now handled in the UI, not here
-        // This allows the "Show More" button to work properly for premium users
-        
-        return result
     }
     
     var displayedWorkouts: [Workout] {
-        // For non-premium users, limit to 5 workouts maximum
         if !purchaseManager.hasActiveSubscription {
             return Array(filteredWorkouts.prefix(5))
         }
-        
-        // For premium users, respect the itemsToShow limit for "Show More" functionality
-        return Array(filteredWorkouts.prefix(itemsToShow))
-    }
-    
-    var hasMoreWorkouts: Bool {
-        let totalWorkouts: [Workout]
-        switch selectedFilter {
-        case "Strength":
-            totalWorkouts = workouts.filter { $0.type == .strength }
-        case "Running":
-            totalWorkouts = workouts.filter { $0.type == .running }
-        case "Cardio":
-            totalWorkouts = workouts.filter { $0.type == .cardio }
-        case "All":
-            totalWorkouts = Array(workouts)
-        default:
-            totalWorkouts = Array(workouts)
-        }
-        return totalWorkouts.count > currentPage * itemsPerPage
+        return filteredWorkouts
     }
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                // Simple, performant background
-                BackgroundView()
-                    .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 20) {
-                        statsCardsSection
-                        workoutListSection
-                    }
-                    .padding(.top)
+            List {
+                // Stats Section
+                Section {
+                    statsCardsView
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                 }
-                .refreshable {
-                    await refreshData()
+                
+                // Workouts Section
+                Section {
+                    ForEach(displayedWorkouts) { workout in
+                        WorkoutRowView(workout: workout)
+                            .onTapGesture {
+                                selectedWorkoutForDetail = workout
+                            }
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    }
+                    
+                    // Premium Upgrade Row
+                    if !purchaseManager.hasActiveSubscription && workouts.count > 5 {
+                        premiumUpgradeRow
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                } header: {
+                    HStack {
+                        Text("\(filteredWorkouts.count) Workouts")
+                        Spacer()
+                        filterMenu
+                    }
+                } footer: {
+                    if purchaseManager.hasActiveSubscription && filteredWorkouts.count > displayedWorkouts.count {
+                        Text("\(filteredWorkouts.count - displayedWorkouts.count) more workouts available")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Workouts")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button(action: {
                             Task { await refreshData() }
@@ -146,39 +114,45 @@ struct WorkoutListView: View {
                         Button(action: {
                             removeDuplicateWorkouts()
                         }) {
-                            Label("Remove Duplicates", systemImage: "trash.fill")
+                            Label("Remove Duplicates", systemImage: "trash")
                         }
                     } label: {
                         if isLoading {
-                            InlineLoadingView(size: 16)
+                            ProgressView()
+                                .controlSize(.small)
                         } else if showToast {
-                            Image(systemName: "checkmark")
+                            Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
                         } else {
                             Image(systemName: "ellipsis.circle")
                         }
                     }
-                    .accessibilityLabel("Workout Options")
                 }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: {
+                        showingAddWorkout = true
+                    }) {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .refreshable {
+                await refreshData()
             }
             .sheet(item: $selectedWorkoutForDetail) { workout in
                 NavigationStack {
                     WorkoutDetailView(workout: workout)
-                        .presentationDetents([.large])
-                        .presentationDragIndicator(.visible)
                 }
             }
             .sheet(isPresented: $showingWellDoneSheet) {
                 WellDoneSheetView(isPresented: $showingWellDoneSheet)
-                    .presentationDetents([.medium])
-                    .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showingPremiumPaywall) {
                 WorkoutPremiumPaywallView(
                     isPresented: $showingPremiumPaywall,
                     onPurchase: {
                         Task {
-                            // Try subscription first, then fallback to one-time purchase
                             if let product = purchaseManager.products.first(where: { $0.id == "Premium1Month" }) {
                                 do {
                                     try await purchaseManager.purchase(product)
@@ -194,9 +168,6 @@ struct WorkoutListView: View {
             .sheet(isPresented: $showingAddWorkout) {
                 AddWorkoutView()
             }
-            .overlay(alignment: .bottomTrailing) {
-                addWorkoutButton
-            }
             .onAppear {
                 updateCachedData()
             }
@@ -207,206 +178,90 @@ struct WorkoutListView: View {
     }
     
     // MARK: - View Components
-
-    private var statsCardsSection: some View {
-        HStack(spacing: 12) {
-            // Strength Card
-            VStack {
-                Image(systemName: "dumbbell.fill")
-                    .font(.title2)
-                    .foregroundColor(.orange)
-                Text("\(strengthThisMonthCount)")
-                    .font(.title.bold())
-                Text("Strength")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(.regularMaterial)
-            .cornerRadius(12)
+    
+    private var statsCardsView: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
+            StatCardView(
+                title: "This Month",
+                value: "\(workoutsThisMonth.count)",
+                icon: "calendar",
+                color: .blue
+            )
             
-            // Running Card
-            if #available(iOS 26.0, *) {
-                VStack {
-                    Image(systemName: "figure.run")
-                        .font(.title2)
-                        .foregroundColor(.blue)
-                    Text("\(runningThisMonthCount)")
-                        .font(.title.bold())
-                    Text("Running")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(.regularMaterial)
-                .cornerRadius(12)
-            }
+            StatCardView(
+                title: "Total",
+                value: "\(workouts.count)",
+                icon: "chart.bar.fill",
+                color: .green
+            )
             
-            // Total Workouts Card
-            VStack {
-                Image(systemName: "chart.bar.fill")
-                    .font(.title2)
-                    .foregroundColor(.green)
-                Text("\(workouts.count)")
-                    .font(.title.bold())
-                Text("Total")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(.regularMaterial)
-            .cornerRadius(12)
+            StatCardView(
+                title: "Strength",
+                value: "\(strengthThisMonthCount)",
+                icon: "dumbbell.fill",
+                color: .orange
+            )
             
-            // Monthly Card
-            VStack {
-                Image(systemName: "calendar")
-                    .font(.title2)
-                    .foregroundColor(.purple)
-                Text("\(workoutsThisMonth.count)")
-                    .font(.title.bold())
-                Text("This Month")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(.regularMaterial)
-            .cornerRadius(12)
+            StatCardView(
+                title: "Running",
+                value: "\(runningThisMonthCount)",
+                icon: "figure.run",
+                color: .mint
+            )
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
-
-    private var workoutListSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Section header
+    
+    private var filterMenu: some View {
+        Menu {
+            ForEach(["All", "Strength", "Running", "Cardio"], id: \.self) { filter in
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedFilter = filter
+                    }
+                }) {
+                    Label(filter, systemImage: iconName(for: filter))
+                    if selectedFilter == filter {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+        } label: {
+            Label("Filter", systemImage: "line.3.horizontal.decrease.circle")
+                .labelStyle(.iconOnly)
+        }
+    }
+    
+    private var premiumUpgradeRow: some View {
+        Button(action: {
+            showingPremiumPaywall = true
+        }) {
             HStack {
-                Text("\(filteredWorkouts.count) Workouts")
-                    .font(.title2.weight(.bold))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Unlock All Workouts")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    
+                    Text("View unlimited workout history and premium features")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
                 
                 Spacer()
                 
-                Menu {
-                    ForEach(["All", "Strength", "Running", "Cardio"], id: \.self) { filter in
-                        Button(action: {
-                            withAnimation {
-                                selectedFilter = filter
-                                currentPage = 1 // Reset pagination when filter changes
-                            }
-                        }) {
-                            HStack {
-                                Image(systemName: iconName(for: filter))
-                                Text(filter)
-                                if selectedFilter == filter {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(Color(.systemBackground))
-                            .shadow(radius: 4)
-                            .frame(width: 44, height: 44)
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.primary)
-                    }
-                }
-                .accessibilityLabel("Filter Options")
+                Image(systemName: "crown.fill")
+                    .foregroundStyle(.yellow)
+                    .font(.title2)
             }
-            
-            // Workouts
-            LazyVStack(spacing: 12) {
-                ForEach(displayedWorkouts) { workout in
-                    WorkoutRow(workout: workout)
-                        .onTapGesture {
-                            selectedWorkoutForDetail = workout
-                        }
-                }
-            }
-            
-            // Show More Button at the bottom
-            if purchaseManager.hasActiveSubscription && filteredWorkouts.count > itemsToShow {
-                Button(action: {
-                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                        itemsToShow += 10
-                    }
-                }) {
-                    Text("Show More")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(.ultraThinMaterial)
-                        .foregroundColor(.blue)
-                        .cornerRadius(12)
-                }
-                .padding(.bottom, 8)
-            }
-            
-            // Premium Paywall Button
-            if !purchaseManager.hasActiveSubscription && workouts.count > 5 {
-                Button(action: {
-                    showingPremiumPaywall = true
-                }) {
-                    Text("Upgrade to Premium to See More")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(.ultraThinMaterial)
-                        .foregroundColor(.blue)
-                        .cornerRadius(12)
-                }
-                .padding(.bottom, 8)
-            }
+            .padding()
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.quaternary, lineWidth: 1)
+            )
         }
-        .padding(.horizontal)
-    }
-    
-    // MARK: - Add Workout Button
-    private var addWorkoutButton: some View {
-        Button(action: {
-            let generator = UIImpactFeedbackGenerator(style: .medium)
-            generator.impactOccurred()
-            showingAddWorkout = true
-        }) {
-            Image(systemName: "plus")
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 56, height: 56)
-                .background(
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.blue, Color.blue.opacity(0.8)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .shadow(color: Color.blue.opacity(0.4), radius: 16, y: 8)
-                )
-                .overlay(
-                    Circle()
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                )
-        }
-        .buttonStyle(ScaleButtonStyle())
-        .padding(.trailing, 20)
-        .padding(.bottom, 20)
-        .accessibilityLabel("Add Workout")
-    }
-    
-    // MARK: - Greeting
-    private func greetingText() -> String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12: return "Good morning"
-        case 12..<18: return "Good afternoon"
-        default: return "Good evening"
-        }
+        .buttonStyle(.plain)
     }
     
     // MARK: - Helper Functions
@@ -427,17 +282,14 @@ struct WorkoutListView: View {
             }
         }
         
-        // Strategy 2: Remove fuzzy duplicates (same time, duration, type but different IDs)
-        // This handles CloudKit sync duplicates
+        // Strategy 2: Remove fuzzy duplicates
         var finalWorkouts: [Workout] = []
         var processedWorkouts = Set<String>()
         
         for workout in workoutsToKeep {
-            // Create a signature based on workout characteristics
             let signature = "\(workout.type.rawValue)_\(Int(workout.startDate.timeIntervalSince1970))_\(Int(workout.duration))"
             
             if processedWorkouts.contains(signature) {
-                // This is a potential duplicate - do more detailed checking
                 let timeTolerance: TimeInterval = 5
                 let durationTolerance: TimeInterval = 5
                 
@@ -446,7 +298,6 @@ struct WorkoutListView: View {
                     let durationMatch = abs(existing.duration - workout.duration) < durationTolerance
                     let typeMatch = existing.type == workout.type
                     
-                    // Check calories and distance for additional confidence
                     var caloriesMatch = true
                     if let existingCalories = existing.calories, let workoutCalories = workout.calories {
                         caloriesMatch = abs(existingCalories - workoutCalories) < 50
@@ -462,7 +313,6 @@ struct WorkoutListView: View {
                 
                 if isDuplicate {
                     duplicatesToDelete.append(workout)
-                    print("Found fuzzy duplicate workout: \(workout.type.rawValue) at \(workout.startDate)")
                 } else {
                     finalWorkouts.append(workout)
                     processedWorkouts.insert(signature)
@@ -473,8 +323,6 @@ struct WorkoutListView: View {
             }
         }
         
-        print("Found \(duplicatesToDelete.count) duplicate workouts to remove (ID duplicates + fuzzy duplicates)")
-        
         if !duplicatesToDelete.isEmpty {
             for duplicate in duplicatesToDelete {
                 modelContext.delete(duplicate)
@@ -482,9 +330,6 @@ struct WorkoutListView: View {
             
             do {
                 try modelContext.save()
-                print("Successfully removed \(duplicatesToDelete.count) duplicate workouts")
-                
-                // Show success message
                 DispatchQueue.main.async {
                     self.toastMessage = "Removed \(duplicatesToDelete.count) duplicate workouts"
                     self.showToast = true
@@ -496,7 +341,6 @@ struct WorkoutListView: View {
                 print("Error removing duplicates: \(error)")
             }
         } else {
-            print("No duplicate workouts found")
             DispatchQueue.main.async {
                 self.toastMessage = "No duplicates found"
                 self.showToast = true
@@ -513,17 +357,10 @@ struct WorkoutListView: View {
             showToast = true
         }
         
-        print("[UI] Calling unified HealthKit import logic from WorkoutListView.refreshData")
-        
-        // Check if user has premium and CloudKit might be syncing
         let isPremium = purchaseManager.hasActiveSubscription
         if isPremium {
-            print("[UI] Premium user detected - checking CloudKit sync status before HealthKit import")
-            
-            // Wait for any ongoing CloudKit sync to complete
             await CloudKitManager.shared.waitForSyncCompletion()
             
-            // Check if there are recent CloudKit operations that might conflict
             do {
                 let cloudStatus = try await CloudKitManager.shared.checkCloudStatus()
                 if !cloudStatus {
@@ -536,12 +373,6 @@ struct WorkoutListView: View {
         
         do {
             let workoutCountBefore = workouts.count
-            
-            // For premium users, be more conservative with imports to avoid CloudKit conflicts
-            if isPremium {
-                print("[UI] Premium user - using enhanced deduplication for HealthKit import")
-            }
-            
             try await HealthKitManager.shared.importWorkoutsToCoreData(context: modelContext)
             let workoutCountAfter = workouts.count
             
@@ -550,12 +381,8 @@ struct WorkoutListView: View {
                 toastMessage = "Workouts refreshed!"
                 showToast = true
                 
-                // Show well done sheet if new workouts were imported
                 if workoutCountAfter > workoutCountBefore {
                     showingWellDoneSheet = true
-                    print("[UI] Imported \(workoutCountAfter - workoutCountBefore) new workouts")
-                } else {
-                    print("[UI] No new workouts imported - all up to date")
                 }
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -563,7 +390,6 @@ struct WorkoutListView: View {
                 }
             }
         } catch {
-            print("[UI] Error importing workouts from HealthKit: \(error.localizedDescription)")
             await MainActor.run {
                 isLoading = false
                 toastMessage = "Error refreshing workouts"
@@ -572,24 +398,6 @@ struct WorkoutListView: View {
                     showToast = false
                 }
             }
-        }
-    }
-    
-    private func deleteWorkouts(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(workouts[index])
-            }
-            try? modelContext.save()
-        }
-    }
-    
-    private func loadMoreWorkouts() {
-        isLoadingMore = true
-        // Simulate network delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            currentPage += 1
-            isLoadingMore = false
         }
     }
     
@@ -618,31 +426,54 @@ struct WorkoutListView: View {
     
     private func iconName(for filter: String) -> String {
         switch filter {
-        case "All": return "square.grid.2x2.fill"
+        case "All": return "square.grid.2x2"
         case "Strength": return "dumbbell.fill"
         case "Running": return "figure.run"
-        case "Cardio": return "heart.circle.fill"
-        default: return "square.grid.2x2.fill"
+        case "Cardio": return "heart.fill"
+        default: return "square.grid.2x2"
         }
     }
 }
 
-// MARK: - Simple Workout Row
-struct WorkoutRow: View {
-    let workout: Workout
+// MARK: - StatCardView
+struct StatCardView: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
     
     var body: some View {
-        workoutCardView()
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: iconColor.opacity(0.1), radius: 8, y: 4)
-        )
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(color)
+                Spacer()
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.title2.bold())
+                    .foregroundStyle(.primary)
+                
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding()
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(iconColor.opacity(0.15), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(.quaternary, lineWidth: 1)
         )
     }
+}
+
+// MARK: - WorkoutRowView
+struct WorkoutRowView: View {
+    let workout: Workout
     
     private var iconName: String {
         switch workout.type {
@@ -651,7 +482,7 @@ struct WorkoutRow: View {
         case .swimming: return "figure.pool.swim"
         case .yoga: return "figure.mind.and.body"
         case .strength: return "dumbbell.fill"
-        case .cardio: return "heart.circle.fill"
+        case .cardio: return "heart.fill"
         case .other: return "figure.mixed.cardio"
         }
     }
@@ -666,6 +497,62 @@ struct WorkoutRow: View {
         case .cardio: return .red
         case .other: return .gray
         }
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Icon
+            Image(systemName: iconName)
+                .font(.title2)
+                .foregroundStyle(iconColor)
+                .frame(width: 24)
+            
+            // Content
+            VStack(alignment: .leading, spacing: 4) {
+                Text(workout.type.rawValue)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                
+                Text(formattedDate(workout.startDate))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                
+                if let firstCategory = workout.categories?.first {
+                    Text(firstCategory.name)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(.quaternary, in: Capsule())
+                }
+            }
+            
+            Spacer()
+            
+            // Stats
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(formatDuration(workout.duration))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                
+                if workout.type == .running, let distance = workout.distance {
+                    Text(String(format: "%.1f km", distance / 1000))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                if let calories = workout.calories {
+                    Text("\(Int(calories)) cal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 4)
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -690,98 +577,12 @@ struct WorkoutRow: View {
             formatter.dateFormat = "'Yesterday at' h:mm a"
             return formatter.string(from: date)
         } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
-            formatter.dateFormat = "EEEE 'at' h:mm a" // e.g., "Monday at 3:30 PM"
+            formatter.dateFormat = "EEEE 'at' h:mm a"
             return formatter.string(from: date)
         } else {
             formatter.dateFormat = "E, MMM d 'at' h:mm a"
             return formatter.string(from: date)
         }
-    }
-    
-    @ViewBuilder
-    private func workoutCardView() -> some View {
-        HStack(spacing: 16) {
-            // Icon with improved visual design
-            ZStack {
-                Circle()
-                    .fill(iconColor.opacity(0.08))
-                    .frame(width: 52, height: 52)
-                    .overlay(
-                        Circle()
-                            .stroke(iconColor.opacity(0.15), lineWidth: 1)
-                    )
-                Image(systemName: iconName)
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(iconColor)
-            }
-            .shadow(color: iconColor.opacity(0.08), radius: 8, x: 0, y: 4)
-
-            // Text content with improved typography and spacing
-            VStack(alignment: .leading, spacing: 8) {
-                Text(workout.type.rawValue)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(formattedDate(workout.startDate))
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-
-                    if let firstCategory = workout.categories?.first {
-                        Text(firstCategory.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(Color(hex: firstCategory.color)?.opacity(0.8) ?? iconColor.opacity(0.8))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .fill(Color(hex: firstCategory.color)?.opacity(0.05) ?? iconColor.opacity(0.05))
-                            )
-                            .lineLimit(1)
-                    }
-                }
-            }
-
-            Spacer()
-
-            // Stats with improved visual design
-            VStack(alignment: .trailing, spacing: 8) {
-                Text(formatDuration(workout.duration))
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                if workout.type == .running, let distance = workout.distance {
-                    Text(String(format: "%.1f km", distance / 1000))
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(iconColor.opacity(0.8))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule()
-                                .fill(iconColor.opacity(0.05))
-                        )
-                        .lineLimit(1)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial.opacity(0.7))
-                .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: workout.type)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: workout.duration)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: workout.distance)
     }
 }
 
@@ -792,60 +593,76 @@ struct WellDoneSheetView: View {
     @Query(sort: [SortDescriptor(\Workout.startDate, order: .reverse)]) private var workouts: [Workout]
 
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.green)
-            
-            Text("Well Done!")
-                .font(.largeTitle.bold())
-            
-            if let latestWorkout = workouts.first {
-                VStack(spacing: 12) {
-                    Text("Your \(latestWorkout.type.rawValue) workout has been added")
-                        .font(.title3)
-                        .multilineTextAlignment(.center)
+        NavigationStack {
+            VStack(spacing: 24) {
+                Spacer()
+                
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 80))
+                    .foregroundStyle(.green)
+                
+                VStack(spacing: 8) {
+                    Text("Well Done!")
+                        .font(.largeTitle.bold())
                     
-                    HStack(spacing: 20) {
-                        VStack {
+                    if let latestWorkout = workouts.first {
+                        Text("Your \(latestWorkout.type.rawValue) workout has been imported")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                
+                if let latestWorkout = workouts.first {
+                    HStack(spacing: 32) {
+                        VStack(spacing: 4) {
                             Image(systemName: "clock.fill")
                                 .font(.title2)
+                                .foregroundStyle(.blue)
                             Text(formatDuration(latestWorkout.duration))
                                 .font(.headline)
                         }
                         
                         if let calories = latestWorkout.calories {
-                            VStack {
+                            VStack(spacing: 4) {
                                 Image(systemName: "flame.fill")
                                     .font(.title2)
+                                    .foregroundStyle(.orange)
                                 Text("\(Int(calories)) cal")
                                     .font(.headline)
                             }
                         }
                     }
-                    .foregroundColor(.secondary)
+                    .padding()
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
+                
+                Text("Don't forget to categorize it to keep your log organized!")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                
+                Spacer()
+                
+                Button("Got it!") {
+                    isPresented = false
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+            .padding()
+            .navigationTitle("Success")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        isPresented = false
+                    }
                 }
             }
-            
-            Text("Don't forget to categorize it to keep your log organized!")
-                .font(.subheadline)
-                .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
-                .padding(.horizontal)
-            
-            Button("Got it!") {
-                isPresented = false
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.green)
-            .foregroundColor(.white)
-            .cornerRadius(12)
-            .padding(.horizontal)
         }
-        .padding(.vertical, 40)
-        .background(.regularMaterial)
-        .cornerRadius(20)
+        .presentationDetents([.medium])
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -865,102 +682,54 @@ struct WorkoutPremiumPaywallView: View {
     let onPurchase: () -> Void
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                Color(.systemGroupedBackground)
-                    .ignoresSafeArea()
-                
-                VStack(spacing: 32) {
-                    // Header
+        NavigationStack {
+            List {
+                Section {
                     VStack(spacing: 16) {
-                        Image(systemName: "infinity.circle.fill")
+                        Image(systemName: "crown.fill")
                             .font(.system(size: 60))
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(.yellow)
                         
-                        Text("Unlock Unlimited Workouts")
-                            .font(.title2.weight(.bold))
-                            .multilineTextAlignment(.center)
+                        Text("Unlock Premium")
+                            .font(.largeTitle.bold())
                         
-                        Text("View all your workouts without limits and access premium features")
-                            .font(.body)
+                        Text("Access all your workouts and premium features")
+                            .font(.title3)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal)
                     }
-                    
-                    // Features
-                    VStack(spacing: 20) {
-                        WorkoutFeatureRow(
-                            icon: "infinity",
-                            title: "Unlimited Workouts",
-                            description: "View all your workouts without any restrictions"
-                        )
-                        WorkoutFeatureRow(
-                            icon: "chart.line.uptrend.xyaxis",
-                            title: "Advanced Analytics",
-                            description: "Get detailed insights into your fitness progress"
-                        )
-                        WorkoutFeatureRow(
-                            icon: "folder.fill",
-                            title: "Premium Categories",
-                            description: "Access to unlimited custom categories and subcategories"
-                        )
-                        WorkoutFeatureRow(
-                            icon: "icloud.fill",
-                            title: "Cloud Sync",
-                            description: "Sync your data across all your devices"
-                        )
-                    }
-                    .padding(.horizontal)
-                    
-                    Spacer()
-                    
-                    // Purchase Button
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                }
+                
+                Section("Premium Features") {
+                    Label("Unlimited workout history", systemImage: "infinity")
+                    Label("Advanced analytics", systemImage: "chart.line.uptrend.xyaxis")
+                    Label("Custom categories", systemImage: "folder.fill")
+                    Label("Cloud sync", systemImage: "icloud.fill")
+                }
+                
+                Section {
                     Button(action: onPurchase) {
-                        Text("Unlock Unlimited - $1.99")
+                        Text("Get Premium - $1.99/month")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(16)
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom, 32)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .listRowBackground(Color.clear)
                 }
-                .padding(.top, 20)
             }
             .navigationTitle("Premium")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Close") {
                         isPresented = false
                     }
                 }
-            }
-        }
-    }
-}
-
-private struct WorkoutFeatureRow: View {
-    let icon: String
-    let title: String
-    let description: String
-    
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundStyle(.blue)
-                .frame(width: 32)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                Text(description)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -974,24 +743,20 @@ private struct WorkoutFeatureRow: View {
             configurations: config
         )
         
-        // Add sample workouts
         let context = container.mainContext
         
-        // Create sample categories
         let strengthCategory = WorkoutCategory(name: "Upper Body")
         let runningCategory = WorkoutCategory(name: "Morning Run")
         let cardioCategory = WorkoutCategory(name: "HIIT")
         
-        // Insert categories into context
         context.insert(strengthCategory)
         context.insert(runningCategory)
         context.insert(cardioCategory)
         
-        // Create sample workouts
         let workout1 = Workout(
             type: .strength,
-            startDate: Date().addingTimeInterval(-3600), // 1 hour ago
-            duration: 45 * 60, // 45 minutes
+            startDate: Date().addingTimeInterval(-3600),
+            duration: 45 * 60,
             calories: 350
         )
         workout1.categories = [strengthCategory]
@@ -999,44 +764,23 @@ private struct WorkoutFeatureRow: View {
         
         let workout2 = Workout(
             type: .running,
-            startDate: Date().addingTimeInterval(-86400), // 1 day ago
-            duration: 30 * 60, // 30 minutes
+            startDate: Date().addingTimeInterval(-86400),
+            duration: 30 * 60,
             calories: 400,
-            distance: 5000 // 5km
+            distance: 5000
         )
         workout2.categories = [runningCategory]
         context.insert(workout2)
         
         let workout3 = Workout(
             type: .cardio,
-            startDate: Date().addingTimeInterval(-172800), // 2 days ago
-            duration: 60 * 60, // 1 hour
+            startDate: Date().addingTimeInterval(-172800),
+            duration: 60 * 60,
             calories: 600
         )
         workout3.categories = [cardioCategory]
         context.insert(workout3)
         
-        // Add more workouts with different dates
-        let workout4 = Workout(
-            type: .strength,
-            startDate: Date().addingTimeInterval(-259200), // 3 days ago
-            duration: 50 * 60, // 50 minutes
-            calories: 450
-        )
-        workout4.categories = [strengthCategory]
-        context.insert(workout4)
-        
-        let workout5 = Workout(
-            type: .running,
-            startDate: Date().addingTimeInterval(-345600), // 4 days ago
-            duration: 45 * 60, // 45 minutes
-            calories: 500,
-            distance: 7000 // 7km
-        )
-        workout5.categories = [runningCategory]
-        context.insert(workout5)
-        
-        // Save all changes to the context
         try? context.save()
         
         return WorkoutListView()
