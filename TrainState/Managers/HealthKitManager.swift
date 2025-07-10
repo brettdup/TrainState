@@ -139,85 +139,47 @@ class HealthKitManager: ObservableObject {
         }
         print("[HealthKit] Total workouts fetched: \(workouts.count)")
 
-        // Import all workouts, sorted by startDate descending
+        // Sort by date so progress updates feel consistent
         let sortedWorkouts = workouts.sorted { $0.startDate > $1.startDate }
         print("[HealthKit] Importing all \(sortedWorkouts.count) workouts")
+
+        // Pre-fetch existing workouts once to avoid repetitive queries
+        let existingWorkouts = try context.fetch(FetchDescriptor<Workout>())
+        let existingUUIDs = Set(existingWorkouts.compactMap { $0.healthKitUUID })
+
+        struct FuzzyKey: Hashable {
+            let type: WorkoutType
+            let startBucket: Int
+            let durationBucket: Int
+        }
+
+        var fuzzySet = Set<FuzzyKey>()
+        for workout in existingWorkouts {
+            let key = FuzzyKey(
+                type: workout.type,
+                startBucket: Int(workout.startDate.timeIntervalSince1970 / 5),
+                durationBucket: Int(workout.duration / 5)
+            )
+            fuzzySet.insert(key)
+        }
 
         let totalWorkouts = sortedWorkouts.count
         var processedWorkouts = 0
         var runningWorkoutsToRoute: [(hkWorkout: HKWorkout, workout: Workout)] = []
 
-        // Enhanced tolerance for time and duration comparison (more lenient for CloudKit synced data)
-        let timeTolerance: TimeInterval = 5 // 5 seconds
-        let durationTolerance: TimeInterval = 5 // 5 seconds
-
         for hkWorkout in sortedWorkouts {
-            print("[HealthKit] Importing workout: \(hkWorkout.uuid) type: \(hkWorkout.workoutActivityType.rawValue) name: \(hkWorkout.workoutActivityType.name)")
-            var distance: Double? = nil
-            distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
-
-            // Enhanced deduplication: check for both healthKitUUID and fuzzy match on startDate/duration/type
             let uuid = hkWorkout.uuid
-            let startDate = hkWorkout.startDate
-            let duration = hkWorkout.duration
-            
-            // First check by healthKitUUID (most reliable)
-            let existingByUUID = try? context.fetch(
-                FetchDescriptor<Workout>(predicate: #Predicate { $0.healthKitUUID == uuid })
-            )
-            if existingByUUID?.isEmpty == false {
-                print("[HealthKit] Skipping duplicate workout by UUID: \(hkWorkout.uuid)")
-                continue
-            }
-            
-            // Second check by fuzzy match (startDate, duration, type) for workouts that might not have healthKitUUID
-            // This is crucial for CloudKit-synced workouts that may have been restored without healthKitUUID
-            let workoutType = convertFromHKWorkoutActivityType(hkWorkout.workoutActivityType)
-            let startDateLower = startDate.addingTimeInterval(-timeTolerance)
-            let startDateUpper = startDate.addingTimeInterval(timeTolerance)
-            let durationLower = duration - durationTolerance
-            let durationUpper = duration + durationTolerance
-            
-            // More comprehensive fuzzy matching including optional distance and calories
-            let possibleMatches = try? context.fetch(
-                FetchDescriptor<Workout>(predicate: #Predicate { workout in
-                    workout.type == workoutType &&
-                    workout.startDate >= startDateLower && workout.startDate <= startDateUpper &&
-                    workout.duration >= durationLower && workout.duration <= durationUpper
-                })
-            )
-            
-            let fuzzyMatch = possibleMatches?.first(where: { candidate in
-                // Time and duration match
-                let timeMatch = abs(candidate.startDate.timeIntervalSince1970 - startDate.timeIntervalSince1970) < timeTolerance
-                let durationMatch = abs(candidate.duration - duration) < durationTolerance
-                
-                // Optional: check calories and distance for additional confidence
-                var caloriesMatch = true
-                if let hkCalories = hkWorkout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
-                   let candidateCalories = candidate.calories {
-                    caloriesMatch = abs(candidateCalories - hkCalories) < 50 // 50 calorie tolerance
-                }
-                
-                var distanceMatch = true
-                if let hkDistance = distance, let candidateDistance = candidate.distance {
-                    distanceMatch = abs(candidateDistance - hkDistance) < 100 // 100 meter tolerance
-                }
-                
-                return timeMatch && durationMatch && caloriesMatch && distanceMatch
-            })
-            
-            if fuzzyMatch != nil {
-                print("[HealthKit] Skipping duplicate workout by enhanced fuzzy match: \(hkWorkout.uuid)")
-                // Update the existing workout with healthKitUUID if it doesn't have one
-                if fuzzyMatch?.healthKitUUID == nil {
-                    fuzzyMatch?.healthKitUUID = uuid
-                    try? context.save()
-                    print("[HealthKit] Updated existing workout with healthKitUUID: \(uuid)")
-                }
-                continue
-            }
+            if existingUUIDs.contains(uuid) { continue }
 
+            let workoutType = convertFromHKWorkoutActivityType(hkWorkout.workoutActivityType)
+            let fuzzyKey = FuzzyKey(
+                type: workoutType,
+                startBucket: Int(hkWorkout.startDate.timeIntervalSince1970 / 5),
+                durationBucket: Int(hkWorkout.duration / 5)
+            )
+            if fuzzySet.contains(fuzzyKey) { continue }
+
+            let distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
             let workout = Workout(
                 type: workoutType,
                 startDate: hkWorkout.startDate,
@@ -233,6 +195,7 @@ class HealthKitManager: ObservableObject {
             }
 
             context.insert(workout)
+            fuzzySet.insert(fuzzyKey)
 
             processedWorkouts += 1
             let progress = Double(processedWorkouts) / Double(totalWorkouts)
@@ -241,9 +204,13 @@ class HealthKitManager: ObservableObject {
                 object: nil,
                 userInfo: ["progress": progress]
             )
-            try await Task.sleep(for: .milliseconds(10))
+
+            if processedWorkouts % 20 == 0 {
+                try context.save()
+                await Task.yield()
+            }
         }
-        try? context.save()
+        try context.save()
 
         // Notify UI that route fetching is starting
         NotificationCenter.default.post(name: NSNotification.Name("ImportRoutesStarted"), object: nil)
