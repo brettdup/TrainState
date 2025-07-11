@@ -61,11 +61,52 @@ struct WorkoutDetailView: View {
         CategoryAndSubcategorySelectionView(
           selectedCategories: Binding(
             get: { workout.categories ?? [] },
-            set: { workout.categories = $0 }
+            set: { newCategories in
+              print("DEBUG: Setting categories on workout - Count: \(newCategories.count)")
+              workout.categories = newCategories
+              // Ensure context save
+              try? modelContext.save()
+            }
           ),
           selectedSubcategories: Binding(
             get: { workout.subcategories ?? [] },
-            set: { workout.subcategories = $0 }
+            set: { newSubcategories in
+              print("DEBUG: Setting subcategories on workout - Count: \(newSubcategories.count)")
+              
+              // Debug: Print subcategory details
+              for sub in newSubcategories {
+                print("DEBUG: Subcategory being set: \(sub.name) (ID: \(sub.id), persistentModelID: \(sub.persistentModelID))")
+              }
+              
+              // Ensure subcategories are in the same context as the workout
+              var validSubcategories: [WorkoutSubcategory] = []
+              for selectedSubcategory in newSubcategories {
+                let id = selectedSubcategory.id
+                let descriptor = FetchDescriptor<WorkoutSubcategory>(
+                  predicate: #Predicate { $0.id == id }
+                )
+                if let subcategory = try? modelContext.fetch(descriptor).first {
+                  validSubcategories.append(subcategory)
+                  print("DEBUG: Found subcategory in context: \(subcategory.name)")
+                } else {
+                  print("DEBUG: Subcategory \(selectedSubcategory.name) not found in context!")
+                }
+              }
+              
+              workout.subcategories = validSubcategories
+              print("DEBUG: Final subcategories set: \(validSubcategories.count)")
+              
+              // Ensure context save
+              try? modelContext.save()
+              
+              // Debug: Verify after save
+              print("DEBUG: After save - Subcategories: \(workout.subcategories?.count ?? 0)")
+              if let subcategories = workout.subcategories {
+                for sub in subcategories {
+                  print("DEBUG: Subcategory after save: \(sub.name)")
+                }
+              }
+            }
           ),
           workoutType: workout.type
         )

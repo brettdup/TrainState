@@ -16,276 +16,237 @@ struct CategoryAndSubcategorySelectionView: View {
     // View State
     @State private var searchText = ""
     @State private var showingAddCategorySheet = false
-    @State private var isAnimating = false
-    @Namespace private var animation
 
     // Memoized/Cached Data
     @State private var cachedCategories: [WorkoutCategory] = []
     @State private var cachedSubcategoryOptions: [String: [WorkoutSubcategory]] = [:]
-
-    private var selectedCategoryIDs: Set<UUID> { Set(selectedCategories.map { $0.id }) }
-    private var selectedSubcategoryIDs: Set<UUID> { Set(selectedSubcategories.map { $0.id }) }
+    
+    // Optimized: Pre-computed sets for fast lookups
+    @State private var selectedCategoryIDSet: Set<UUID> = []
+    @State private var selectedSubcategoryIDSet: Set<UUID> = []
 
     private var workoutTypeColor: Color {
         WorkoutTypeHelper.colorForType(workoutType)
     }
 
     private var searchResults: [WorkoutCategory] {
-        let allCategories = cachedCategories
         if searchText.isEmpty {
-            return allCategories
+            return cachedCategories
         }
-        return allCategories.filter { category in
-            if category.name.localizedCaseInsensitiveContains(searchText) {
-                return true
-            }
-            if let subcategories = cachedSubcategoryOptions[category.name] {
-                return subcategories.contains { $0.name.localizedCaseInsensitiveContains(searchText) }
-            }
-            return false
+        return cachedCategories.filter { category in
+            category.name.localizedCaseInsensitiveContains(searchText) ||
+            (cachedSubcategoryOptions[category.name]?.contains { $0.name.localizedCaseInsensitiveContains(searchText) } ?? false)
         }
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            VStack(spacing: 0) {
-                glassyHeader
-                
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 16) {
-                        if searchResults.isEmpty && !searchText.isEmpty {
-                            noSearchResultsView
-                        } else {
-                            ForEach(searchResults) { category in
-                                glassyCategoryCard(for: category)
-                                    .padding(.horizontal, 8)
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
+        VStack(spacing: 0) {
+            // Simplified header
+            headerView
+            
+            // Optimized list
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if searchResults.isEmpty && !searchText.isEmpty {
+                        noSearchResultsView
+                    } else {
+                        ForEach(searchResults) { category in
+                            categoryCard(for: category)
                         }
                     }
-                    .padding(.top, 8)
-                    .padding(.bottom, 100)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
-            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search categories or exercises")
-            .onAppear(perform: initialSetup)
-            .onChange(of: allWorkoutCategoriesFromDB) { _, _ in updateCachedData() }
-            .onChange(of: workoutType) { _, _ in updateCachedData() }
-
-            // Floating Add Button
-            Button(action: { showingAddCategorySheet = true }) {
-                Image(systemName: "plus")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 60, height: 60)
-                    .background(workoutTypeColor)
-                    .clipShape(Circle())
-                    .shadow(color: workoutTypeColor.opacity(0.32), radius: 12, y: 4)
-                    .overlay(
-                        Circle().strokeBorder(Color.white, lineWidth: 2)
-                    )
-            }
-            .padding(.trailing, 24)
-            .padding(.bottom, 32)
-            .sheet(isPresented: $showingAddCategorySheet) {
-                AddNewCategorySheet(
-                    workoutType: workoutType,
-                    onSave: { newCategory in
-                        selectedCategories.append(newCategory)
-                    }
-                )
-            }
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search categories or exercises")
+        .onAppear(perform: initialSetup)
+        .onChange(of: allWorkoutCategoriesFromDB) { _, _ in updateCachedData() }
+        .onChange(of: workoutType) { _, _ in updateCachedData() }
+        .onChange(of: selectedCategories) { _, _ in updateSelectedSets() }
+        .onChange(of: selectedSubcategories) { _, _ in updateSelectedSets() }
+        .overlay(alignment: .bottomTrailing) {
+            addButton
+        }
+        .sheet(isPresented: $showingAddCategorySheet) {
+            AddNewCategorySheet(
+                workoutType: workoutType,
+                onSave: { newCategory in
+                    selectedCategories.append(newCategory)
+                }
+            )
         }
     }
 
-    // MARK: - Glassy Header
-    private var glassyHeader: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
-                .frame(height: 80)
-                .padding(.horizontal, 8)
-                .padding(.top, 8)
-            HStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(workoutTypeColor.opacity(0.15))
-                        .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial, in: Circle())
-                    Image(systemName: WorkoutTypeHelper.iconForType(workoutType))
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(workoutTypeColor)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Organize \(workoutType.rawValue.capitalized)")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.primary)
-                    Text("\(selectedCategories.count) selected")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(action: handleDone) {
-                    Text("Done")
-                        .fontWeight(.semibold)
-                        .foregroundStyle(workoutTypeColor)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                        .shadow(color: workoutTypeColor.opacity(0.08), radius: 2, y: 1)
-                }
+    // MARK: - Simplified Header
+    private var headerView: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(workoutTypeColor.opacity(0.15))
+                    .frame(width: 40, height: 40)
+                Image(systemName: WorkoutTypeHelper.iconForType(workoutType))
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(workoutTypeColor)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 10)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Organize \(workoutType.rawValue.capitalized)")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.primary)
+                Text("\(selectedCategories.count) selected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            Button(action: { dismiss() }) {
+                Text("Done")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(workoutTypeColor)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color(.systemGray6))
+                    .clipShape(Capsule())
+            }
         }
-        .padding(.bottom, 2)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(Color(.systemBackground))
     }
 
-    // MARK: - Glassy Category Card
-    private func glassyCategoryCard(for category: WorkoutCategory) -> some View {
-        let isSelected = selectedCategoryIDs.contains(category.id)
-        let cardColor = (Color(hex: category.color) ?? workoutTypeColor).opacity(isSelected ? 0.18 : 0.08)
+    // MARK: - Optimized Category Card
+    private func categoryCard(for category: WorkoutCategory) -> some View {
+        let isSelected = selectedCategoryIDSet.contains(category.id)
+        let categoryColor = Color(hex: category.color) ?? workoutTypeColor
+        
         return VStack(spacing: 0) {
-            Button(action: {
-                let generator = UIImpactFeedbackGenerator(style: isSelected ? .light : .medium)
-                generator.impactOccurred()
-                withAnimation(.easeInOut(duration: 0.18)) { toggleCategory(category) }
-            }) {
-                HStack(spacing: 16) {
-                    ZStack {
-                        Circle()
-                            .fill(Color(hex: category.color) ?? workoutTypeColor)
-                            .frame(width: 28, height: 28)
-                        if isSelected {
+            Button(action: { toggleCategory(category) }) {
+                HStack(spacing: 12) {
+                    // Simple checkbox
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isSelected ? categoryColor : Color(.systemGray5))
+                        .frame(width: 24, height: 24)
+                        .overlay(
                             Image(systemName: "checkmark")
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(.white)
-                                .scaleEffect(isSelected ? 1.1 : 0.8)
                                 .opacity(isSelected ? 1 : 0)
-                                .animation(.easeInOut(duration: 0.18), value: isSelected)
-                        }
-                    }
+                        )
+                    
                     Text(category.name)
-                        .font(.headline.weight(.medium))
+                        .font(.headline)
                         .foregroundStyle(.primary)
+                    
                     Spacer()
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isSelected ? 180 : 0))
-                        .animation(.easeInOut(duration: 0.18), value: isSelected)
+                    
+                    if let subcategories = cachedSubcategoryOptions[category.name], !subcategories.isEmpty {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isSelected ? 180 : 0))
+                    }
                 }
-                .padding(.vertical, 14)
+                .padding(.vertical, 12)
                 .padding(.horizontal, 16)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(cardColor)
-                        .background(.ultraThinMaterial)
-                        .animation(.easeInOut(duration: 0.18), value: isSelected)
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(isSelected ? categoryColor.opacity(0.1) : Color(.systemGray6))
                 )
-                .scaleEffect(isSelected ? 1.03 : 1.0)
-                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(isSelected ? (Color(hex: category.color) ?? workoutTypeColor) : Color(.systemGray4), lineWidth: isSelected ? 2 : 1)
-            )
+            
+            // Subcategories
             if isSelected {
-                let subcategories = (cachedSubcategoryOptions[category.name] ?? []).filter {
-                    searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText)
-                }
+                let subcategories = cachedSubcategoryOptions[category.name] ?? []
                 if !subcategories.isEmpty {
                     VStack(spacing: 0) {
-                        ForEach(subcategories.indices, id: \ .self) { idx in
-                            glassySubcategoryRow(subcategories[idx], for: category, accentColor: Color(hex: category.color) ?? workoutTypeColor)
-                            if idx < subcategories.count - 1 {
-                                Divider().padding(.leading, 44)
+                        ForEach(subcategories) { subcategory in
+                            subcategoryRow(subcategory, categoryColor: categoryColor)
+                            if subcategory.id != subcategories.last?.id {
+                                Divider().padding(.leading, 40)
                             }
                         }
                     }
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 4)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
                 }
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: isSelected)
     }
 
-    // MARK: - Glassy Subcategory Row
-    private func glassySubcategoryRow(_ sub: WorkoutSubcategory, for category: WorkoutCategory, accentColor: Color) -> some View {
-        let isSelected = selectedSubcategoryIDs.contains(sub.id)
-        let rowColor = accentColor.opacity(isSelected ? 0.15 : 0.05)
-        return Button(action: {
-            let generator = UIImpactFeedbackGenerator(style: .light)
-            generator.impactOccurred()
-            withAnimation(.easeInOut(duration: 0.18)) { toggleSubcategory(sub, for: category) }
-        }) {
+    // MARK: - Optimized Subcategory Row
+    private func subcategoryRow(_ subcategory: WorkoutSubcategory, categoryColor: Color) -> some View {
+        let isSelected = selectedSubcategoryIDSet.contains(subcategory.id)
+        
+        return Button(action: { toggleSubcategory(subcategory) }) {
             HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(isSelected ? accentColor : Color(.systemGray5))
-                        .frame(width: 22, height: 22)
-                    Image(systemName: isSelected ? "checkmark" : "")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
-                        .scaleEffect(isSelected ? 1.1 : 0.8)
-                        .opacity(isSelected ? 1 : 0)
-                        .animation(.easeInOut(duration: 0.18), value: isSelected)
-                }
-                Text(sub.name)
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(isSelected ? categoryColor : Color(.systemGray5))
+                    .frame(width: 20, height: 20)
+                    .overlay(
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .opacity(isSelected ? 1 : 0)
+                    )
+                
+                Text(subcategory.name)
                     .font(.body)
                     .foregroundStyle(.primary)
+                
                 Spacer()
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(rowColor)
-                    .background(.ultraThinMaterial)
-                    .animation(.easeInOut(duration: 0.18), value: isSelected)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? categoryColor.opacity(0.1) : Color.clear)
             )
-            .scaleEffect(isSelected ? 1.025 : 1.0)
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
+    private var addButton: some View {
+        Button(action: { showingAddCategorySheet = true }) {
+            Image(systemName: "plus")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(workoutTypeColor)
+                .clipShape(Circle())
+                .shadow(radius: 8)
+        }
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+    }
+
     private var noSearchResultsView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 40, weight: .light))
+                .font(.system(size: 32, weight: .light))
                 .foregroundStyle(.secondary)
             Text("No Results")
-                .font(.headline.weight(.semibold))
+                .font(.headline)
                 .foregroundStyle(.primary)
             Text("Try a different search term.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
-        .padding(.horizontal, 40)
+        .padding(.vertical, 40)
     }
 
-    // MARK: - Helper Methods
+    // MARK: - Optimized Helper Methods
     private func initialSetup() {
         updateCachedData()
-        if !isAnimating {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation {
-                    self.isAnimating = true
-                }
-            }
-        }
+        updateSelectedSets()
     }
 
     private func updateCachedData() {
@@ -299,44 +260,25 @@ struct CategoryAndSubcategorySelectionView: View {
         }
         cachedSubcategoryOptions = options
     }
-
-    private func handleDone() {
-        let generator = UIImpactFeedbackGenerator(style: .medium)
-        generator.impactOccurred()
-        cleanupSubcategories()
-        dismiss()
-    }
-
-    private func cleanupSubcategories() {
-        selectedSubcategories.removeAll { sub in
-            !selectedCategories.contains { category in
-                (category.subcategories ?? []).contains { $0.id == sub.id }
-            }
-        }
-        try? modelContext.save()
+    
+    private func updateSelectedSets() {
+        selectedCategoryIDSet = Set(selectedCategories.map { $0.id })
+        selectedSubcategoryIDSet = Set(selectedSubcategories.map { $0.id })
     }
 
     private func toggleCategory(_ category: WorkoutCategory) {
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
         if let idx = selectedCategories.firstIndex(where: { $0.id == category.id }) {
             selectedCategories.remove(at: idx)
-            selectedSubcategories.removeAll { sub in
-                (category.subcategories ?? []).contains { $0.id == sub.id }
-            }
         } else {
             selectedCategories.append(category)
         }
     }
 
-    private func toggleSubcategory(_ sub: WorkoutSubcategory, for category: WorkoutCategory) {
-        guard selectedCategoryIDs.contains(category.id) else { return }
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
-        if let idx = selectedSubcategories.firstIndex(where: { $0.id == sub.id }) {
+    private func toggleSubcategory(_ subcategory: WorkoutSubcategory) {
+        if let idx = selectedSubcategories.firstIndex(where: { $0.id == subcategory.id }) {
             selectedSubcategories.remove(at: idx)
         } else {
-            selectedSubcategories.append(sub)
+            selectedSubcategories.append(subcategory)
         }
     }
 }
@@ -402,7 +344,6 @@ private struct AddNewCategorySheet: View {
             onSave(newCategory)
             dismiss()
         } catch {
-            // Handle error saving, e.g., show an alert
             print("Failed to save new category: \(error)")
         }
     }

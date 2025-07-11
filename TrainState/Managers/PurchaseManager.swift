@@ -326,6 +326,14 @@ class PurchaseManager: ObservableObject {
     }
 }
 
+#if DEBUG
+extension PurchaseManager {
+    func forcePremiumForPreview() {
+        purchasedProductIDs = ["Premium1Month"]
+    }
+}
+#endif
+
 enum StoreError: LocalizedError {
     case failedVerification
     case userCancelled

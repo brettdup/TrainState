@@ -553,20 +553,20 @@ struct OptimizedWorkoutsSection: View {
                             .font(.caption)
                             .foregroundStyle(.blue)
                         
-                        Text("\(workouts.count)")
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(.blue)
+                    Text("\(workouts.count)")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.blue)
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(
-                        Capsule()
-                            .fill(.blue.opacity(0.1))
+                        .background(
+                            Capsule()
+                                .fill(.blue.opacity(0.1))
                             .overlay(
                                 Capsule()
                                     .stroke(.blue.opacity(0.2), lineWidth: 0.5)
                             )
-                    )
+                        )
                 }
             }
             .padding(.horizontal, 24)

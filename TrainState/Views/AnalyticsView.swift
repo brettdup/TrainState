@@ -34,16 +34,56 @@ struct DailyWorkoutSummary: Identifiable {
 // MARK: - Analytics View
 struct AnalyticsView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: [SortDescriptor(\Workout.startDate, order: .reverse)]) private var workouts: [Workout]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var selectedWeekDisplayMode: WeekDisplayMode = .lastSevenDays
-    @State private var cachedFilteredWorkouts: (running: [Workout], strength: [Workout]) = (running: [], strength: [])
-    @State private var cachedDailySummaries: [DailyWorkoutSummary] = []
-    @State private var lastWorkoutsHash: Int = 0
-    @State private var lastWeekDisplayMode: WeekDisplayMode = .lastSevenDays
     @State private var showingPremiumPaywall = false
     @State private var animateCards = false
+    
+    // Performance optimized data management
+    @State private var cachedData: AnalyticsCachedData?
+    @State private var lastUpdateTime: Date = Date()
+    @State private var isLoadingData = false
     private let calendar = Calendar.current
+    
+    // Computed properties for date range
+    private var dateRange: (start: Date, end: Date) {
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        
+        switch selectedWeekDisplayMode {
+        case .lastSevenDays:
+            let sevenDaysAgo = calendar.date(byAdding: .day, value: -6, to: startOfToday)!
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
+            return (sevenDaysAgo, tomorrow)
+        case .calendarWeek:
+            // Always use Monday as the start of the week
+            let weekday = calendar.component(.weekday, from: startOfToday)
+            // In the Gregorian calendar: 1 = Sunday, 2 = Monday, ..., 7 = Saturday
+            // To get the most recent Monday:
+            let daysSinceMonday = (weekday + 5) % 7 // 0 if Monday, 1 if Tuesday, ..., 6 if Sunday
+            let thisMonday = calendar.date(byAdding: .day, value: -daysSinceMonday, to: startOfToday)!
+            let nextMonday = calendar.date(byAdding: .day, value: 7, to: thisMonday)!
+            return (thisMonday, nextMonday)
+        }
+    }
+    
+    // Optimized query that only fetches workouts within the date range
+    @Query private var allWorkouts: [Workout]
+    
+    init() {
+        // Initialize with a broad predicate that will be refined in the view
+        // Fetch last 60 days to ensure we have enough data for streak calculations
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let sixtyDaysAgo = calendar.date(byAdding: .day, value: -60, to: startOfToday)!
+        
+        _allWorkouts = Query(
+            filter: #Predicate<Workout> { workout in
+                workout.startDate >= sixtyDaysAgo
+            },
+            sort: [SortDescriptor(\Workout.startDate, order: .reverse)]
+        )
+    }
     
     var body: some View {
         NavigationStack {
@@ -74,38 +114,53 @@ struct AnalyticsView: View {
                         if purchaseManager.hasActiveSubscription {
                             // Premium Content with modern design
                             Group {
-                                // Hero stats overview
-                                HeroStatsView(
-                                    filteredWorkouts: cachedFilteredWorkouts,
-                                    currentStreak: calculateCurrentStreak(workouts: workouts, calendar: calendar),
-                                    longestStreak: calculateLongestStreak(workouts: workouts, calendar: calendar)
-                                )
-                                .scaleEffect(animateCards ? 1 : 0.95)
-                                .opacity(animateCards ? 1 : 0)
-                                
-                                // Enhanced activity chart
-                                ModernActivityChartView(dailySummaries: cachedDailySummaries)
+                                if isLoadingData && cachedData == nil {
+                                    // Loading state
+                                    VStack(spacing: 20) {
+                                        ProgressView()
+                                            .scaleEffect(1.2)
+                                            .tint(.blue)
+                                        
+                                        Text("Loading analytics...")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(maxWidth: .infinity, minHeight: 200)
+                                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                                } else {
+                                    // Hero stats overview
+                                    HeroStatsView(
+                                        filteredWorkouts: cachedData?.filteredWorkouts ?? (running: [], strength: []),
+                                        currentStreak: cachedData?.currentStreak ?? 0,
+                                        longestStreak: cachedData?.longestStreak ?? 0
+                                    )
                                     .scaleEffect(animateCards ? 1 : 0.95)
                                     .opacity(animateCards ? 1 : 0)
-                                
-                                // Modern weekly breakdown
-                                ModernWeeklyBreakdownView(
-                                    dailySummaries: cachedDailySummaries,
-                                    calendar: calendar
-                                )
-                                .scaleEffect(animateCards ? 1 : 0.95)
-                                    .opacity(animateCards ? 1 : 0)
-                                
-                                // Quick access features
-                                QuickAccessFeaturesView()
+                                    
+                                    // Enhanced activity chart
+                                    ModernActivityChartView(dailySummaries: cachedData?.dailySummaries ?? [])
+                                        .scaleEffect(animateCards ? 1 : 0.95)
+                                        .opacity(animateCards ? 1 : 0)
+                                    
+                                    // Modern weekly breakdown
+                                    ModernWeeklyBreakdownView(
+                                        dailySummaries: cachedData?.dailySummaries ?? [],
+                                        calendar: calendar
+                                    )
                                     .scaleEffect(animateCards ? 1 : 0.95)
-                                    .opacity(animateCards ? 1 : 0)
+                                        .opacity(animateCards ? 1 : 0)
+                                    
+                                    // Quick access features
+                                    QuickAccessFeaturesView()
+                                        .scaleEffect(animateCards ? 1 : 0.95)
+                                        .opacity(animateCards ? 1 : 0)
+                                }
                             }
                         } else {
                             // Enhanced free content with premium preview
                             Group {
                                 // Basic stats overview
-                                BasicStatsOverview(filteredWorkouts: cachedFilteredWorkouts)
+                                BasicStatsOverview(filteredWorkouts: cachedData?.filteredWorkouts ?? (running: [], strength: []))
                                     .scaleEffect(animateCards ? 1 : 0.95)
                                     .opacity(animateCards ? 1 : 0)
                                 
@@ -126,14 +181,14 @@ struct AnalyticsView: View {
             }
         }
         .onAppear {
-            updateCachedData()
+            updateCachedDataIfNeeded()
             animateCards = true
         }
-        .onChange(of: workouts) { _, _ in
-            updateCachedData()
+        .onChange(of: allWorkouts) { _, _ in
+            updateCachedDataIfNeeded()
         }
         .onChange(of: selectedWeekDisplayMode) { _, _ in
-            updateCachedData()
+            updateCachedDataIfNeeded()
         }
         .sheet(isPresented: $showingPremiumPaywall) {
             AnalyticsPremiumPaywallView(
@@ -154,49 +209,137 @@ struct AnalyticsView: View {
         }
     }
     
-    // MARK: - Data Processing
-    private var dateRange: (start: Date, end: Date) {
+    // MARK: - Optimized Data Processing
+    private func updateCachedDataIfNeeded() {
         let now = Date()
-        let startOfToday = calendar.startOfDay(for: now)
+        let timeSinceLastUpdate = now.timeIntervalSince(lastUpdateTime)
         
-        switch selectedWeekDisplayMode {
-        case .lastSevenDays:
-            let sevenDaysAgo = calendar.date(byAdding: .day, value: -6, to: startOfToday)!
-            return (sevenDaysAgo, calendar.date(byAdding: .day, value: 1, to: startOfToday)!)
+        // Only update if enough time has passed or if we don't have cached data
+        guard cachedData == nil || timeSinceLastUpdate > 1.0 else { return }
+        
+        lastUpdateTime = now
+        isLoadingData = true
+        
+        // Perform data processing on background queue
+        Task {
+            let newCachedData = await processAnalyticsData()
             
-        case .calendarWeek:
-            let weekday = calendar.component(.weekday, from: startOfToday)
-            let daysToSubtract = (weekday + 5) % 7
-            let monday = calendar.date(byAdding: .day, value: -daysToSubtract, to: startOfToday)!
-            let sunday = calendar.date(byAdding: .day, value: 6, to: monday)!
-            return (monday, calendar.date(byAdding: .day, value: 1, to: sunday)!)
+            // Update UI on main queue
+            await MainActor.run {
+                cachedData = newCachedData
+                isLoadingData = false
+            }
         }
     }
     
-    private func calculateCurrentStreak(workouts: [Workout], calendar: Calendar) -> Int {
-        guard !workouts.isEmpty else { return 0 }
+    @MainActor
+    private func processAnalyticsData() async -> AnalyticsCachedData {
+        let range = dateRange
+        
+        // Filter workouts for the current date range
+        let filtered = allWorkouts.filter { $0.startDate >= range.start && $0.startDate < range.end }
+        let running = filtered.filter { $0.type == .running }
+        let strength = filtered.filter { $0.type == .strength }
+        
+        // Calculate daily summaries efficiently
+        let dailySummaries = await calculateDailySummaries(
+            running: running,
+            strength: strength,
+            dateRange: range
+        )
+        
+        // Calculate streaks efficiently
+        let (currentStreak, longestStreak) = await calculateStreaks(workouts: allWorkouts)
+        
+        return AnalyticsCachedData(
+            filteredWorkouts: (running: running, strength: strength),
+            dailySummaries: dailySummaries,
+            currentStreak: currentStreak,
+            longestStreak: longestStreak
+        )
+    }
+    
+    private func calculateDailySummaries(
+        running: [Workout],
+        strength: [Workout],
+        dateRange: (start: Date, end: Date)
+    ) async -> [DailyWorkoutSummary] {
+        // Group workouts by day for efficient processing
+        let runningByDay = Dictionary(grouping: running) { workout in
+            calendar.startOfDay(for: workout.startDate)
+        }
+        
+        let strengthByDay = Dictionary(grouping: strength) { workout in
+            calendar.startOfDay(for: workout.startDate)
+        }
+        
+        var summaries: [DailyWorkoutSummary] = []
+        var currentDate = dateRange.start
+        
+        while currentDate < dateRange.end {
+            let dayStart = calendar.startOfDay(for: currentDate)
+            let runningWorkouts = runningByDay[dayStart] ?? []
+            let strengthWorkouts = strengthByDay[dayStart] ?? []
+            
+            let runningDuration = runningWorkouts.reduce(0) { $0 + $1.duration }
+            let runningDistance = runningWorkouts.compactMap { $0.distance }.reduce(0, +)
+            let strengthDuration = strengthWorkouts.reduce(0) { $0 + $1.duration }
+            let strengthCalories = strengthWorkouts.compactMap { $0.calories }.reduce(0, +)
+            
+            summaries.append(DailyWorkoutSummary(
+                date: dayStart,
+                runningDuration: runningDuration,
+                runningDistance: runningDistance,
+                strengthDuration: strengthDuration,
+                strengthCalories: strengthCalories
+            ))
+            
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+        
+        return summaries.sorted { $0.date > $1.date }
+    }
+    
+    private func calculateStreaks(workouts: [Workout]) async -> (current: Int, longest: Int) {
+        guard !workouts.isEmpty else { return (0, 0) }
+        
+        // Get unique workout days efficiently
+        let uniqueWorkoutDays = Set(workouts.map { calendar.startOfDay(for: $0.startDate) })
+        let sortedDays = Array(uniqueWorkoutDays).sorted()
+        
+        // Calculate current streak
+        let currentStreak = calculateCurrentStreak(sortedDays: sortedDays)
+        
+        // Calculate longest streak
+        let longestStreak = calculateLongestStreak(sortedDays: sortedDays)
+        
+        return (currentStreak, longestStreak)
+    }
+    
+    private func calculateCurrentStreak(sortedDays: [Date]) -> Int {
+        guard !sortedDays.isEmpty else { return 0 }
         
         let today = calendar.startOfDay(for: Date())
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
         
-        let uniqueWorkoutDays = Array(Set(workouts.map { calendar.startOfDay(for: $0.startDate) })).sorted().reversed()
+        let reversedDays = sortedDays.reversed()
         
-        guard !uniqueWorkoutDays.isEmpty else { return 0 }
+        guard !reversedDays.isEmpty else { return 0 }
         
         var currentStreak = 0
         var expectedDate: Date
         
-        if uniqueWorkoutDays.first == today {
+        if reversedDays.first == today {
             currentStreak = 1
             expectedDate = yesterday
-        } else if uniqueWorkoutDays.first == yesterday {
+        } else if reversedDays.first == yesterday {
             currentStreak = 1
             expectedDate = calendar.date(byAdding: .day, value: -1, to: yesterday)!
         } else {
             return 0
         }
         
-        for day in uniqueWorkoutDays.dropFirst() {
+        for day in reversedDays.dropFirst() {
             if calendar.isDate(day, inSameDayAs: expectedDate) {
                 currentStreak += 1
                 expectedDate = calendar.date(byAdding: .day, value: -1, to: expectedDate)!
@@ -208,22 +351,18 @@ struct AnalyticsView: View {
         return currentStreak
     }
     
-    private func calculateLongestStreak(workouts: [Workout], calendar: Calendar) -> Int {
-        guard !workouts.isEmpty else { return 0 }
-        
-        let uniqueWorkoutDays = Array(Set(workouts.map { calendar.startOfDay(for: $0.startDate) })).sorted()
-        
-        guard !uniqueWorkoutDays.isEmpty else { return 0 }
+    private func calculateLongestStreak(sortedDays: [Date]) -> Int {
+        guard !sortedDays.isEmpty else { return 0 }
         
         var maxStreak = 0
         var currentStreak = 0
         
-        for i in 0..<uniqueWorkoutDays.count {
+        for i in 0..<sortedDays.count {
             if i == 0 {
                 currentStreak = 1
             } else {
-                let previousDay = uniqueWorkoutDays[i-1]
-                let currentDay = uniqueWorkoutDays[i]
+                let previousDay = sortedDays[i-1]
+                let currentDay = sortedDays[i]
                 if let daysDifference = calendar.dateComponents([.day], from: previousDay, to: currentDay).day, daysDifference == 1 {
                     currentStreak += 1
                 } else {
@@ -235,48 +374,14 @@ struct AnalyticsView: View {
         
         return maxStreak
     }
-    
-    // MARK: - Cache Management
-    private func updateCachedData() {
-        let newHash = workouts.map { $0.id }.hashValue
-        let hasWorkoutsChanged = newHash != lastWorkoutsHash
-        let hasDisplayModeChanged = selectedWeekDisplayMode != lastWeekDisplayMode
+}
 
-        if hasWorkoutsChanged || hasDisplayModeChanged || cachedDailySummaries.isEmpty {
-            lastWorkoutsHash = newHash
-            lastWeekDisplayMode = selectedWeekDisplayMode
-
-            // Filtering logic (was filteredWorkouts)
-            let range = dateRange
-            let filtered = workouts.filter { $0.startDate >= range.start && $0.startDate < range.end }
-            let running = filtered.filter { $0.type == .running }
-            let strength = filtered.filter { $0.type == .strength }
-            cachedFilteredWorkouts = (running: running, strength: strength)
-
-            // Daily summaries logic (was dailySummaries)
-            var summaries: [DailyWorkoutSummary] = []
-            var currentDate = range.start
-            while currentDate < range.end {
-                let dayStart = calendar.startOfDay(for: currentDate)
-                let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
-                let runningWorkouts = running.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
-                let strengthWorkouts = strength.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
-                let runningDuration = runningWorkouts.reduce(0) { $0 + $1.duration }
-                let runningDistance = runningWorkouts.compactMap { $0.distance }.reduce(0, +)
-                let strengthDuration = strengthWorkouts.reduce(0) { $0 + $1.duration }
-                let strengthCalories = strengthWorkouts.compactMap { $0.calories }.reduce(0, +)
-                summaries.append(DailyWorkoutSummary(
-                    date: dayStart,
-                    runningDuration: runningDuration,
-                    runningDistance: runningDistance,
-                    strengthDuration: strengthDuration,
-                    strengthCalories: strengthCalories
-                ))
-                currentDate = dayEnd
-            }
-            cachedDailySummaries = summaries.sorted { $0.date > $1.date }
-        }
-    }
+// MARK: - Cached Data Structure
+struct AnalyticsCachedData {
+    let filteredWorkouts: (running: [Workout], strength: [Workout])
+    let dailySummaries: [DailyWorkoutSummary]
+    let currentStreak: Int
+    let longestStreak: Int
 }
 
 // MARK: - Modern Supporting Views
@@ -340,7 +445,11 @@ struct HeroStatsView: View {
                     title: "Total Workouts",
                     value: "\(filteredWorkouts.running.count + filteredWorkouts.strength.count)",
                     icon: "figure.run",
-                    gradient: LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    gradient: LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    valueColor: .blue,
+                    iconColor: .blue,
+                    titleColor: .primary,
+                    subtitleColor: .secondary
                 )
                 
                 HeroStatCard(
@@ -348,7 +457,11 @@ struct HeroStatsView: View {
                     value: "\(currentStreak)",
                     subtitle: "days",
                     icon: "flame.fill",
-                    gradient: LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    gradient: LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    valueColor: .orange,
+                    iconColor: .orange,
+                    titleColor: .primary,
+                    subtitleColor: .secondary
                 )
             }
             
@@ -385,12 +498,22 @@ struct HeroStatCard: View {
     let icon: String
     let gradient: LinearGradient
     
-    init(title: String, value: String, subtitle: String? = nil, icon: String, gradient: LinearGradient) {
+    // New: Allow custom text/icon color for each card
+    let valueColor: Color?
+    let iconColor: Color?
+    let titleColor: Color?
+    let subtitleColor: Color?
+    
+    init(title: String, value: String, subtitle: String? = nil, icon: String, gradient: LinearGradient, valueColor: Color? = nil, iconColor: Color? = nil, titleColor: Color? = nil, subtitleColor: Color? = nil) {
         self.title = title
         self.value = value
         self.subtitle = subtitle
         self.icon = icon
         self.gradient = gradient
+        self.valueColor = valueColor
+        self.iconColor = iconColor
+        self.titleColor = titleColor
+        self.subtitleColor = subtitleColor
     }
     
     var body: some View {
@@ -409,26 +532,26 @@ struct HeroStatCard: View {
                 
                 Image(systemName: icon)
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .shadow(color: .blue.opacity(0.8), radius: 6)
+                    .foregroundStyle(iconColor ?? .white)
+                    .shadow(color: (iconColor ?? .white).opacity(0.8), radius: 6)
             }
             
             VStack(spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text(value)
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(valueColor ?? .white)
                     
                     if let subtitle = subtitle {
                         Text(subtitle)
                             .font(.caption.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.7))
+                            .foregroundStyle(subtitleColor ?? .white.opacity(0.7))
                     }
                 }
                 
                 Text(title)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(titleColor ?? .white.opacity(0.8))
                     .multilineTextAlignment(.center)
             }
         }
@@ -447,6 +570,19 @@ struct AnalyticsWorkoutTypeCard: View {
     let workouts: [Workout]
     let color: Color
     let icon: String
+    
+    // Computed properties to avoid recalculating on every render
+    private var totalDuration: TimeInterval {
+        workouts.reduce(0) { $0 + $1.duration }
+    }
+    
+    private var totalDistance: Double {
+        workouts.compactMap { $0.distance }.reduce(0, +)
+    }
+    
+    private var totalCalories: Double {
+        workouts.compactMap { $0.calories }.reduce(0, +)
+    }
     
     var body: some View {
         VStack(spacing: 12) {
@@ -482,13 +618,12 @@ struct AnalyticsWorkoutTypeCard: View {
                     
                     Spacer()
                     
-                    Text(formatDuration(workouts.reduce(0) { $0 + $1.duration }))
+                    Text(formatDuration(totalDuration))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                 }
                 
                 if title == "Running" {
-                    let totalDistance = workouts.compactMap { $0.distance }.reduce(0, +)
                     if totalDistance > 0 {
                         HStack {
                             Text("Distance")
@@ -503,8 +638,7 @@ struct AnalyticsWorkoutTypeCard: View {
                         }
                     }
                 } else {
-                    let calories = workouts.compactMap { $0.calories }.reduce(0, +)
-                    if calories > 0 {
+                    if totalCalories > 0 {
                         HStack {
                             Text("Calories")
                                 .font(.caption.weight(.medium))
@@ -512,7 +646,7 @@ struct AnalyticsWorkoutTypeCard: View {
                             
                             Spacer()
                             
-                            Text("\(Int(calories))")
+                            Text("\(Int(totalCalories))")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.primary)
                         }
@@ -533,6 +667,11 @@ struct AnalyticsWorkoutTypeCard: View {
 struct ModernActivityChartView: View {
     let dailySummaries: [DailyWorkoutSummary]
     
+    // Computed property to avoid recalculating on every render
+    private var activeDaysCount: Int {
+        dailySummaries.filter { $0.hasAnyActivity }.count
+    }
+    
     var body: some View {
         VStack(spacing: 20) {
             HStack {
@@ -550,7 +689,7 @@ struct ModernActivityChartView: View {
                 
                 // Quick stats
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(dailySummaries.filter { $0.hasAnyActivity }.count)")
+                    Text("\(activeDaysCount)")
                         .font(.headline.weight(.bold))
                         .foregroundStyle(.blue)
                     
@@ -561,7 +700,7 @@ struct ModernActivityChartView: View {
             }
             .padding(.horizontal, 24)
             
-            // Enhanced chart
+            // Enhanced chart with optimized rendering
             Chart {
                 ForEach(dailySummaries) { summary in
                     BarMark(
@@ -569,8 +708,14 @@ struct ModernActivityChartView: View {
                         y: .value("Duration", summary.totalDuration / 60)
                     )
                     .foregroundStyle(
+                        summary.hasAnyActivity ? 
                         LinearGradient(
                             colors: [.blue, .blue.opacity(0.6)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ) :
+                        LinearGradient(
+                            colors: [.gray.opacity(0.3), .gray.opacity(0.1)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -620,6 +765,7 @@ struct ModernWeeklyBreakdownView: View {
             LazyVStack(spacing: 12) {
                 ForEach(dailySummaries) { summary in
                     ModernDailyRow(summary: summary, calendar: calendar)
+                        .id(summary.date) // Ensure proper identification for LazyVStack
                 }
             }
             .padding(.horizontal, 16)
@@ -1378,34 +1524,40 @@ private func createSampleWorkout(type: WorkoutType, daysAgo: Int, duration: Time
     return Workout(type: type, startDate: date, duration: duration, calories: calories)
 }
 
-#Preview {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(
-        for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, UserSettings.self, WorkoutRoute.self,
-        configurations: config
-    )
-    
-    // Add sample workouts to the context
-    let sampleWorkouts = [
-        // Last 7 Days
-        createSampleWorkout(type: .running, daysAgo: 0, duration: 1800, calories: 250), // Today
-        createSampleWorkout(type: .strength, daysAgo: 1, duration: 3600, calories: 300), // Yesterday
-        createSampleWorkout(type: .running, daysAgo: 2, duration: 2400, calories: 350),
-        createSampleWorkout(type: .strength, daysAgo: 3, duration: 3000, calories: 280),
-        createSampleWorkout(type: .running, daysAgo: 5, duration: 1500, calories: 200),
-        
-        // Older workouts for streak testing
-        createSampleWorkout(type: .running, daysAgo: 8, duration: 2200, calories: 320),
-        createSampleWorkout(type: .strength, daysAgo: 10, duration: 3300, calories: 290),
-        createSampleWorkout(type: .running, daysAgo: 15, duration: 1800, calories: 260)
-    ]
-    
-    for workout in sampleWorkouts {
-        container.mainContext.insert(workout)
+struct AnalyticsView_Previews: PreviewProvider {
+    static var previews: some View {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try! ModelContainer(
+            for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, UserSettings.self, WorkoutRoute.self,
+            configurations: config
+        )
+
+        // Add sample workouts to the context
+        let sampleWorkouts = [
+            // Last 7 Days
+            createSampleWorkout(type: .running, daysAgo: 0, duration: 1800, calories: 250), // Today
+            createSampleWorkout(type: .strength, daysAgo: 1, duration: 3600, calories: 300), // Yesterday
+            createSampleWorkout(type: .running, daysAgo: 2, duration: 2400, calories: 350),
+            createSampleWorkout(type: .strength, daysAgo: 3, duration: 3000, calories: 280),
+            createSampleWorkout(type: .running, daysAgo: 5, duration: 1500, calories: 200),
+            // Older workouts for streak testing
+            createSampleWorkout(type: .running, daysAgo: 8, duration: 2200, calories: 320),
+            createSampleWorkout(type: .strength, daysAgo: 10, duration: 3300, calories: 290),
+            createSampleWorkout(type: .running, daysAgo: 15, duration: 1800, calories: 260)
+        ]
+
+        for workout in sampleWorkouts {
+            container.mainContext.insert(workout)
+        }
+
+        // Use the debug-only method to force premium for preview
+        #if DEBUG
+        PurchaseManager.shared.forcePremiumForPreview()
+        #endif
+
+        return AnalyticsView()
+            .modelContainer(container)
     }
-    
-    return AnalyticsView()
-        .modelContainer(container)
 }
 
 // MARK: - Analytics Premium Paywall View

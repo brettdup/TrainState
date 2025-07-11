@@ -281,6 +281,8 @@ struct CategoriesManagementView: View {
     @State private var categoryToDelete: WorkoutCategory?
     @State private var showingDeleteWarning = false
     @State private var isRefreshing = false
+    // --- Add for delete all ---
+    @State private var showingDeleteAllConfirmation = false
     
     private var filteredCategories: [WorkoutCategory] {
         categories.filter { $0.workoutType == selectedWorkoutType }
@@ -345,7 +347,10 @@ struct CategoriesManagementView: View {
                             Button(action: { showingResetConfirmation = true }) {
                                 Label("Reset to Default", systemImage: "arrow.counterclockwise")
                             }
-                            
+                            // --- Add Delete All Categories option ---
+                            Button(role: .destructive, action: { showingDeleteAllConfirmation = true }) {
+                                Label("Delete All Categories", systemImage: "trash")
+                            }
                             Button(action: { showingPremiumPaywall = true }) {
                                 Label("Premium Features", systemImage: "star.fill")
                             }
@@ -369,14 +374,7 @@ struct CategoriesManagementView: View {
                     .presentationDetents([.medium])
             }
         }
-        .alert("Reset to Default Categories?", isPresented: $showingResetConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Reset", role: .destructive) {
-                resetToDefaultCategories()
-            }
-        } message: {
-            Text("This will delete all existing categories and subcategories, and replace them with the default set. This action cannot be undone.")
-        }
+        
         .alert("Delete Category?", isPresented: $showingDeleteWarning) {
             Button("Cancel", role: .cancel) {
                 categoryToDelete = nil
@@ -388,6 +386,15 @@ struct CategoriesManagementView: View {
             if let category = categoryToDelete {
                 Text("Deleting '\(category.name)' will remove it from all associated workouts. The workouts will remain but will no longer be categorized under '\(category.name)'. This action cannot be undone.")
             }
+        }
+        // --- Add Delete All Categories Alert ---
+        .alert("Delete All Categories?", isPresented: $showingDeleteAllConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete All", role: .destructive) {
+                deleteAllCategories()
+            }
+        } message: {
+            Text("This will remove all categories and their subcategories for the selected workout type. Workouts will remain but will be uncategorized. This action cannot be undone.")
         }
     }
     
@@ -442,13 +449,11 @@ struct CategoriesManagementView: View {
         categoryToDelete = nil
     }
     
-    private func resetToDefaultCategories() {
-        for category in categories {
-            modelContext.delete(category)
-        }
-        let defaultCategories = WorkoutCategory.createDefaultCategories()
-        for category in defaultCategories {
-            modelContext.insert(category)
+    private func deleteAllCategories() {
+        withAnimation {
+            for category in filteredCategories {
+                modelContext.delete(category)
+            }
         }
     }
 }

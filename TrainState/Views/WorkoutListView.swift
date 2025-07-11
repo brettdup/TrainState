@@ -73,11 +73,24 @@ struct WorkoutListView: View {
                 // Workouts Section
                 Section {
                     ForEach(displayedWorkouts) { workout in
-                        WorkoutRowView(workout: workout)
-                            .onTapGesture {
-                                selectedWorkoutForDetail = workout
-                            }
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        WorkoutRowView(
+                            workout: workout,
+                            onTap: { selectedWorkoutForDetail = workout },
+                            menuItems: [
+                                ContextMenuItem(view: AnyView(Button {
+                                    selectedWorkoutForDetail = workout // Edit
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                })),
+                                ContextMenuItem(view: AnyView(Button(role: .destructive) {
+                                    deleteWorkout(workout)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }))
+                            ]
+                        )
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     }
                     
                     // Premium Upgrade Row
@@ -439,6 +452,11 @@ struct WorkoutListView: View {
         default: return "square.grid.2x2"
         }
     }
+    
+    private func deleteWorkout(_ workout: Workout) {
+        // TODO: Implement actual delete logic
+        print("Delete workout: \(workout.id)")
+    }
 }
 
 // MARK: - StatCardView
@@ -499,6 +517,11 @@ struct StatCardView: View {
 // MARK: - WorkoutRowView
 struct WorkoutRowView: View {
     let workout: Workout
+    var onTap: (() -> Void)? = nil
+    var contextMenu: (() -> Void)? = nil // Not used directly, just for API compatibility
+    var menuItems: [ContextMenuItem] = []
+    
+    @GestureState private var isPressed: Bool = false
     
     private var iconName: String {
         switch workout.type {
@@ -525,67 +548,99 @@ struct WorkoutRowView: View {
     }
     
     var body: some View {
-        HStack(spacing: 12) {
-            // Icon
-            Image(systemName: iconName)
-                .font(.title2)
-                .foregroundStyle(iconColor)
-                .frame(width: 24)
-            
-            // Content
-            VStack(alignment: .leading, spacing: 4) {
-                Text(workout.type.rawValue)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
+        Button(action: { onTap?() }) {
+            HStack(spacing: 12) {
+                // Icon
+                Image(systemName: iconName)
+                    .font(.title2)
+                    .foregroundStyle(iconColor)
+                    .frame(width: 24)
                 
-                Text(formattedDate(workout.startDate))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                
-                if let firstCategory = workout.categories?.first {
-                    Text(firstCategory.name)
-                        .font(.caption.weight(.medium))
+                // Content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(workout.type.rawValue)
+                        .font(.headline)
                         .foregroundStyle(.primary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule()
-                                .fill(.ultraThinMaterial)
-                                .overlay(
-                                    Capsule()
-                                        .stroke(.quaternary, lineWidth: 0.5)
-                                )
-                        )
-                        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-                }
-            }
-            
-            Spacer()
-            
-            // Stats
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(formatDuration(workout.duration))
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                
-                if workout.type == .running, let distance = workout.distance {
-                    Text(String(format: "%.1f km", distance / 1000))
-                        .font(.caption)
+                    
+                    Text(formattedDate(workout.startDate))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    
+                    if let firstCategory = workout.categories?.first {
+                        Text(firstCategory.name)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(.quaternary, lineWidth: 0.5)
+                                    )
+                            )
+                            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+                    }
                 }
                 
-                if let calories = workout.calories {
-                    Text("\(Int(calories)) cal")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                Spacer()
+                
+                // Stats
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(formatDuration(workout.duration))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                    
+                    if workout.type == .running, let distance = workout.distance {
+                        Text(String(format: "%.1f km", distance / 1000))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    if let calories = workout.calories {
+                        Text("\(Int(calories)) cal")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
-            
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .background(
+                Group {
+                    if isPressed {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color.clear)
+                    } else {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
+                    }
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(isPressed ? Color.clear : Color.white.opacity(0.12), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 4)
+        .buttonStyle(.plain)
+        .contextMenu {
+            ForEach(menuItems) { item in
+                item.view
+            }
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .updating($isPressed) { _, state, _ in
+                    state = true
+                }
+        )
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -615,6 +670,24 @@ struct WorkoutRowView: View {
         } else {
             formatter.dateFormat = "E, MMM d 'at' h:mm a"
             return formatter.string(from: date)
+        }
+    }
+}
+
+// Helper struct for context menu items
+struct ContextMenuItem: Identifiable {
+    let id = UUID()
+    let view: AnyView
+}
+
+// Helper for conditional modifier
+extension View {
+    @ViewBuilder
+    func ifLet<T, Content: View>(_ value: T?, transform: (Self, T) -> Content) -> some View {
+        if let value = value {
+            transform(self, value)
+        } else {
+            self
         }
     }
 }

@@ -44,30 +44,27 @@ final class Workout {
     }
     
     // Helper methods to maintain relationship integrity
+    // Note: Only modify one side of the relationship - SwiftData handles the inverse automatically
     func addCategory(_ category: WorkoutCategory) {
         if categories == nil { self.categories = [] }
         if !(categories?.contains(where: { $0.id == category.id }) ?? false) {
             categories?.append(category)
-            category.workouts?.append(self)
         }
     }
     
     func removeCategory(_ category: WorkoutCategory) {
         categories?.removeAll { $0.id == category.id }
-        category.workouts?.removeAll { $0.id == self.id }
     }
     
     func addSubcategory(_ subcategory: WorkoutSubcategory) {
         if subcategories == nil { self.subcategories = [] }
         if !(subcategories?.contains(where: { $0.id == subcategory.id }) ?? false) {
             subcategories?.append(subcategory)
-            subcategory.workouts?.append(self)
         }
     }
     
     func removeSubcategory(_ subcategory: WorkoutSubcategory) {
         subcategories?.removeAll { $0.id == subcategory.id }
-        subcategory.workouts?.removeAll { $0.id == self.id }
     }
 }
 

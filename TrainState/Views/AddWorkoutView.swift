@@ -476,24 +476,102 @@ struct AddWorkoutView: View {
                     duration: duration,
                     calories: caloriesValue,
                     distance: distanceValue,
-                    notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines),
-                    categories: selectedCategories.isEmpty ? nil : selectedCategories,
-                    subcategories: selectedSubcategories.isEmpty ? nil : selectedSubcategories
+                    notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
                 
-                // Add relationships
-                for category in selectedCategories {
-                    newWorkout.addCategory(category)
+                // Debug: Print selected items before saving
+                print("DEBUG: Saving workout with \(selectedCategories.count) categories and \(selectedSubcategories.count) subcategories")
+                
+                // Debug: Print all subcategories in context
+                let allSubcategoriesDescriptor = FetchDescriptor<WorkoutSubcategory>()
+                let allSubcategories = (try? modelContext.fetch(allSubcategoriesDescriptor)) ?? []
+                print("DEBUG: All subcategories in context (\(allSubcategories.count)):")
+                for sub in allSubcategories {
+                    print("  - \(sub.name) (ID: \(sub.id))")
                 }
                 
-                for subcategory in selectedSubcategories {
-                    newWorkout.addSubcategory(subcategory)
+                // Fetch categories and subcategories by ID to ensure they're in this context
+                var validCategories: [WorkoutCategory] = []
+                var validSubcategories: [WorkoutSubcategory] = []
+                
+                // Re-fetch categories by ID to ensure context consistency
+                for selectedCategory in selectedCategories {
+                    let id = selectedCategory.id
+                    let descriptor = FetchDescriptor<WorkoutCategory>(
+                        predicate: #Predicate { $0.id == id }
+                    )
+                    if let category = try? modelContext.fetch(descriptor).first {
+                        validCategories.append(category)
+                        print("DEBUG: Found category in context: \(category.name)")
+                    } else {
+                        print("DEBUG: Category \(selectedCategory.name) not found in context!")
+                    }
                 }
                 
+                // Re-fetch subcategories by ID to ensure context consistency
+                for selectedSubcategory in selectedSubcategories {
+                    let id = selectedSubcategory.id
+                    let descriptor = FetchDescriptor<WorkoutSubcategory>(
+                        predicate: #Predicate { $0.id == id }
+                    )
+                    if let subcategory = try? modelContext.fetch(descriptor).first {
+                        validSubcategories.append(subcategory)
+                        print("DEBUG: Found subcategory in context: \(subcategory.name)")
+                    } else {
+                        print("DEBUG: Subcategory \(selectedSubcategory.name) not found in context!")
+                    }
+                }
+                
+                // Set relationships with context-consistent objects
+                newWorkout.categories = validCategories.isEmpty ? nil : validCategories
+                newWorkout.subcategories = validSubcategories.isEmpty ? nil : validSubcategories
+                
+                // Insert workout into context
                 modelContext.insert(newWorkout)
+                
+                // Debug: Check relationships after setting
+                print("DEBUG: After setting relationships - Categories: \(newWorkout.categories?.count ?? 0), Subcategories: \(newWorkout.subcategories?.count ?? 0)")
+                
+                // Debug: Compare category vs subcategory handling
+                print("DEBUG: Category details:")
+                if let categories = newWorkout.categories {
+                    for cat in categories {
+                        print("  - Category: \(cat.name) (ID: \(cat.id), persistentModelID: \(cat.persistentModelID))")
+                    }
+                }
+                
+                print("DEBUG: Subcategory details:")
+                if let subcategories = newWorkout.subcategories {
+                    for sub in subcategories {
+                        print("  - Subcategory: \(sub.name) (ID: \(sub.id), persistentModelID: \(sub.persistentModelID))")
+                    }
+                }
                 
                 do {
                     try modelContext.save()
+                    
+                    // Debug: Check relationships after saving
+                    print("DEBUG: After saving - Categories: \(newWorkout.categories?.count ?? 0), Subcategories: \(newWorkout.subcategories?.count ?? 0)")
+                    
+                    // Debug: Compare category vs subcategory after saving
+                    print("DEBUG: Categories after saving:")
+                    if let categories = newWorkout.categories {
+                        for cat in categories {
+                            print("  - Category: \(cat.name) (ID: \(cat.id))")
+                        }
+                    } else {
+                        print("  - No categories attached")
+                    }
+                    
+                    // Debug: Print subcategory details after saving
+                    print("DEBUG: Subcategories after saving:")
+                    if let subcategories = newWorkout.subcategories {
+                        for sub in subcategories {
+                            print("  - Subcategory: \(sub.name) (ID: \(sub.id))")
+                        }
+                    } else {
+                        print("  - No subcategories attached")
+                    }
                     
                     // Haptic feedback
                     let generator = UINotificationFeedbackGenerator()

@@ -121,15 +121,6 @@ struct OnboardingView: View {
             Text(errorMessage ?? "We couldn't import your workouts, but you can continue and set this up later in Settings.")
         }
         .onAppear {
-            // Initialize default data when onboarding starts
-            DataInitializationManager.shared.initializeAppData(context: modelContext)
-            // Set persistent flag after initialization
-            let descriptor = FetchDescriptor<UserSettings>()
-            if let userSettings = try? modelContext.fetch(descriptor).first {
-                userSettings.hasInitializedDefaultCategories = true
-                try? modelContext.save()
-            }
-            
             // Set up notification observer for import progress with proper cleanup
             notificationObserver = NotificationCenter.default.addObserver(
                 forName: NSNotification.Name("ImportProgressUpdated"),
