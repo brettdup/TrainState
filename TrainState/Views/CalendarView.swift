@@ -359,14 +359,15 @@ struct OptimizedTodayButton: View {
             Text("Today")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.blue)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
                 .background(
                     Capsule()
                         .fill(.blue.opacity(0.1))
                 )
         }
         .buttonStyle(ScaleButtonStyle())
+        .frame(minWidth: 80)
     }
 }
 
@@ -377,24 +378,25 @@ struct OptimizedCalendarGrid: View {
     let onDateSelected: (Date) -> Void
     
     private let calendar = Calendar.current
-    private let daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+    private let daysOfWeek = ["S", "M", "T", "W", "T", "F", "S"]
+    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
     
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 24) {
             // Days of week header
             HStack(spacing: 0) {
                 ForEach(daysOfWeek, id: \.self) { day in
                     Text(day)
-                        .font(.caption.weight(.semibold))
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 20)
             
             // Calendar days grid
-            LazyVGrid(columns: gridColumns, spacing: 8) {
+            LazyVGrid(columns: gridColumns, spacing: 6) {
                 ForEach(daysInMonth.indices, id: \.self) { index in
                     if let date = daysInMonth[index] {
                         OptimizedDayCell(
@@ -414,13 +416,18 @@ struct OptimizedCalendarGrid: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
         }
-        .padding(.vertical, 24)
+        .padding(.vertical, 28)
         .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(.quaternary.opacity(0.3), lineWidth: 0.5)
+                )
         )
+        .shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 4)
         .padding(.horizontal, 20)
     }
 }
@@ -436,51 +443,75 @@ struct OptimizedDayCell: View {
     private let calendar = Calendar.current
     
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             ZStack {
-                // Background states
+                // Background states with improved styling
                 if isToday && !isSelected {
                     Circle()
-                        .fill(.blue.opacity(0.1))
-                        .frame(width: 40, height: 40)
+                        .fill(
+                            LinearGradient(
+                                colors: [.blue.opacity(0.15), .blue.opacity(0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Circle()
+                                .stroke(.blue.opacity(0.3), lineWidth: 1)
+                        )
                 }
                 
                 if isSelected {
                     Circle()
-                        .fill(.blue)
-                        .frame(width: 40, height: 40)
+                        .fill(
+                            LinearGradient(
+                                colors: [.blue, .blue.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+                        .shadow(color: .blue.opacity(0.3), radius: 4, x: 0, y: 2)
                 }
                 
                 // Day number
                 Text("\(calendar.component(.day, from: date))")
-                    .font(.system(size: 16, weight: isToday || isSelected ? .bold : .medium))
+                    .font(.system(size: 17, weight: isToday || isSelected ? .bold : .semibold))
                     .foregroundStyle(isSelected ? .white : (isToday ? .blue : .primary))
             }
             
-            // Workout indicators - simplified for performance
+            // Enhanced workout indicators
             if hasWorkouts {
-                HStack(spacing: 2) {
+                HStack(spacing: 3) {
                     ForEach(Array(workoutTypes.prefix(3)), id: \.self) { type in
                         Circle()
                             .fill(workoutTypeColor(type))
-                            .frame(width: 4, height: 4)
+                            .frame(width: 5, height: 5)
+                            .shadow(color: workoutTypeColor(type).opacity(0.3), radius: 1, x: 0, y: 1)
                     }
                     
                     if workoutCount > 3 {
-                        Text("+")
-                            .font(.system(size: 6, weight: .bold))
+                        Text("+\(workoutCount - 3)")
+                            .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(
+                                Capsule()
+                                    .fill(.quaternary.opacity(0.5))
+                            )
                     }
                 }
-                .frame(height: 6)
+                .frame(height: 8)
             } else {
                 Spacer()
-                    .frame(height: 6)
+                    .frame(height: 8)
             }
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
     
     private func workoutTypeColor(_ type: WorkoutType) -> Color {
@@ -504,7 +535,7 @@ struct OptimizedWorkoutsSection: View {
         VStack(alignment: .leading, spacing: 24) {
             // Section header
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Workouts")
                         .font(.title2.weight(.bold))
                         .foregroundStyle(.primary)
@@ -517,15 +548,25 @@ struct OptimizedWorkoutsSection: View {
                 Spacer()
                 
                 if !workouts.isEmpty {
-                    Text("\(workouts.count)")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.blue)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(.blue.opacity(0.1))
-                        )
+                    HStack(spacing: 6) {
+                        Image(systemName: "figure.run")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                        
+                        Text("\(workouts.count)")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(.blue)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(.blue.opacity(0.1))
+                            .overlay(
+                                Capsule()
+                                    .stroke(.blue.opacity(0.2), lineWidth: 0.5)
+                            )
+                    )
                 }
             }
             .padding(.horizontal, 24)
@@ -545,11 +586,16 @@ struct OptimizedWorkoutsSection: View {
                 .padding(.horizontal, 8)
             }
         }
-        .padding(.vertical, 24)
+        .padding(.vertical, 28)
         .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(.quaternary.opacity(0.3), lineWidth: 0.5)
+                )
         )
+        .shadow(color: .black.opacity(0.05), radius: 12, x: 0, y: 4)
         .padding(.horizontal, 20)
     }
 }

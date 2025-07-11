@@ -15,6 +15,9 @@ struct OnboardingView: View {
     @State private var showContent = false
     @State private var isFinalizingRoutes = false
     
+    // Add notification observer reference for proper cleanup
+    @State private var notificationObserver: NSObjectProtocol?
+    
     private let steps = [
         OnboardingStep(
             title: "Welcome to\nTrainState",
@@ -127,8 +130,8 @@ struct OnboardingView: View {
                 try? modelContext.save()
             }
             
-            // Set up notification observer for import progress
-            NotificationCenter.default.addObserver(
+            // Set up notification observer for import progress with proper cleanup
+            notificationObserver = NotificationCenter.default.addObserver(
                 forName: NSNotification.Name("ImportProgressUpdated"),
                 object: nil,
                 queue: .main
@@ -143,6 +146,13 @@ struct OnboardingView: View {
             // Animate in the content
             withAnimation(.easeOut(duration: 1.0).delay(0.5)) {
                 showContent = true
+            }
+        }
+        .onDisappear {
+            // Clean up notification observer to prevent crashes
+            if let observer = notificationObserver {
+                NotificationCenter.default.removeObserver(observer)
+                notificationObserver = nil
             }
         }
     }
@@ -169,7 +179,7 @@ struct OnboardingView: View {
                     return
                 }
                 
-                // Then import workouts (with new callbacks)
+                // Then import workouts with improved error handling
                 try await HealthKitManager.shared.importWorkoutsToCoreData(
                     context: modelContext,
                     onRoutesStarted: {
@@ -198,16 +208,12 @@ struct OnboardingView: View {
                 }
             } catch {
                 await MainActor.run {
-                    withAnimation(.spring()) {
-                        isImporting = false
-                        importProgress = 1.0
-                        isFinalizingRoutes = false
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                            currentStep += 1
-                        }
-                    }
+                    print("[Onboarding] Import error: \(error.localizedDescription)")
+                    errorMessage = "Failed to import workouts: \(error.localizedDescription)"
+                    showError = true
+                    isImporting = false
+                    importProgress = 0.0
+                    isFinalizingRoutes = false
                 }
             }
         }

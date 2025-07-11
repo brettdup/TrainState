@@ -4,7 +4,7 @@ struct BackgroundView: View {
   // Customizable properties
   var gradientColors: [Color] = [
     Color(red: 0.7, green: 1.0, blue: 0.78),  // Soft green
-    Color(red: 0.7, green: 0.85, blue: 1.0),  // Soft blue
+    Color(red: 0.7, green: 0.85, blue: 0.70),  // Soft blue
   ]
   var opacity: Double = 0.9
 

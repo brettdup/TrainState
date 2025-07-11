@@ -180,34 +180,40 @@ struct WorkoutListView: View {
     // MARK: - View Components
     
     private var statsCardsView: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
-            StatCardView(
-                title: "This Month",
-                value: "\(workoutsThisMonth.count)",
-                icon: "calendar",
-                color: .blue
-            )
+        VStack(spacing: 8) {
+            // Top row - This Month and Total
+            HStack(spacing: 12) {
+                StatCardView(
+                    title: "This Month",
+                    value: "\(workoutsThisMonth.count)",
+                    icon: "calendar",
+                    color: .blue
+                )
+                
+                StatCardView(
+                    title: "Total",
+                    value: "\(workouts.count)",
+                    icon: "chart.bar.fill",
+                    color: .green
+                )
+            }
             
-            StatCardView(
-                title: "Total",
-                value: "\(workouts.count)",
-                icon: "chart.bar.fill",
-                color: .green
-            )
-            
-            StatCardView(
-                title: "Strength",
-                value: "\(strengthThisMonthCount)",
-                icon: "dumbbell.fill",
-                color: .orange
-            )
-            
-            StatCardView(
-                title: "Running",
-                value: "\(runningThisMonthCount)",
-                icon: "figure.run",
-                color: .mint
-            )
+            // Bottom row - Strength and Running
+            HStack(spacing: 12) {
+                StatCardView(
+                    title: "Strength",
+                    value: "\(strengthThisMonthCount)",
+                    icon: "dumbbell.fill",
+                    color: .orange
+                )
+                
+                StatCardView(
+                    title: "Running",
+                    value: "\(runningThisMonthCount)",
+                    icon: "figure.run",
+                    color: .mint
+                )
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -443,14 +449,25 @@ struct StatCardView: View {
     let color: Color
     
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
+        HStack(spacing: 12) {
+            // Icon with gradient background
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(
+                        LinearGradient(
+                            colors: [color.opacity(0.8), color.opacity(0.6)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
                 Image(systemName: icon)
-                    .font(.title3)
-                    .foregroundStyle(color)
-                Spacer()
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
             }
+            .frame(width: 40, height: 40)
             
+            // Content
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
                     .font(.title2.bold())
@@ -460,14 +477,22 @@ struct StatCardView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            
+            Spacer()
         }
-        .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.quaternary, lineWidth: 1)
+        .frame(maxWidth: .infinity)
+        .frame(height: 64)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(color.opacity(0.2), lineWidth: 1)
+                )
         )
+        .shadow(color: color.opacity(0.1), radius: 8, x: 0, y: 4)
     }
 }
 
@@ -519,11 +544,19 @@ struct WorkoutRowView: View {
                 
                 if let firstCategory = workout.categories?.first {
                     Text(firstCategory.name)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(.quaternary, in: Capsule())
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(.ultraThinMaterial)
+                                .overlay(
+                                    Capsule()
+                                        .stroke(.quaternary, lineWidth: 0.5)
+                                )
+                        )
+                        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
                 }
             }
             
