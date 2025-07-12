@@ -12,6 +12,7 @@ struct HealthSettingsView: View {
     @State private var exportEnabled = false
     @State private var importEnabled = true
     @State private var lastSyncDate: Date?
+    @State private var lastImportTime: Date?
     
     @Environment(\.modelContext) private var modelContext
     
@@ -334,8 +335,18 @@ struct HealthSettingsView: View {
     private func importWorkouts() {
         guard !isImporting else { return }
         
+        // Rate limiting - prevent imports more frequent than 2 minutes
+        if let lastImport = lastImportTime,
+           Date().timeIntervalSince(lastImport) < 120 {
+            print("[HealthSettings] Import rate limited - last import was \(Int(Date().timeIntervalSince(lastImport))) seconds ago")
+            errorMessage = "Please wait 2 minutes between imports"
+            showError = true
+            return
+        }
+        
         isImporting = true
         importProgress = 0.0
+        lastImportTime = Date()
         
         Task {
             do {
@@ -359,8 +370,18 @@ struct HealthSettingsView: View {
     private func importUnimportedWorkouts() {
         guard !isImporting else { return }
 
+        // Rate limiting - prevent imports more frequent than 2 minutes
+        if let lastImport = lastImportTime,
+           Date().timeIntervalSince(lastImport) < 120 {
+            print("[HealthSettings] Import rate limited - last import was \(Int(Date().timeIntervalSince(lastImport))) seconds ago")
+            errorMessage = "Please wait 2 minutes between imports"
+            showError = true
+            return
+        }
+
         isImporting = true
         importProgress = 0.0
+        lastImportTime = Date()
 
         Task {
             do {
