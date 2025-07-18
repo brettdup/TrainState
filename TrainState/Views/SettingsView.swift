@@ -42,32 +42,34 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(.systemGroupedBackground)
-                    .ignoresSafeArea()
+                // Modern gradient background
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.systemBackground),
+                        Color(.systemGray6).opacity(0.3)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
                 
                 ScrollView {
-                    VStack(spacing: 20) {
+                    LazyVStack(spacing: 24) {
                         if let settings = userSettings.first {
-                            // App Settings
-                            settingsSection(settings: settings)
+                            // Profile/Account Section
+                            profileSection
                             
-                            // Notifications
-                            notificationsSection(settings: settings)
+                            // App Preferences
+                            preferencesSection(settings: settings)
                             
-                            // Workout Organization
-                            workoutOrganizationSection
+                            // Workout Management
+                            workoutManagementSection
                             
-                            // Premium
-                            premiumSection
+                            // Data & Sync
+                            dataSyncSection
                             
-                            // Backup & Restore
-                            backupRestoreSection
-                            
-                            // Stats
-                            statsSection
-                            
-                            // About
-                            aboutSection
+                            // Support & About
+                            supportSection
                             
                             #if DEBUG
                             // Developer Options
@@ -75,11 +77,12 @@ struct SettingsView: View {
                             #endif
                         }
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 20)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
                 }
             }
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.large)
             .onAppear {
                 NotificationManager.shared.checkNotificationStatus { authorized in
                     isNotificationAuthorized = authorized
@@ -99,7 +102,496 @@ struct SettingsView: View {
         }
     }
     
-    // MARK: - Section Views
+    // MARK: - New Section Views
+    
+    private var profileSection: some View {
+        ModernSettingsCard {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 16) {
+                    Circle()
+                        .fill(LinearGradient(
+                            gradient: Gradient(colors: [.blue, .purple]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 60, height: 60)
+                        .overlay(
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 24, weight: .medium))
+                                .foregroundColor(.white)
+                        )
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("TrainState User")
+                            .font(.title3.weight(.semibold))
+                        Text("Fitness Journey")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+                
+                // Quick stats
+                HStack(spacing: 24) {
+                    ProfileStatView(value: "\(workouts.count)", label: "Workouts", color: .blue)
+                    ProfileStatView(value: "\(categories.count)", label: "Categories", color: .green)
+                    ProfileStatView(value: "\(subcategories.count)", label: "Subcategories", color: .purple)
+                }
+            }
+        }
+    }
+    
+    private func preferencesSection(settings: UserSettings) -> some View {
+        VStack(spacing: 12) {
+            SectionHeaderView(title: "Preferences", systemImage: "gear")
+            
+            ModernSettingsCard {
+                VStack(spacing: 16) {
+                    // Dark Mode Toggle
+                    ModernToggleRow(
+                        title: "Dark Mode",
+                        subtitle: "Appearance setting",
+                        systemImage: "moon.fill",
+                        isOn: Binding(
+                            get: { settings.darkModeEnabled },
+                            set: { settings.darkModeEnabled = $0 }
+                        ),
+                        accentColor: .indigo
+                    )
+                    
+                    Divider()
+                    
+                    // Measurement System
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "ruler.fill")
+                                .foregroundColor(.orange)
+                                .frame(width: 20)
+                            Text("Measurement System")
+                                .font(.body.weight(.medium))
+                            Spacer()
+                        }
+                        
+                        Picker("Measurement System", selection: Binding(
+                            get: { settings.measurementSystem },
+                            set: { settings.measurementSystem = $0 }
+                        )) {
+                            Text("Metric").tag(MeasurementSystem.metric)
+                            Text("Imperial").tag(MeasurementSystem.imperial)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    
+                    Divider()
+                    
+                    // App Icon
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "app.fill")
+                                .foregroundColor(.pink)
+                                .frame(width: 20)
+                            Text("App Icon")
+                                .font(.body.weight(.medium))
+                            Spacer()
+                        }
+                        
+                        Menu {
+                            Button(action: {
+                                selectedAppIcon = nil
+                                AppIconManager.shared.resetToDefaultIcon()
+                            }) {
+                                Label("Default", systemImage: "app")
+                            }
+                            
+                            Button(action: {
+                                selectedAppIcon = "TrainState-iOS-Dark"
+                                AppIconManager.shared.setAppIcon(for: "TrainState-iOS-Dark")
+                            }) {
+                                Label("Dark", systemImage: "moon.fill")
+                            }
+                            
+                            Button(action: {
+                                selectedAppIcon = "TrainState-iOS-TintedDark"
+                                AppIconManager.shared.setAppIcon(for: "TrainState-iOS-TintedDark")
+                            }) {
+                                Label("Tinted Dark", systemImage: "moon.stars.fill")
+                            }
+                        } label: {
+                            HStack {
+                                Text(selectedAppIcon == nil ? "Default" : selectedAppIcon ?? "Default")
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    // Notifications
+                    ModernToggleRow(
+                        title: "Notifications",
+                        subtitle: "Workout reminders",
+                        systemImage: "bell.fill",
+                        isOn: Binding(
+                            get: { settings.notificationEnabled },
+                            set: { newValue in
+                                settings.notificationEnabled = newValue
+                                if newValue {
+                                    NotificationManager.shared.requestAuthorization()
+                                } else {
+                                    NotificationManager.shared.cancelWorkoutReminder()
+                                }
+                            }
+                        ),
+                        accentColor: .orange
+                    )
+                    
+                    if settings.notificationEnabled {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "clock.fill")
+                                    .foregroundColor(.orange)
+                                    .frame(width: 20)
+                                Text("Reminder Time")
+                                    .font(.body.weight(.medium))
+                                Spacer()
+                            }
+                            
+                            DatePicker(
+                                "Reminder Time",
+                                selection: Binding(
+                                    get: { settings.notificationTime ?? Date() },
+                                    set: { newValue in
+                                        settings.notificationTime = newValue
+                                        NotificationManager.shared.scheduleWorkoutReminder(at: newValue)
+                                    }
+                                ),
+                                displayedComponents: .hourAndMinute
+                            )
+                            .datePickerStyle(.compact)
+                            .labelsHidden()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private var workoutManagementSection: some View {
+        VStack(spacing: 12) {
+            SectionHeaderView(title: "Workout Management", systemImage: "dumbbell.fill")
+            
+            ModernSettingsCard {
+                VStack(spacing: 12) {
+                    NavigationLink(destination: CategoriesManagementView()) {
+                        ModernSettingsRow(
+                            title: "Manage Categories",
+                            subtitle: "Organize your workouts",
+                            systemImage: "folder.fill",
+                            accentColor: .blue
+                        )
+                    }
+                    
+                    Divider()
+                    
+                    NavigationLink(destination: HealthSettingsView()) {
+                        ModernSettingsRow(
+                            title: "Health Integration",
+                            subtitle: "Sync with Apple Health",
+                            systemImage: "heart.fill",
+                            accentColor: .red
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    private var dataSyncSection: some View {
+        VStack(spacing: 12) {
+            SectionHeaderView(title: "Data & Sync", systemImage: "arrow.triangle.2.circlepath")
+            
+            VStack(spacing: 12) {
+                // Premium Card
+                if purchaseManager.hasActiveSubscription {
+                    ModernSettingsCard {
+                        VStack(spacing: 16) {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.title3)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Premium Active")
+                                        .font(.headline)
+                                    Text("All features unlocked")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                NavigationLink(destination: PremiumView()) {
+                                    Text("Manage")
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                } else {
+                    ModernSettingsCard {
+                        Button(action: { showingPremiumPaywall = true }) {
+                            HStack {
+                                Image(systemName: "star.fill")
+                                    .foregroundColor(.purple)
+                                    .font(.title3)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Upgrade to Premium")
+                                        .font(.headline)
+                                        .foregroundColor(.primary)
+                                    Text("Cloud sync and advanced features")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 14, weight: .medium))
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                }
+                
+                // Backup & Restore
+                ModernSettingsCard {
+                    VStack(spacing: 16) {
+                        if purchaseManager.hasActiveSubscription {
+                            VStack(spacing: 12) {
+                                Button(action: {
+                                    Task { @MainActor in
+                                        isBackingUp = true
+                                        let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+                                        debugInfo = "Environment: \(environment)\nStatus: Creating backup...\nContainer: iCloud.brettduplessis.TrainState"
+                                        
+                                        CloudKitManager.shared.debugCallback = { message in
+                                            DispatchQueue.main.async {
+                                                self.debugInfo = message
+                                            }
+                                        }
+                                        
+                                        do {
+                                            try await CloudKitManager.shared.backupToCloud(context: modelContext)
+                                            lastBackupDate = Date()
+                                            debugInfo = "Environment: \(environment)\nStatus: BACKUP SUCCESS ✅\nLast backup: \(Date().formatted())"
+                                            showingBackupSuccess = true
+                                        } catch {
+                                            debugInfo = "Environment: \(environment)\nStatus: BACKUP ERROR ❌\nError: \(error.localizedDescription)"
+                                            backupErrorMessage = error.localizedDescription
+                                            showingBackupError = true
+                                        }
+                                        isBackingUp = false
+                                    }
+                                }) {
+                                    ModernSettingsRow(
+                                        title: "Backup to iCloud",
+                                        subtitle: "Save your data",
+                                        systemImage: "icloud.and.arrow.up",
+                                        accentColor: .blue,
+                                        isLoading: isBackingUp
+                                    )
+                                }
+                                .disabled(isBackingUp || isRestoring)
+                                
+                                Divider()
+                                
+                                Button(action: {
+                                    Task {
+                                        await loadAvailableBackups()
+                                        showingBackupSelection = true
+                                    }
+                                }) {
+                                    ModernSettingsRow(
+                                        title: "Restore from iCloud",
+                                        subtitle: "Restore your data",
+                                        systemImage: "icloud.and.arrow.down",
+                                        accentColor: .green,
+                                        isLoading: isRestoring
+                                    )
+                                }
+                                .disabled(isBackingUp || isRestoring)
+                                
+                                if let lastBackup = lastBackupDate {
+                                    HStack {
+                                        Image(systemName: "clock.arrow.circlepath")
+                                            .foregroundColor(.secondary)
+                                            .font(.caption)
+                                        Text("Last backup: \(lastBackup, style: .relative)")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                    }
+                                }
+                            }
+                        } else {
+                            Button(action: { showingPremiumPaywall = true }) {
+                                ModernSettingsRow(
+                                    title: "Cloud Sync",
+                                    subtitle: "Requires Premium",
+                                    systemImage: "lock.fill",
+                                    accentColor: .purple
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingBackupSelection) {
+            NavigationView {
+                List {
+                    if isLoadingBackups {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                            Spacer()
+                        }
+                    } else if availableBackups.isEmpty {
+                        Text("No backups available")
+                            .foregroundColor(.secondary)
+                            .italic()
+                    } else {
+                        ForEach(availableBackups) { backup in
+                            Button(action: {
+                                selectedBackup = backup
+                                showingBackupSelection = false
+                                Task {
+                                    await restoreFromCloud(backup: backup)
+                                }
+                            }) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(backup.deviceName)
+                                        .font(.headline)
+                                    
+                                    Text(backup.timestamp, style: .relative)
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    
+                                    HStack(spacing: 12) {
+                                        Label("\(backup.workoutCount)", systemImage: "figure.strengthtraining.traditional")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        
+                                        Label("\(backup.categoryCount)", systemImage: "folder.fill")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        
+                                        Label("\(backup.subcategoryCount)", systemImage: "tag.fill")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                }
+                .navigationTitle("Select Backup")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Cancel") {
+                            showingBackupSelection = false
+                        }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingPremiumPaywall) {
+            PremiumSheet(isPresented: $showingPremiumPaywall)
+        }
+        .alert("Backup Successful", isPresented: $showingBackupSuccess) {
+            Button("OK") { }
+        } message: {
+            Text("Your data has been successfully backed up to iCloud.")
+        }
+        .alert("Backup Failed", isPresented: $showingBackupError) {
+            Button("OK") { }
+        } message: {
+            Text("Backup failed: \(backupErrorMessage)")
+        }
+        .alert("Restore Successful", isPresented: $showingRestoreSuccess) {
+            Button("OK") { }
+        } message: {
+            Text("Your data has been successfully restored from iCloud.")
+        }
+        .alert("Restore Failed", isPresented: $showingRestoreError) {
+            Button("OK") { }
+        } message: {
+            Text("Restore failed: \(restoreErrorMessage)")
+        }
+    }
+    
+    private var supportSection: some View {
+        VStack(spacing: 12) {
+            SectionHeaderView(title: "Support & About", systemImage: "questionmark.circle")
+            
+            ModernSettingsCard {
+                VStack(spacing: 12) {
+                    HStack {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                        Text("Version")
+                            .font(.body.weight(.medium))
+                        Spacer()
+                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Divider()
+                    
+                    Link(destination: URL(string: "https://github.com/yourusername/TrainState")!) {
+                        ModernSettingsRow(
+                            title: "GitHub Repository",
+                            subtitle: "View source code",
+                            systemImage: "link",
+                            accentColor: .gray
+                        )
+                    }
+                    
+                    Divider()
+                    
+                    Button(action: {
+                        if let url = URL(string: "mailto:duplessisbrett@icloud.com?subject=TrainState%20App%20Feedback&body=Hi%20Brett%2C%0A%0AI%20would%20like%20to%20share%20my%20feedback%20about%20TrainState%3A%0A%0A") {
+                            UIApplication.shared.open(url)
+                        }
+                    }) {
+                        ModernSettingsRow(
+                            title: "Send Feedback",
+                            subtitle: "Get in touch",
+                            systemImage: "envelope.fill",
+                            accentColor: .orange
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Legacy Section Views
     
     private func settingsSection(settings: UserSettings) -> some View {
         SettingsSection(title: "App Settings", icon: "gear", color: .blue) {
@@ -765,7 +1257,173 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Supporting Views
+// MARK: - Modern Supporting Views
+
+struct ModernSettingsCard<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
+    var body: some View {
+        content
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 2)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+    }
+}
+
+struct SectionHeaderView: View {
+    let title: String
+    let systemImage: String
+    
+    var body: some View {
+        HStack {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.secondary)
+            Text(title)
+                .font(.headline)
+                .foregroundColor(.primary)
+            Spacer()
+        }
+    }
+}
+
+struct ModernSettingsRow: View {
+    let title: String
+    let subtitle: String?
+    let systemImage: String
+    let accentColor: Color
+    let isLoading: Bool
+    
+    init(
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String,
+        accentColor: Color,
+        isLoading: Bool = false
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.accentColor = accentColor
+        self.isLoading = isLoading
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            if isLoading {
+                ProgressView()
+                    .tint(.primary)
+                    .frame(width: 20, height: 20)
+            } else {
+                Image(systemName: systemImage)
+                    .foregroundColor(accentColor)
+                    .frame(width: 20)
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .foregroundColor(.primary)
+                
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            if !isLoading {
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 12, weight: .medium))
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+struct ModernToggleRow: View {
+    let title: String
+    let subtitle: String?
+    let systemImage: String
+    let isOn: Binding<Bool>
+    let accentColor: Color
+    
+    init(
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String,
+        isOn: Binding<Bool>,
+        accentColor: Color
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.isOn = isOn
+        self.accentColor = accentColor
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .foregroundColor(accentColor)
+                .frame(width: 20)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .foregroundColor(.primary)
+                
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            Toggle("", isOn: isOn)
+                .toggleStyle(SwitchToggleStyle(tint: accentColor))
+                .labelsHidden()
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+struct ProfileStatView: View {
+    let value: String
+    let label: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.title2.weight(.bold))
+                .foregroundColor(color)
+            
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Legacy Supporting Views
 
 struct SettingsSection<Content: View>: View {
     let title: String
@@ -850,7 +1508,31 @@ struct SettingsRow: View {
 }
 
 #Preview {
-    SettingsView()
-        .modelContainer(for: [UserSettings.self, WorkoutCategory.self, WorkoutSubcategory.self], inMemory: true)
+    do {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: UserSettings.self, WorkoutCategory.self, WorkoutSubcategory.self, configurations: config)
+        
+        // Add mock UserSettings
+        let settings = UserSettings()
+        settings.darkModeEnabled = false
+        settings.measurementSystem = .metric
+        settings.notificationEnabled = true
+        settings.notificationTime = Date()
+        container.mainContext.insert(settings)
+        
+        // Add mock categories
+        let category = WorkoutCategory(name: "Strength")
+        container.mainContext.insert(category)
+        
+        // Add mock subcategories
+        let subcategory = WorkoutSubcategory(name: "Bench Press")
+        subcategory.category = category
+        container.mainContext.insert(subcategory)
+        
+        return SettingsView()
+            .modelContainer(container)
+    } catch {
+        return Text("Preview Error: \(error.localizedDescription)")
+    }
 }
 

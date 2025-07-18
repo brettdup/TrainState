@@ -38,7 +38,11 @@ struct WorkoutDetailView: View {
         }
         .coordinateSpace(name: "scroll")
         .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-          scrollOffset = value
+          // Throttle scroll offset updates to improve performance
+          let roundedValue = round(value / 5) * 5 // Round to nearest 5 pixels
+          if abs(scrollOffset - roundedValue) > 2 {
+            scrollOffset = roundedValue
+          }
         }
       }
 //      .ignoresSafeArea(.container, edges: .top)
@@ -51,7 +55,7 @@ struct WorkoutDetailView: View {
         Text(workout.type.rawValue)
           .font(.headline.weight(.semibold))
           .opacity(scrollOffset < -50 ? 1 : 0)
-          .animation(.easeInOut(duration: 0.2), value: scrollOffset)
+          .animation(.easeInOut(duration: 0.15), value: scrollOffset < -50)
       }
     }
     .sheet(isPresented: $isEditingCategorySheet) {
@@ -351,8 +355,7 @@ struct WorkoutDetailView: View {
       RoundedRectangle(cornerRadius: 16)
         .stroke(Color(.separator), lineWidth: 0.5)
     )
-    .shadow(color: .primary.opacity(0.08), radius: 8, x: 0, y: 4)
-    .shadow(color: .primary.opacity(0.04), radius: 2, x: 0, y: 1)
+    .shadow(color: .primary.opacity(0.04), radius: 4, x: 0, y: 2)
   }
 
   // MARK: - Helpers
@@ -397,8 +400,7 @@ private struct MetricCard: View {
     .padding(.vertical, 20)
     .background(
       RoundedRectangle(cornerRadius: 20, style: .continuous)
-        .fill(.ultraThinMaterial)
-        .shadow(color: color.opacity(0.1), radius: 8, y: 4)
+        .fill(Color(.systemBackground))
     )
     .overlay(
       RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -432,7 +434,7 @@ private struct AddCategoriesButton: View {
       .padding(.vertical, 40)
       .background(
         RoundedRectangle(cornerRadius: 24, style: .continuous)
-          .fill(.ultraThinMaterial)
+          .fill(Color(.systemBackground))
           .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
               .strokeBorder(
@@ -488,8 +490,7 @@ private struct NotesSection: View {
       RoundedRectangle(cornerRadius: 16)
         .stroke(Color(.separator), lineWidth: 0.5)
     )
-    .shadow(color: .primary.opacity(0.08), radius: 8, x: 0, y: 4)
-    .shadow(color: .primary.opacity(0.04), radius: 2, x: 0, y: 1)
+    .shadow(color: .primary.opacity(0.04), radius: 4, x: 0, y: 2)
   }
 }
 
@@ -596,7 +597,6 @@ private struct ModernCategoryChip: View {
       RoundedRectangle(cornerRadius: 12)
         .stroke(color.opacity(0.3), lineWidth: 1)
     )
-    .shadow(color: color.opacity(0.1), radius: 4, x: 0, y: 2)
   }
 }
 
@@ -628,7 +628,6 @@ private struct ModernSubcategoryChip: View {
       RoundedRectangle(cornerRadius: 10)
         .stroke(Color(.separator), lineWidth: 0.5)
     )
-    .shadow(color: .primary.opacity(0.05), radius: 2, x: 0, y: 1)
   }
 }
 
@@ -658,8 +657,6 @@ private struct CompactMetricCard: View {
       RoundedRectangle(cornerRadius: 16)
         .stroke(Color(.separator), lineWidth: 0.5)
     )
-    .shadow(color: .primary.opacity(0.08), radius: 8, x: 0, y: 4)
-    .shadow(color: .primary.opacity(0.04), radius: 2, x: 0, y: 1)
   }
 }
 
@@ -690,8 +687,6 @@ private struct MinimalMetricCard: View {
       RoundedRectangle(cornerRadius: 12)
         .stroke(Color(.separator), lineWidth: 0.5)
     )
-    .shadow(color: .primary.opacity(0.08), radius: 8, x: 0, y: 4)
-    .shadow(color: .primary.opacity(0.04), radius: 2, x: 0, y: 1)
   }
 }
 

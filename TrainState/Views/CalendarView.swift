@@ -1,6 +1,18 @@
 import SwiftUI
 import SwiftData
 
+enum CalendarViewMode: String, CaseIterable {
+    case month = "Month"
+    case week = "Week"
+    
+    var icon: String {
+        switch self {
+        case .month: return "calendar"
+        case .week: return "calendar.day.timeline.leading"
+        }
+    }
+}
+
 struct CalendarView: View {
     @Environment(\.modelContext) private var modelContext
     
@@ -13,7 +25,11 @@ struct CalendarView: View {
     @State private var optimizedCache = CalendarCache()
     @State private var isInitialized = false
     
-    // UI state
+    // Enhanced UI state
+    @State private var viewMode: CalendarViewMode = .month
+    @State private var selectedWorkoutTypes: Set<WorkoutType> = Set(WorkoutType.allCases)
+    @State private var showingFilters = false
+    @State private var showingDatePicker = false
     @GestureState private var dragOffset: CGFloat = 0
     @State private var scrollOffset: CGFloat = 0
     
@@ -32,46 +48,112 @@ struct CalendarView: View {
     }
     
     private var workoutsForSelectedDate: [Workout] {
-        optimizedCache.getWorkouts(for: selectedDate)
+        optimizedCache.getWorkouts(for: selectedDate).filter { selectedWorkoutTypes.contains($0.type) }
+    }
+    
+    private var filteredWorkoutCount: Int {
+        workoutsForSelectedDate.count
+    }
+    
+    private var weekDates: [Date] {
+        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: selectedDate) else {
+            return []
+        }
+        var dates: [Date] = []
+        var currentDate = weekInterval.start
+        
+        for _ in 0..<7 {
+            dates.append(currentDate)
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+        }
+        return dates
     }
     
     var body: some View {
         NavigationStack {
             ZStack {
-                // Optimized background
-                OptimizedBackgroundView()
+                // Enhanced background with subtle animation
+                EnhancedBackgroundView()
                     .ignoresSafeArea()
                 
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 32) {
-                        // Hero section
-                        OptimizedHeroSection(
+                    LazyVStack(spacing: 28) {
+                        // Enhanced hero section with view mode toggle
+                        EnhancedHeroSection(
                             monthString: monthString,
-                            workoutCount: workoutsForSelectedDate.count,
+                            workoutCount: filteredWorkoutCount,
+                            viewMode: $viewMode,
                             onPreviousMonth: previousMonth,
                             onNextMonth: nextMonth,
-                            onToday: goToToday
+                            onToday: goToToday,
+                            onDatePickerTap: { showingDatePicker = true }
                         )
-                        .padding(.top, 20)
+                        .padding(.top, 16)
                         
-                        // Calendar grid
-                        OptimizedCalendarGrid(
-                            daysInMonth: daysInMonth,
-                            selectedDate: selectedDate,
-                            cache: optimizedCache,
-                            onDateSelected: { date in
-                                withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                                    selectedDate = date
+                        // View mode content
+                        if viewMode == .month {
+                            // Enhanced calendar grid
+                            EnhancedCalendarGrid(
+                                daysInMonth: daysInMonth,
+                                selectedDate: selectedDate,
+                                cache: optimizedCache,
+                                selectedWorkoutTypes: selectedWorkoutTypes,
+                                onDateSelected: { date in
+                                    withAnimation(.interactiveSpring(response: 0.4, dampingFraction: 0.8, blendDuration: 0)) {
+                                        selectedDate = date
+                                    }
+                                    let generator = UIImpactFeedbackGenerator(style: .light)
+                                    generator.impactOccurred()
                                 }
-                                let generator = UIImpactFeedbackGenerator(style: .light)
-                                generator.impactOccurred()
-                            }
-                        )
+                            )
+                            .gesture(
+                                DragGesture()
+                                    .onEnded { value in
+                                        // Only respond to horizontal swipes that are more horizontal than vertical
+                                        if abs(value.translation.width) > abs(value.translation.height) && abs(value.translation.width) > 100 {
+                                            if value.translation.width > 100 {
+                                                previousMonth()
+                                            } else if value.translation.width < -100 {
+                                                nextMonth()
+                                            }
+                                        }
+                                    }
+                            )
+                        } else {
+                            // Week view
+                            EnhancedWeekView(
+                                weekDates: weekDates,
+                                selectedDate: selectedDate,
+                                cache: optimizedCache,
+                                selectedWorkoutTypes: selectedWorkoutTypes,
+                                onDateSelected: { date in
+                                    withAnimation(.interactiveSpring(response: 0.4, dampingFraction: 0.8, blendDuration: 0)) {
+                                        selectedDate = date
+                                    }
+                                    let generator = UIImpactFeedbackGenerator(style: .light)
+                                    generator.impactOccurred()
+                                }
+                            )
+                            .gesture(
+                                DragGesture()
+                                    .onEnded { value in
+                                        // Only respond to horizontal swipes that are more horizontal than vertical
+                                        if abs(value.translation.width) > abs(value.translation.height) && abs(value.translation.width) > 100 {
+                                            if value.translation.width > 100 {
+                                                previousWeek()
+                                            } else if value.translation.width < -100 {
+                                                nextWeek()
+                                            }
+                                        }
+                                    }
+                            )
+                        }
                         
-                        // Selected date workouts
-                        OptimizedWorkoutsSection(
+                        // Enhanced workouts section
+                        EnhancedWorkoutsSection(
                             selectedDate: selectedDate,
-                            workouts: workoutsForSelectedDate
+                            workouts: workoutsForSelectedDate,
+                            selectedWorkoutTypes: selectedWorkoutTypes
                         )
                         .padding(.bottom, 20)
                     }
@@ -81,6 +163,14 @@ struct CalendarView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showingFilters = true }) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundColor(.blue)
+                    }
+                }
+                
                 ToolbarItem(placement: .primaryAction) {
                     OptimizedTodayButton(action: goToToday)
                 }
@@ -93,6 +183,18 @@ struct CalendarView: View {
             }
             .onChange(of: displayedMonth) { _, _ in
                 Task { await refreshForMonth() }
+            }
+            .sheet(isPresented: $showingFilters) {
+                WorkoutTypeFilterSheet(
+                    selectedTypes: $selectedWorkoutTypes,
+                    isPresented: $showingFilters
+                )
+            }
+            .sheet(isPresented: $showingDatePicker) {
+                DatePickerSheet(
+                    selectedDate: $displayedMonth,
+                    isPresented: $showingDatePicker
+                )
             }
         }
     }
@@ -132,6 +234,24 @@ struct CalendarView: View {
             displayedMonth = calendar.startOfMonth(for: selectedDate)
         }
         let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+    }
+    
+    private func previousWeek() {
+        if let newDate = calendar.date(byAdding: .weekOfYear, value: -1, to: selectedDate) {
+            selectedDate = newDate
+            displayedMonth = calendar.startOfMonth(for: selectedDate)
+        }
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+    }
+    
+    private func nextWeek() {
+        if let newDate = calendar.date(byAdding: .weekOfYear, value: 1, to: selectedDate) {
+            selectedDate = newDate
+            displayedMonth = calendar.startOfMonth(for: selectedDate)
+        }
+        let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
     }
 }
@@ -275,7 +395,693 @@ class CalendarCache {
     }
 }
 
-// MARK: - Optimized UI Components
+// MARK: - Enhanced UI Components
+
+struct EnhancedBackgroundView: View {
+    var body: some View {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color(.systemBackground),
+                Color(.systemGray6).opacity(0.4),
+                Color(.systemBackground)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .overlay(
+            // Subtle animated overlay
+            RadialGradient(
+                gradient: Gradient(colors: [
+                    Color.blue.opacity(0.05),
+                    Color.clear
+                ]),
+                center: .topTrailing,
+                startRadius: 100,
+                endRadius: 400
+            )
+        )
+    }
+}
+
+struct EnhancedHeroSection: View {
+    let monthString: String
+    let workoutCount: Int
+    @Binding var viewMode: CalendarViewMode
+    let onPreviousMonth: () -> Void
+    let onNextMonth: () -> Void
+    let onToday: () -> Void
+    let onDatePickerTap: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Month navigation and title
+            HStack(spacing: 20) {
+                OptimizedNavButton(
+                    icon: "chevron.left",
+                    action: onPreviousMonth
+                )
+                
+                Spacer()
+                
+                Button(action: onDatePickerTap) {
+                    VStack(spacing: 6) {
+                        Text(monthString)
+                            .font(.title.weight(.bold))
+                            .foregroundStyle(.primary)
+                        
+                        HStack(spacing: 8) {
+                            Image(systemName: "figure.run")
+                                .font(.caption)
+                                .foregroundStyle(.blue)
+                            Text("\(workoutCount) workouts")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Spacer()
+                
+                OptimizedNavButton(
+                    icon: "chevron.right",
+                    action: onNextMonth
+                )
+            }
+            
+            // View mode toggle
+            HStack(spacing: 8) {
+                ForEach(CalendarViewMode.allCases, id: \.self) { mode in
+                    Button(action: {
+                        withAnimation(.interactiveSpring(response: 0.4, dampingFraction: 0.8)) {
+                            viewMode = mode
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: mode.icon)
+                                .font(.system(size: 14, weight: .medium))
+                            Text(mode.rawValue)
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .foregroundStyle(viewMode == mode ? .white : .blue)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule()
+                                .fill(viewMode == mode ? .blue : .blue.opacity(0.1))
+                        )
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.horizontal, 20)
+    }
+}
+
+struct EnhancedCalendarGrid: View {
+    let daysInMonth: [Date?]
+    let selectedDate: Date
+    let cache: CalendarCache
+    let selectedWorkoutTypes: Set<WorkoutType>
+    let onDateSelected: (Date) -> Void
+    
+    private let calendar = Calendar.current
+    private let daysOfWeek = ["S", "M", "T", "W", "T", "F", "S"]
+    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            // Days of week header
+            HStack(spacing: 0) {
+                ForEach(daysOfWeek, id: \.self) { day in
+                    Text(day)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+            }
+            .padding(.horizontal, 20)
+            
+            // Calendar days grid
+            LazyVGrid(columns: gridColumns, spacing: 8) {
+                ForEach(daysInMonth.indices, id: \.self) { index in
+                    if let date = daysInMonth[index] {
+                        EnhancedDayCell(
+                            date: date,
+                            isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                            isToday: calendar.isDateInToday(date),
+                            hasWorkouts: hasFilteredWorkouts(for: date),
+                            workoutTypes: getFilteredWorkoutTypes(for: date),
+                            workoutCount: getFilteredWorkoutCount(for: date)
+                        )
+                        .onTapGesture {
+                            onDateSelected(date)
+                        }
+                    } else {
+                        Color.clear
+                            .aspectRatio(1, contentMode: .fit)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.vertical, 28)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(.quaternary.opacity(0.3), lineWidth: 0.5)
+                )
+        )
+        .shadow(color: .black.opacity(0.06), radius: 16, x: 0, y: 4)
+        .padding(.horizontal, 20)
+    }
+    
+    private func hasFilteredWorkouts(for date: Date) -> Bool {
+        !cache.getWorkouts(for: date).filter { selectedWorkoutTypes.contains($0.type) }.isEmpty
+    }
+    
+    private func getFilteredWorkoutTypes(for date: Date) -> Set<WorkoutType> {
+        Set(cache.getWorkouts(for: date).filter { selectedWorkoutTypes.contains($0.type) }.map { $0.type })
+    }
+    
+    private func getFilteredWorkoutCount(for date: Date) -> Int {
+        cache.getWorkouts(for: date).filter { selectedWorkoutTypes.contains($0.type) }.count
+    }
+}
+
+struct EnhancedDayCell: View {
+    let date: Date
+    let isSelected: Bool
+    let isToday: Bool
+    let hasWorkouts: Bool
+    let workoutTypes: Set<WorkoutType>
+    let workoutCount: Int
+    
+    private let calendar = Calendar.current
+    
+    var body: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                // Enhanced background states
+                if isToday && !isSelected {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [.blue.opacity(0.2), .blue.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 48, height: 48)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(.blue.opacity(0.4), lineWidth: 2)
+                        )
+                }
+                
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [.blue, .blue.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 48, height: 48)
+                        .shadow(color: .blue.opacity(0.4), radius: 8, x: 0, y: 4)
+                }
+                
+                if !isSelected && !isToday && hasWorkouts {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.quaternary.opacity(0.3))
+                        .frame(width: 48, height: 48)
+                }
+                
+                // Day number
+                Text("\(calendar.component(.day, from: date))")
+                    .font(.system(size: 18, weight: isToday || isSelected ? .bold : .semibold))
+                    .foregroundStyle(isSelected ? .white : (isToday ? .blue : .primary))
+            }
+            
+            // Enhanced workout indicators
+            if hasWorkouts {
+                HStack(spacing: 2) {
+                    ForEach(Array(workoutTypes.prefix(3)), id: \.self) { type in
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(workoutTypeColor(type))
+                            .frame(width: 6, height: 6)
+                            .shadow(color: workoutTypeColor(type).opacity(0.3), radius: 1, x: 0, y: 1)
+                    }
+                    
+                    if workoutCount > 3 {
+                        Text("•")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(height: 8)
+            } else {
+                Spacer()
+                    .frame(height: 8)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(1, contentMode: .fit)
+        .padding(.vertical, 8)
+    }
+    
+    private func workoutTypeColor(_ type: WorkoutType) -> Color {
+        switch type {
+        case .running: return .blue
+        case .cycling: return .green
+        case .swimming: return .cyan
+        case .yoga: return .purple
+        case .strength: return .orange
+        case .cardio: return .red
+        case .other: return .gray
+        }
+    }
+}
+
+struct EnhancedWeekView: View {
+    let weekDates: [Date]
+    let selectedDate: Date
+    let cache: CalendarCache
+    let selectedWorkoutTypes: Set<WorkoutType>
+    let onDateSelected: (Date) -> Void
+    
+    private let calendar = Calendar.current
+    private let daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Week view header
+            HStack(spacing: 0) {
+                ForEach(Array(zip(daysOfWeek, weekDates)), id: \.1) { dayName, date in
+                    VStack(spacing: 12) {
+                        Text(dayName)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        
+                        Button(action: { onDateSelected(date) }) {
+                            EnhancedWeekDayCell(
+                                date: date,
+                                isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                                isToday: calendar.isDateInToday(date),
+                                workouts: cache.getWorkouts(for: date).filter { selectedWorkoutTypes.contains($0.type) }
+                            )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.vertical, 28)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(.quaternary.opacity(0.3), lineWidth: 0.5)
+                )
+        )
+        .shadow(color: .black.opacity(0.06), radius: 16, x: 0, y: 4)
+        .padding(.horizontal, 20)
+    }
+}
+
+struct EnhancedWeekDayCell: View {
+    let date: Date
+    let isSelected: Bool
+    let isToday: Bool
+    let workouts: [Workout]
+    
+    private let calendar = Calendar.current
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                if isToday && !isSelected {
+                    Circle()
+                        .fill(.blue.opacity(0.2))
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Circle()
+                                .stroke(.blue.opacity(0.4), lineWidth: 2)
+                        )
+                }
+                
+                if isSelected {
+                    Circle()
+                        .fill(.blue)
+                        .frame(width: 44, height: 44)
+                        .shadow(color: .blue.opacity(0.4), radius: 4, x: 0, y: 2)
+                }
+                
+                Text("\(calendar.component(.day, from: date))")
+                    .font(.system(size: 18, weight: isToday || isSelected ? .bold : .semibold))
+                    .foregroundStyle(isSelected ? .white : (isToday ? .blue : .primary))
+            }
+            
+            // Workout count indicator
+            if !workouts.isEmpty {
+                Text("\(workouts.count)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 16, height: 16)
+                    .background(
+                        Circle()
+                            .fill(.blue)
+                    )
+            }
+        }
+    }
+}
+
+struct EnhancedWorkoutsSection: View {
+    let selectedDate: Date
+    let workouts: [Workout]
+    let selectedWorkoutTypes: Set<WorkoutType>
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            // Enhanced section header
+            HStack {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Workouts")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.primary)
+                    
+                    HStack(spacing: 8) {
+                        Text(selectedDate, style: .date)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        
+                        if selectedWorkoutTypes.count < WorkoutType.allCases.count {
+                            Text("• Filtered")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                if !workouts.isEmpty {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("\(workouts.count)")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.blue)
+                        
+                        Text("workouts")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            
+            // Enhanced workouts list
+            if workouts.isEmpty {
+                EnhancedEmptyState(hasFilters: selectedWorkoutTypes.count < WorkoutType.allCases.count)
+            } else {
+                LazyVStack(spacing: 16) {
+                    ForEach(workouts) { workout in
+                        NavigationLink(destination: WorkoutDetailView(workout: workout)) {
+                            EnhancedWorkoutCard(workout: workout)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+        }
+        .padding(.vertical, 28)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(.quaternary.opacity(0.3), lineWidth: 0.5)
+                )
+        )
+        .shadow(color: .black.opacity(0.06), radius: 16, x: 0, y: 4)
+        .padding(.horizontal, 20)
+    }
+}
+
+struct EnhancedEmptyState: View {
+    let hasFilters: Bool
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: hasFilters ? "line.3.horizontal.decrease.circle" : "calendar.day.timeline.leading")
+                .font(.system(size: 48, weight: .light))
+                .foregroundStyle(.secondary)
+            
+            VStack(spacing: 8) {
+                Text(hasFilters ? "No Filtered Workouts" : "No Workouts")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                
+                Text(hasFilters ? "Try adjusting your filters" : "No workouts logged for this date")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+}
+
+struct EnhancedWorkoutCard: View {
+    let workout: Workout
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // Enhanced workout type icon
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [workoutTypeColor.opacity(0.2), workoutTypeColor.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 48, height: 48)
+                
+                Image(systemName: iconName)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(workoutTypeColor)
+            }
+            
+            // Enhanced workout details
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(workout.type.rawValue)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    
+                    Spacer()
+                    
+                    Text(DurationFormatHelper.formatDuration(workout.duration))
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(workoutTypeColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(workoutTypeColor.opacity(0.1))
+                        )
+                }
+                
+                HStack(spacing: 12) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(DateFormatHelper.friendlyTime(workout.startDate))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    if let categories = workout.categories, let firstCategory = categories.first {
+                        HStack(spacing: 4) {
+                            Image(systemName: "folder.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(firstCategory.name)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(.secondary.opacity(0.1))
+                        )
+                    }
+                    
+                    Spacer()
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(.quaternary.opacity(0.3), lineWidth: 0.5)
+                )
+        )
+        .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
+        .padding(.horizontal, 16)
+    }
+    
+    private var workoutTypeColor: Color {
+        switch workout.type {
+        case .strength: return .purple
+        case .cardio: return .red
+        case .yoga: return .mint
+        case .running: return .blue
+        case .cycling: return .green
+        case .swimming: return .cyan
+        case .other: return .orange
+        }
+    }
+    
+    private var iconName: String {
+        switch workout.type {
+        case .running: return "figure.run"
+        case .cycling: return "bicycle"
+        case .swimming: return "figure.pool.swim"
+        case .yoga: return "figure.mind.and.body"
+        case .strength: return "dumbbell.fill"
+        case .cardio: return "heart.fill"
+        case .other: return "star.fill"
+        }
+    }
+}
+
+// Filter and Date Picker Sheets
+struct WorkoutTypeFilterSheet: View {
+    @Binding var selectedTypes: Set<WorkoutType>
+    @Binding var isPresented: Bool
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(WorkoutType.allCases, id: \.self) { type in
+                    HStack {
+                        Image(systemName: iconForType(type))
+                            .foregroundColor(colorForType(type))
+                            .frame(width: 24)
+                        
+                        Text(type.rawValue)
+                            .font(.body)
+                        
+                        Spacer()
+                        
+                        if selectedTypes.contains(type) {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.7)) {
+                            if selectedTypes.contains(type) {
+                                selectedTypes.remove(type)
+                            } else {
+                                selectedTypes.insert(type)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Filter Workouts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Reset") {
+                        selectedTypes = Set(WorkoutType.allCases)
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        isPresented = false
+                    }
+                }
+            }
+        }
+    }
+    
+    private func iconForType(_ type: WorkoutType) -> String {
+        switch type {
+        case .running: return "figure.run"
+        case .cycling: return "bicycle"
+        case .swimming: return "figure.pool.swim"
+        case .yoga: return "figure.mind.and.body"
+        case .strength: return "dumbbell.fill"
+        case .cardio: return "heart.fill"
+        case .other: return "star.fill"
+        }
+    }
+    
+    private func colorForType(_ type: WorkoutType) -> Color {
+        switch type {
+        case .running: return .blue
+        case .cycling: return .green
+        case .swimming: return .cyan
+        case .yoga: return .purple
+        case .strength: return .orange
+        case .cardio: return .red
+        case .other: return .gray
+        }
+    }
+}
+
+struct DatePickerSheet: View {
+    @Binding var selectedDate: Date
+    @Binding var isPresented: Bool
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                DatePicker(
+                    "Select Date",
+                    selection: $selectedDate,
+                    displayedComponents: [.date]
+                )
+                .datePickerStyle(.graphical)
+                .padding()
+                
+                Spacer()
+            }
+            .navigationTitle("Jump to Date")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        isPresented = false
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Legacy Optimized UI Components
 
 struct OptimizedBackgroundView: View {
     var body: some View {

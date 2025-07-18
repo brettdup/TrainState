@@ -155,7 +155,7 @@ private struct SubcategoryWorkoutsView: View {
                     )
                 } else {
                     ForEach(workouts) { workout in
-                        WorkoutRowView(workout: workout)
+                        SimpleWorkoutRowView(workout: workout)
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                             .listRowBackground(Color.clear)
                     }
@@ -655,6 +655,92 @@ struct PremiumSheet: View {
         }
         .presentationDetents([.large])
         .onDisappear { isPresented = false }
+    }
+}
+
+// MARK: - Simple Workout Row View
+struct SimpleWorkoutRowView: View {
+    let workout: Workout
+    
+    private var iconName: String {
+        switch workout.type {
+        case .running: return "figure.run"
+        case .cycling: return "bicycle"
+        case .swimming: return "figure.pool.swim"
+        case .yoga: return "figure.mind.and.body"
+        case .strength: return "dumbbell.fill"
+        case .cardio: return "heart.fill"
+        case .other: return "figure.mixed.cardio"
+        }
+    }
+    
+    private var iconColor: Color {
+        switch workout.type {
+        case .running: return .blue
+        case .cycling: return .green
+        case .swimming: return .cyan
+        case .yoga: return .purple
+        case .strength: return .orange
+        case .cardio: return .red
+        case .other: return .gray
+        }
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: iconName)
+                .font(.title2)
+                .foregroundStyle(iconColor)
+                .frame(width: 32, height: 32)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(workout.type.rawValue)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                
+                Text(formatDate(workout.startDate))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(formatDuration(workout.duration))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                
+                if let calories = workout.calories {
+                    Text("\(Int(calories)) cal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.systemBackground))
+        )
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let remainingMinutes = minutes % 60
+            return "\(hours)h \(remainingMinutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 

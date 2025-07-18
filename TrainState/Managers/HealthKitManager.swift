@@ -158,7 +158,7 @@ class HealthKitManager: ObservableObject {
             let existingUUIDs = Set(existingWorkouts.compactMap { $0.healthKitUUID })
             print("[HealthKit] Found \(existingUUIDs.count) existing workouts in database")
 
-            // Create a more robust fuzzy matching system
+            // Create optimized fuzzy matching system
             struct FuzzyKey: Hashable {
                 let type: WorkoutType
                 let startBucket: Int
@@ -168,89 +168,101 @@ class HealthKitManager: ObservableObject {
             }
 
             var fuzzySet = Set<FuzzyKey>()
+            // Pre-populate fuzzy set for faster lookups
             for workout in existingWorkouts {
                 let key = FuzzyKey(
                     type: workout.type,
-                    startBucket: Int(workout.startDate.timeIntervalSince1970 / 10), // 10 second buckets
-                    durationBucket: Int(workout.duration / 10), // 10 second duration buckets
-                    caloriesBucket: workout.calories.map { Int($0 / 10) }, // 10 calorie buckets
-                    distanceBucket: workout.distance.map { Int($0 / 50) } // 50 meter buckets
+                    startBucket: Int(workout.startDate.timeIntervalSince1970 / 15), // Wider buckets for better performance
+                    durationBucket: Int(workout.duration / 15), // Wider duration buckets
+                    caloriesBucket: workout.calories.map { Int($0 / 25) }, // Wider calorie buckets
+                    distanceBucket: workout.distance.map { Int($0 / 100) } // Wider distance buckets
                 )
                 fuzzySet.insert(key)
             }
 
-            let totalWorkouts = sortedWorkouts.count
+            // Filter out workouts we already have first
+            let newWorkouts = sortedWorkouts.filter { !existingUUIDs.contains($0.uuid) }
+            print("[HealthKit] Found \(newWorkouts.count) new workouts to process")
+            
+            // Early exit if no new workouts
+            if newWorkouts.isEmpty {
+                print("[HealthKit] No new workouts to import")
+                return
+            }
+
+            let totalWorkouts = newWorkouts.count
             var processedWorkouts = 0
             var newWorkoutsAdded = 0
             var skippedWorkouts = 0
             var runningWorkoutsToRoute: [(hkWorkout: HKWorkout, workout: Workout)] = []
+            var workoutsToInsert: [Workout] = []
+            
+            // Process workouts in batches
+            let batchSize = 50
+            for batch in newWorkouts.chunked(into: batchSize) {
+                for hkWorkout in batch {
+                    let workoutType = convertFromHKWorkoutActivityType(hkWorkout.workoutActivityType)
+                    let calories = hkWorkout.totalEnergyBurned?.doubleValue(for: HKUnit.kilocalorie())
+                    let distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
+                    
+                    // Create fuzzy key for duplicate detection
+                    let fuzzyKey = FuzzyKey(
+                        type: workoutType,
+                        startBucket: Int(hkWorkout.startDate.timeIntervalSince1970 / 15),
+                        durationBucket: Int(hkWorkout.duration / 15),
+                        caloriesBucket: calories.map { Int($0 / 25) },
+                        distanceBucket: distance.map { Int($0 / 100) }
+                    )
+                    
+                    // Skip if we have a fuzzy match
+                    if fuzzySet.contains(fuzzyKey) {
+                        skippedWorkouts += 1
+                        processedWorkouts += 1
+                        continue
+                    }
 
-            for hkWorkout in sortedWorkouts {
-                let uuid = hkWorkout.uuid
-                
-                // Skip if we already have this exact workout
-                if existingUUIDs.contains(uuid) {
-                    skippedWorkouts += 1
+                    // Create the new workout
+                    let workout = Workout(
+                        type: workoutType,
+                        startDate: hkWorkout.startDate,
+                        duration: hkWorkout.duration,
+                        calories: calories,
+                        distance: distance,
+                        notes: "Imported from Apple Health",
+                        healthKitUUID: hkWorkout.uuid
+                    )
+
+                    // Only add running workouts with reasonable duration for route processing
+                    if hkWorkout.workoutActivityType == .running && hkWorkout.duration > 60 {
+                        runningWorkoutsToRoute.append((hkWorkout, workout))
+                    }
+
+                    workoutsToInsert.append(workout)
+                    fuzzySet.insert(fuzzyKey)
+                    newWorkoutsAdded += 1
                     processedWorkouts += 1
-                    continue
                 }
-
-                let workoutType = convertFromHKWorkoutActivityType(hkWorkout.workoutActivityType)
-                let calories = hkWorkout.totalEnergyBurned?.doubleValue(for: HKUnit.kilocalorie())
-                let distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
                 
-                // Create fuzzy key for duplicate detection
-                let fuzzyKey = FuzzyKey(
-                    type: workoutType,
-                    startBucket: Int(hkWorkout.startDate.timeIntervalSince1970 / 10),
-                    durationBucket: Int(hkWorkout.duration / 10),
-                    caloriesBucket: calories.map { Int($0 / 10) },
-                    distanceBucket: distance.map { Int($0 / 50) }
-                )
+                // Insert batch of workouts
+                for workout in workoutsToInsert {
+                    context.insert(workout)
+                }
                 
-                // Skip if we have a fuzzy match
-                if fuzzySet.contains(fuzzyKey) {
-                    skippedWorkouts += 1
-                    processedWorkouts += 1
-                    continue
-                }
-
-                // Create the new workout
-                let workout = Workout(
-                    type: workoutType,
-                    startDate: hkWorkout.startDate,
-                    duration: hkWorkout.duration,
-                    calories: calories,
-                    distance: distance,
-                    notes: "Imported from Apple Health",
-                    healthKitUUID: uuid
-                )
-
-                // Only add running workouts with reasonable duration for route processing
-                if hkWorkout.workoutActivityType == .running && hkWorkout.duration > 60 {
-                    runningWorkoutsToRoute.append((hkWorkout, workout))
-                }
-
-                context.insert(workout)
-                fuzzySet.insert(fuzzyKey)
-                newWorkoutsAdded += 1
-
-                processedWorkouts += 1
+                // Save after each batch
+                try context.save()
+                workoutsToInsert.removeAll()
+                
+                // Update progress
                 let progress = Double(processedWorkouts) / Double(totalWorkouts)
                 NotificationCenter.default.post(
                     name: NSNotification.Name("ImportProgressUpdated"),
                     object: nil,
                     userInfo: ["progress": progress]
                 )
-
-                // Save every 10 workouts to prevent memory buildup
-                if processedWorkouts % 10 == 0 {
-                    try context.save()
-                    await Task.yield() // Allow other tasks to run
-                }
+                
+                // Allow other tasks to run
+                await Task.yield()
             }
-            
-            try context.save()
             
             print("[HealthKit] Import completed - Added: \(newWorkoutsAdded), Skipped: \(skippedWorkouts), Total processed: \(processedWorkouts)")
 
@@ -260,65 +272,8 @@ class HealthKitManager: ObservableObject {
                 NotificationCenter.default.post(name: NSNotification.Name("ImportRoutesStarted"), object: nil)
                 onRoutesStarted?()
 
-                // Fetch routes for running workouts in parallel after main import
-                // Limit concurrent route processing to prevent memory issues
-                await withTaskGroup(of: Void.self) { group in
-                    let maxConcurrentRoutes = 2 // Reduced from 3 to prevent overheating
-                    var activeTasks = 0
-                    
-                    for (hkWorkout, workout) in runningWorkoutsToRoute {
-                        // Wait if we have too many active tasks
-                        while activeTasks >= maxConcurrentRoutes {
-                            await Task.yield()
-                        }
-                        
-                        group.addTask {
-                            activeTasks += 1
-                            defer { activeTasks -= 1 }
-                            
-                            print("[HealthKit] Starting route fetch for workout: \(hkWorkout.uuid)")
-                            let locations: [CLLocation]? = await withCheckedContinuation { continuation in
-                                self.fetchRoute(for: hkWorkout) { locs in
-                                    if let locs = locs {
-                                        print("[HealthKit] Fetched route for workout \(hkWorkout.uuid): \(locs.count) points")
-                                    } else {
-                                        print("[HealthKit] No route found for workout \(hkWorkout.uuid)")
-                                    }
-                                    continuation.resume(returning: locs)
-                                }
-                            }
-                            
-                            if let locs = locations, !locs.isEmpty {
-                                // Limit the number of location points to prevent memory issues
-                                let maxPoints = 500 // Reduced from 1000 to prevent overheating
-                                let limitedLocations = locs.count > maxPoints ? Array(locs.prefix(maxPoints)) : locs
-                                
-                                print("[HealthKit] Saving route data for workout: \(hkWorkout.uuid) with \(limitedLocations.count) points")
-                                await MainActor.run {
-                                    let uuid = hkWorkout.uuid
-                                    let fetch = try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.healthKitUUID == uuid }))
-                                    if let dbWorkout = fetch?.first {
-                                        do {
-                                            // Use a more efficient encoding method for large location arrays
-                                            let routeData = try NSKeyedArchiver.archivedData(withRootObject: limitedLocations, requiringSecureCoding: false)
-                                            let workoutRoute = WorkoutRoute(routeData: routeData)
-                                            dbWorkout.route = workoutRoute
-                                            context.insert(workoutRoute)
-                                            try context.save()
-                                            print("[HealthKit] Successfully saved route data for workout: \(hkWorkout.uuid)")
-                                        } catch {
-                                            print("[HealthKit] Failed to save route data for workout \(hkWorkout.uuid): \(error.localizedDescription)")
-                                        }
-                                    } else {
-                                        print("[HealthKit] Could not find workout in database for UUID: \(hkWorkout.uuid)")
-                                    }
-                                }
-                            } else {
-                                print("[HealthKit] No route data to save for workout: \(hkWorkout.uuid)")
-                            }
-                        }
-                    }
-                }
+                // Fetch routes for running workouts with improved concurrency
+                await processWorkoutRoutes(runningWorkoutsToRoute, context: context)
             } else {
                 print("[HealthKit] No new workouts added, skipping route processing")
             }
@@ -408,75 +363,116 @@ class HealthKitManager: ObservableObject {
         }
     }
     
-    // Fetch the route (array of CLLocation) for a running workout
-    func fetchRoute(for workout: HKWorkout, completion: @escaping ([CLLocation]?) -> Void) {
-        print("[HealthKit] fetchRoute called for workout: \(workout.uuid)")
-        
-        // Add timeout protection
-        let timeoutTask = DispatchWorkItem {
-            print("[HealthKit] Route fetch timeout for workout: \(workout.uuid)")
-            completion(nil)
+    // Optimized route processing with better concurrency control
+    private func processWorkoutRoutes(_ runningWorkouts: [(hkWorkout: HKWorkout, workout: Workout)], context: ModelContext) async {
+        // Process routes in smaller batches to prevent memory issues
+        let batchSize = 3
+        for batch in runningWorkouts.chunked(into: batchSize) {
+            await withTaskGroup(of: Void.self) { group in
+                for (hkWorkout, workout) in batch {
+                    group.addTask {
+                        await self.processWorkoutRoute(hkWorkout: hkWorkout, workout: workout, context: context)
+                    }
+                }
+            }
+            // Brief pause between batches to prevent overheating
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: timeoutTask)
+    }
+    
+    private func processWorkoutRoute(hkWorkout: HKWorkout, workout: Workout, context: ModelContext) async {
+        print("[HealthKit] Starting route fetch for workout: \(hkWorkout.uuid)")
         
-        let routeType = HKSeriesType.workoutRoute()
-        let predicate = HKQuery.predicateForObjects(from: workout)
-        let routeQuery = HKSampleQuery(sampleType: routeType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { [weak self] query, samples, error in
-            timeoutTask.cancel() // Cancel timeout if query completes
+        let locations = await fetchRouteOptimized(for: hkWorkout)
+        
+        if let locs = locations, !locs.isEmpty {
+            // More aggressive point reduction for better performance
+            let maxPoints = 300 // Reduced from 500
+            let limitedLocations = locs.count > maxPoints ? Array(locs.prefix(maxPoints)) : locs
             
-            guard let self = self else { 
-                completion(nil)
-                return 
+            await MainActor.run {
+                do {
+                    // Find the workout in the database
+                    let uuid = hkWorkout.uuid
+                    let fetch = try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.healthKitUUID == uuid }))
+                    if let dbWorkout = fetch?.first {
+                        // Use JSONEncoder for better performance than NSKeyedArchiver
+                        let routeData = try JSONEncoder().encode(limitedLocations.map { RoutePoint(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) })
+                        let workoutRoute = WorkoutRoute(routeData: routeData)
+                        dbWorkout.route = workoutRoute
+                        context.insert(workoutRoute)
+                        try context.save()
+                        print("[HealthKit] Successfully saved route data for workout: \(hkWorkout.uuid) with \(limitedLocations.count) points")
+                    }
+                } catch {
+                    print("[HealthKit] Failed to save route data for workout \(hkWorkout.uuid): \(error.localizedDescription)")
+                }
             }
-            
-            if let error = error {
-                print("[HealthKit] Error fetching route: \(error.localizedDescription)")
-                completion(nil)
-                return
+        }
+    }
+    
+    private func fetchRouteOptimized(for workout: HKWorkout) async -> [CLLocation]? {
+        return await withCheckedContinuation { continuation in
+            // Reduced timeout for better responsiveness
+            let timeoutTask = DispatchWorkItem {
+                continuation.resume(returning: nil)
             }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeoutTask)
             
-            print("[HealthKit] fetchRoute samples: \(samples?.count ?? -1) for workout: \(workout.uuid)")
-            guard let routeSamples = samples as? [HKWorkoutRoute], let route = routeSamples.first else {
-                print("[HealthKit] No HKWorkoutRoute samples found for workout \(workout.uuid)")
-                completion(nil)
-                return
-            }
-            
-            var locations: [CLLocation] = []
-            let maxLocations = 2000 // Limit to prevent memory issues
-            
-            let locationQuery = HKWorkoutRouteQuery(route: route) { _, newLocations, done, error in
+            let routeType = HKSeriesType.workoutRoute()
+            let predicate = HKQuery.predicateForObjects(from: workout)
+            let routeQuery = HKSampleQuery(sampleType: routeType, predicate: predicate, limit: 1, sortDescriptors: nil) { [weak self] query, samples, error in
+                timeoutTask.cancel()
+                
+                guard let self = self else { 
+                    continuation.resume(returning: nil)
+                    return 
+                }
+                
                 if let error = error {
-                    print("[HealthKit] Error fetching route locations: \(error.localizedDescription)")
-                    completion(nil)
+                    print("[HealthKit] Error fetching route: \(error.localizedDescription)")
+                    continuation.resume(returning: nil)
                     return
                 }
                 
-                // Add new locations with limit check
-                if let newLocs = newLocations {
-                    let remainingCapacity = maxLocations - locations.count
-                    let locationsToAdd = newLocs.prefix(remainingCapacity)
-                    locations.append(contentsOf: locationsToAdd)
+                guard let routeSamples = samples as? [HKWorkoutRoute], let route = routeSamples.first else {
+                    continuation.resume(returning: nil)
+                    return
                 }
                 
-                if done || locations.count >= maxLocations {
-                    print("[HealthKit] Route locations loaded: \(locations.count) points for workout \(workout.uuid)")
-                    
-                    // Filter out invalid locations
-                    let validLocations = locations.filter { location in
-                        location.coordinate.latitude != 0 && location.coordinate.longitude != 0 &&
-                        location.coordinate.latitude.isFinite && location.coordinate.longitude.isFinite
+                var locations: [CLLocation] = []
+                let maxLocations = 1000 // Reduced from 2000
+                
+                let locationQuery = HKWorkoutRouteQuery(route: route) { _, newLocations, done, error in
+                    if let error = error {
+                        continuation.resume(returning: nil)
+                        return
                     }
                     
-                    DispatchQueue.main.async {
-                        completion(validLocations.isEmpty ? nil : validLocations)
+                    if let newLocs = newLocations {
+                        let remainingCapacity = maxLocations - locations.count
+                        let locationsToAdd = newLocs.prefix(remainingCapacity)
+                        locations.append(contentsOf: locationsToAdd)
+                    }
+                    
+                    if done || locations.count >= maxLocations {
+                        // Filter and simplify locations in one pass
+                        let validLocations = locations.compactMap { location -> CLLocation? in
+                            guard location.coordinate.latitude != 0 && location.coordinate.longitude != 0 &&
+                                  location.coordinate.latitude.isFinite && location.coordinate.longitude.isFinite else {
+                                return nil
+                            }
+                            return location
+                        }
+                        
+                        continuation.resume(returning: validLocations.isEmpty ? nil : validLocations)
                     }
                 }
+                
+                self.healthStore.execute(locationQuery)
             }
-            
-            self.healthStore.execute(locationQuery)
+            healthStore.execute(routeQuery)
         }
-        healthStore.execute(routeQuery)
     }
     
     // Helper: Check authorization status for HKWorkoutRouteType
@@ -507,4 +503,19 @@ extension HKWorkoutActivityType {
             return "Other"
         }
     }
-} 
+}
+
+// Optimized route point structure for JSON encoding
+struct RoutePoint: Codable {
+    let latitude: Double
+    let longitude: Double
+}
+
+// Array chunking extension for batch processing
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}

@@ -74,8 +74,8 @@ struct OnboardingView: View {
                                 isFinalizingRoutes: isFinalizingRoutes
                             )
                             .opacity(index == currentStep ? 1 : 0)
-                            .scaleEffect(index == currentStep ? 1 : 0.8)
-                            .animation(.spring(response: 0.8, dampingFraction: 0.8), value: currentStep)
+                            .scaleEffect(index == currentStep ? 1 : 0.9)
+                            .animation(.interactiveSpring(response: 0.5, dampingFraction: 0.8, blendDuration: 0), value: currentStep)
                         }
                     }
                     .frame(maxHeight: .infinity)
