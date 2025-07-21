@@ -4,6 +4,7 @@ import SwiftData
 struct MainTabView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var userSettings: [UserSettings]
+    @State private var hasInitialImportRun = false
     
     var body: some View {
         TabView {
@@ -29,7 +30,9 @@ struct MainTabView: View {
         }
         .tint(.blue)
         .onAppear {
-            // Removed duplicate initialization call
+            print("[MainTab] MainTabView appeared")
+            // Disable automatic import to prevent app freezing
+            // Use manual sync button in WorkoutListView instead
         }
         .toolbarBackground(.clear, for: .tabBar)
     }

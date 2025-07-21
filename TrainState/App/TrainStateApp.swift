@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import HealthKit
 
 @main
 struct TrainStateApp: App {
@@ -8,8 +7,9 @@ struct TrainStateApp: App {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     
     init() {
+        // Use persistent storage with clean database setup
         do {
-            // Create a schema with all model types
+            print("[App] Initializing with persistent storage")
             let schema = Schema([
                 Workout.self,
                 WorkoutCategory.self,
@@ -18,90 +18,40 @@ struct TrainStateApp: App {
                 WorkoutRoute.self
             ])
             
-            // Try CloudKit configuration first
-            do {
-                let bundleIdentifier = Bundle.main.bundleIdentifier ?? "bb.TrainState"
-                print("[App] Attempting to initialize CloudKit with bundle identifier: \(bundleIdentifier)")
-                
-                // Configure CloudKit with more robust settings
-                let cloudConfig = ModelConfiguration(
-                    schema: schema,
-                    url: URL.documentsDirectory.appendingPathComponent("TrainState.store"),
-                    allowsSave: true,
-                    cloudKitDatabase: .private("iCloud.\(bundleIdentifier)")
-                )
-                
-                modelContainer = try ModelContainer(for: schema, configurations: cloudConfig)
-                print("[App] Successfully initialized ModelContainer with CloudKit")
-                
-                // Verify CloudKit status
-                Task {
-                    do {
-                        let status = try await CloudKitManager.shared.checkCloudStatus()
-                        print("[App] CloudKit status check: \(status ? "Available" : "Unavailable")")
-                    } catch {
-                        print("[App] CloudKit status check failed: \(error.localizedDescription)")
-                    }
-                }
-            } catch {
-                print("[App] CloudKit initialization failed with error: \(error)")
-                // Fallback to local-only persistent store
-                print("[App] Falling back to local storage")
-                let localConfig = ModelConfiguration(
-                    schema: schema,
-                    url: URL.documentsDirectory.appendingPathComponent("TrainState.store"),
-                    allowsSave: true
-                )
-                modelContainer = try ModelContainer(for: schema, configurations: localConfig)
-                print("[App] Successfully initialized ModelContainer with local storage")
-            }
+            // Use persistent database that preserves all data
+            let storeURL = URL.documentsDirectory.appendingPathComponent("TrainState.store")
+            
+            let config = ModelConfiguration(
+                schema: schema,
+                url: storeURL,
+                allowsSave: true
+            )
+            modelContainer = try ModelContainer(for: schema, configurations: config)
+            print("[App] Successfully initialized persistent ModelContainer")
         } catch {
-            print("Failed to initialize persistent ModelContainer: \(error)")
-            // Final fallback to in-memory store
+            print("[App] Persistent storage failed, falling back to in-memory")
             do {
-                let fallbackConfig = ModelConfiguration(isStoredInMemoryOnly: true)
-                modelContainer = try ModelContainer(
-                    for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, UserSettings.self, WorkoutRoute.self,
-                    configurations: fallbackConfig
-                )
-                print("Using in-memory ModelContainer as fallback")
+                let schema = Schema([
+                    Workout.self,
+                    WorkoutCategory.self,
+                    WorkoutSubcategory.self,
+                    UserSettings.self,
+                    WorkoutRoute.self
+                ])
+                let config = ModelConfiguration(isStoredInMemoryOnly: true)
+                modelContainer = try ModelContainer(for: schema, configurations: config)
+                print("[App] Using in-memory fallback")
             } catch {
                 fatalError("Could not initialize ModelContainer: \(error)")
             }
         }
         
-        // Make the tab bar transparent globally and customize item appearance
-        let appearance = UITabBarAppearance()
-        appearance.configureWithTransparentBackground()
-        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
-        appearance.backgroundColor = UIColor.clear
-
-        // Customize item appearance
-        let itemAppearance = UITabBarItemAppearance()
-        itemAppearance.selected.iconColor = .systemBlue
-        itemAppearance.selected.titleTextAttributes = [
-            .foregroundColor: UIColor.systemBlue,
-            .font: UIFont.systemFont(ofSize: 12, weight: .bold)
-        ]
-        itemAppearance.normal.iconColor = .gray
-        itemAppearance.normal.titleTextAttributes = [
-            .foregroundColor: UIColor.gray,
-            .font: UIFont.systemFont(ofSize: 12, weight: .regular)
-        ]
-        
-        appearance.stackedLayoutAppearance = itemAppearance
-        appearance.inlineLayoutAppearance = itemAppearance
-        appearance.compactInlineLayoutAppearance = itemAppearance
-
-        UITabBar.appearance().standardAppearance = appearance
-        if #available(iOS 15.0, *) {
-            UITabBar.appearance().scrollEdgeAppearance = appearance
-        }
+        print("[App] App initialization completed")
     }
     
     var body: some Scene {
         WindowGroup {
-            ZStack {
+            Group {
                 if hasCompletedOnboarding {
                     MainTabView()
                 } else {
@@ -109,6 +59,60 @@ struct TrainStateApp: App {
                 }
             }
             .modelContainer(modelContainer)
+            .onAppear {
+                print("[App] App body appeared successfully")
+            }
+        }
+    }
+    
+    // MARK: - Migration
+    
+    @MainActor
+    private func performWorkoutTypeMigration() async {
+        let migrationKey = "workoutTypeMigrationV3"
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else {
+            return // Migration already completed
+        }
+        
+        do {
+            let context = modelContainer.mainContext
+            let workouts = try context.fetch(FetchDescriptor<Workout>())
+            
+            print("[Migration] Found \(workouts.count) workouts")
+            
+            var fixedCount = 0
+            for workout in workouts {
+                print("[Migration] Workout: typeRawValue='\(workout.typeRawValue)', notes='\(workout.notes ?? "none")'")
+                
+                // If typeRawValue is empty but the workout should have a type, try to fix it
+                if workout.typeRawValue.isEmpty {
+                    // Try to determine type from the notes if it says "Imported from Health"
+                    if let notes = workout.notes, notes.contains("Imported from Health") {
+                        // This is likely a HealthKit import, let's set it to a reasonable default
+                        // We can't determine the original type, so set it to "Other" properly
+                        workout.typeRawValue = WorkoutType.other.rawValue
+                        fixedCount += 1
+                        print("[Migration] Fixed workout with empty typeRawValue")
+                    } else {
+                        // This is likely a manually created workout, set to "Other"
+                        workout.typeRawValue = WorkoutType.other.rawValue
+                        fixedCount += 1
+                        print("[Migration] Fixed manual workout with empty typeRawValue")
+                    }
+                }
+            }
+            
+            if fixedCount > 0 {
+                try context.save()
+                print("[Migration] Fixed \(fixedCount) workouts")
+            }
+            
+            // Mark migration as completed
+            UserDefaults.standard.set(true, forKey: migrationKey)
+            print("[Migration] Workout type migration completed")
+            
+        } catch {
+            print("[Migration] Migration failed: \(error)")
         }
     }
 } 

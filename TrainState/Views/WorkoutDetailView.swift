@@ -14,48 +14,148 @@ struct WorkoutDetailView: View {
   @Query private var categories: [WorkoutCategory]
 
   var body: some View {
-    ZStack {
-   
-      // Main content
-      GeometryReader { geometry in
-        ScrollView(showsIndicators: true) {
-          VStack(spacing: 0) {
-            // Hero section with workout type and key info
-            heroSection
-              .padding(.bottom, 20)
-
-            // Content cards in natural flow
-            contentSection
-              .padding(.bottom, 100)  // Space for floating buttons
-          }
-          .background(
-            GeometryReader { geo in
-              Color.clear
-                .preference(
-                  key: ScrollOffsetPreferenceKey.self, value: geo.frame(in: .named("scroll")).minY)
-            }
-          )
+    NavigationStack {
+      List {
+        // Hero section with workout info
+        Section {
+          workoutHeroRow
         }
-        .coordinateSpace(name: "scroll")
-        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-          // Throttle scroll offset updates to improve performance
-          let roundedValue = round(value / 5) * 5 // Round to nearest 5 pixels
-          if abs(scrollOffset - roundedValue) > 2 {
-            scrollOffset = roundedValue
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        
+        // Metrics section
+        Section("Metrics") {
+          if let calories = workout.calories {
+            metricRow(icon: "flame.fill", title: "Calories", value: "\(Int(calories)) cal", color: .orange)
           }
+          metricRow(icon: "clock.fill", title: "Duration", value: DurationFormatHelper.formatDuration(workout.duration), color: .blue)
+          if let distance = workout.distance {
+            metricRow(icon: "figure.walk", title: "Distance", value: String(format: "%.1f km", distance / 1000), color: .green)
+          }
+        }
+        
+        // Categories section
+        if !(workout.categories?.isEmpty ?? true) || !(workout.subcategories?.isEmpty ?? true) {
+          Section("Categories") {
+            if let categories = workout.categories, !categories.isEmpty {
+              ForEach(categories) { category in
+                categoryRow(category: category)
+              }
+            }
+            if let subcategories = workout.subcategories, !subcategories.isEmpty {
+              ForEach(subcategories) { subcategory in
+                subcategoryRow(subcategory: subcategory)
+              }
+            }
+          }
+        } else {
+          Section("Categories") {
+            Button(action: { isEditingCategorySheet = true }) {
+              HStack(spacing: 12) {
+                Image(systemName: "plus.circle.fill")
+                  .font(.title2)
+                  .foregroundStyle(.blue)
+                  .frame(width: 32, height: 32)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                  Text("Add Categories")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                  
+                  Text("Organize your workout")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+              }
+              .padding(.vertical, 8)
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+          }
+        }
+        
+        // Map section for running workouts
+        if workout.type == .running {
+          Section("Route") {
+            if let route = workout.route?.decodedRoute, !route.isEmpty {
+              Button(action: { showRouteSheet = true }) {
+                HStack(spacing: 12) {
+                  Image(systemName: "map.fill")
+                    .font(.title2)
+                    .foregroundStyle(.green)
+                    .frame(width: 32, height: 32)
+                  
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text("View Route")
+                      .font(.headline)
+                      .foregroundStyle(.primary)
+                    
+                    Text("\(route.count) GPS points")
+                      .font(.subheadline)
+                      .foregroundStyle(.secondary)
+                  }
+                  
+                  Spacer()
+                  
+                  Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+            } else {
+              HStack(spacing: 12) {
+                Image(systemName: "map")
+                  .font(.title2)
+                  .foregroundStyle(.gray)
+                  .frame(width: 32, height: 32)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                  Text("No Route Data")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                  
+                  Text("Route not available")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+              }
+              .padding(.vertical, 8)
+            }
+          }
+        }
+        
+        // Notes section
+        if let notes = workout.notes, !notes.isEmpty {
+          Section("Notes") {
+            Text(notes)
+              .font(.body)
+              .foregroundStyle(.primary)
+              .lineSpacing(4)
+          }
+        }
+        
+        // Workout details section
+        Section("Details") {
+          detailRow(icon: "calendar", title: "Date", value: DateFormatHelper.friendlyDateTime(workout.startDate), color: .purple)
+          detailRow(icon: workout.type.systemImage, title: "Type", value: workout.type.rawValue, color: workoutTypeColor)
         }
       }
-//      .ignoresSafeArea(.container, edges: .top)
-    }
-    .navigationBarTitleDisplayMode(.large)
-    .navigationTitle("Workout")
-    .toolbar {
-      ToolbarItem(placement: .principal) {
-        // Dynamic title that appears on scroll
-        Text(workout.type.rawValue)
-          .font(.headline.weight(.semibold))
-          .opacity(scrollOffset < -50 ? 1 : 0)
-          .animation(.easeInOut(duration: 0.15), value: scrollOffset < -50)
+      .listStyle(.insetGrouped)
+      .navigationTitle("Workout")
+      .navigationBarTitleDisplayMode(.large)
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Edit") {
+            isEditingCategorySheet = true
+          }
+        }
       }
     }
     .sheet(isPresented: $isEditingCategorySheet) {
@@ -358,6 +458,123 @@ struct WorkoutDetailView: View {
     .shadow(color: .primary.opacity(0.04), radius: 4, x: 0, y: 2)
   }
 
+  // MARK: - Row Components
+  @ViewBuilder
+  private var workoutHeroRow: some View {
+    HStack(spacing: 12) {
+      // Workout type icon
+      Image(systemName: workout.type.systemImage)
+        .font(.title)
+        .foregroundStyle(workoutTypeColor)
+        .frame(width: 40, height: 40)
+      
+      VStack(alignment: .leading, spacing: 4) {
+        Text(workout.type.rawValue)
+          .font(.title2.weight(.bold))
+          .foregroundStyle(.primary)
+        
+        Text(DateFormatHelper.friendlyDateTime(workout.startDate))
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+      
+      Spacer()
+    }
+    .padding(.vertical, 12)
+  }
+  
+  @ViewBuilder
+  private func metricRow(icon: String, title: String, value: String, color: Color) -> some View {
+    HStack(spacing: 12) {
+      Image(systemName: icon)
+        .font(.title2)
+        .foregroundStyle(color)
+        .frame(width: 32, height: 32)
+      
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+          .font(.headline)
+          .foregroundStyle(.primary)
+        
+        Text(value)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+      
+      Spacer()
+    }
+    .padding(.vertical, 8)
+  }
+  
+  @ViewBuilder
+  private func categoryRow(category: WorkoutCategory) -> some View {
+    HStack(spacing: 12) {
+      Image(systemName: "tag.fill")
+        .font(.title2)
+        .foregroundStyle(Color(hex: category.color) ?? .blue)
+        .frame(width: 32, height: 32)
+      
+      VStack(alignment: .leading, spacing: 4) {
+        Text(category.name)
+          .font(.headline)
+          .foregroundStyle(.primary)
+        
+        Text("Category")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+      
+      Spacer()
+    }
+    .padding(.vertical, 8)
+  }
+  
+  @ViewBuilder
+  private func subcategoryRow(subcategory: WorkoutSubcategory) -> some View {
+    HStack(spacing: 12) {
+      Image(systemName: "circle.fill")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(width: 32, height: 32)
+      
+      VStack(alignment: .leading, spacing: 4) {
+        Text(subcategory.name)
+          .font(.headline)
+          .foregroundStyle(.primary)
+        
+        Text("Exercise")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+      
+      Spacer()
+    }
+    .padding(.vertical, 8)
+  }
+  
+  @ViewBuilder
+  private func detailRow(icon: String, title: String, value: String, color: Color) -> some View {
+    HStack(spacing: 12) {
+      Image(systemName: icon)
+        .font(.title2)
+        .foregroundStyle(color)
+        .frame(width: 32, height: 32)
+      
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+          .font(.headline)
+          .foregroundStyle(.primary)
+        
+        Text(value)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+      
+      Spacer()
+    }
+    .padding(.vertical, 8)
+  }
+
   // MARK: - Helpers
   private var workoutTypeColor: Color {
     switch workout.type {
@@ -371,6 +588,7 @@ struct WorkoutDetailView: View {
     }
   }
 }
+
 
 // MARK: - Supporting Views
 

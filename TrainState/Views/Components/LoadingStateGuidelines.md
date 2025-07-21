@@ -194,18 +194,6 @@ AnimatedLoadingView(
 )
 ```
 
-### HealthKit Integration
-
-```swift
-// Import process
-AnimatedLoadingView(
-    title: "Importing workouts",
-    subtitle: "Reading data from Apple Health...",
-    progress: importProgress,
-    gradient: LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
-)
-```
-
 ### Network Operations
 
 ```swift

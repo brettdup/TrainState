@@ -1,7 +1,6 @@
 #if DEBUG
 import SwiftUI
 import SwiftData
-import HealthKit
 
 struct DeveloperOptionsView: View {
     @Environment(\.modelContext) private var modelContext
@@ -11,7 +10,6 @@ struct DeveloperOptionsView: View {
     @State private var showingResetConfirmation = false
     @State private var showingOnboardingResetConfirmation = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    private let healthKitManager = HealthKitManager.shared
     
     var body: some View {
         Section {
@@ -50,32 +48,6 @@ struct DeveloperOptionsView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(Color.red.opacity(0.15), lineWidth: 1.5)
-                )
-                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            Button(action: {
-                Task {
-                    do {
-                        try await healthKitManager.createDefaultWorkout()
-                    } catch {
-                        print("Error creating default workout: \(error.localizedDescription)")
-                    }
-                }
-            }) {
-                HStack {
-                    Label("Create HealthKit Workout", systemImage: "plus.circle")
-                        .font(.headline)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.blue)
-                }
-                .padding()
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.blue.opacity(0.15), lineWidth: 1.5)
                 )
                 .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
             }

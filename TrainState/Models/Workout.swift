@@ -5,8 +5,12 @@ import CoreLocation
 @Model
 final class Workout {
     var id: UUID = UUID()
-    var healthKitUUID: UUID?
-    var type: WorkoutType = WorkoutType.other
+    var typeRawValue: String = WorkoutType.other.rawValue
+    
+    var type: WorkoutType {
+        get { WorkoutType(rawValue: typeRawValue) ?? .other }
+        set { typeRawValue = newValue.rawValue }
+    }
     var startDate: Date = Date()
     var duration: TimeInterval = 0
     var calories: Double?
@@ -21,15 +25,14 @@ final class Workout {
     var route: WorkoutRoute?
     
     init(
-        type: WorkoutType = WorkoutType.other,
+        type: WorkoutType = .other,
         startDate: Date = Date(),
         duration: TimeInterval = 0,
         calories: Double? = nil,
         distance: Double? = nil,
         notes: String? = nil,
         categories: [WorkoutCategory]? = nil,
-        subcategories: [WorkoutSubcategory]? = nil,
-        healthKitUUID: UUID? = nil
+        subcategories: [WorkoutSubcategory]? = nil
     ) {
         self.id = UUID()
         self.type = type
@@ -40,7 +43,6 @@ final class Workout {
         self.notes = notes
         self.categories = categories
         self.subcategories = subcategories
-        self.healthKitUUID = healthKitUUID
     }
     
     // Helper methods to maintain relationship integrity
@@ -69,7 +71,7 @@ final class Workout {
 }
 
 // Make WorkoutType codable for export/import functionality
-enum WorkoutType: String, Codable, CaseIterable, Identifiable {
+enum WorkoutType: String, Codable, CaseIterable, Identifiable, Sendable {
     case strength = "Strength Training"
     case cardio = "Cardio"
     case yoga = "Yoga"
@@ -79,6 +81,65 @@ enum WorkoutType: String, Codable, CaseIterable, Identifiable {
     case other = "Other"
 
     public var id: Self { self }
+    
+    var systemImage: String {
+        switch self {
+        case .running:
+            return "figure.run"
+        case .cycling:
+            return "bicycle"
+        case .swimming:
+            return "figure.pool.swim"
+        case .yoga:
+            return "figure.mind.and.body"
+        case .strength:
+            return "dumbbell.fill"
+        case .cardio:
+            return "heart.fill"
+        case .other:
+            return "square.stack.3d.up"
+        }
+    }
+}
+
+// Filter enum that includes "All" option for UI filtering
+enum WorkoutFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case strength = "Strength Training"
+    case cardio = "Cardio"
+    case yoga = "Yoga"
+    case running = "Running"
+    case cycling = "Cycling"
+    case swimming = "Swimming"
+    case other = "Other"
+    
+    var id: String { rawValue }
+    
+    var systemImage: String {
+        switch self {
+        case .all: return "square.stack.3d.up"
+        case .strength: return "dumbbell.fill"
+        case .cardio: return "heart.fill"
+        case .yoga: return "figure.mind.and.body"
+        case .running: return "figure.run"
+        case .cycling: return "bicycle"
+        case .swimming: return "figure.pool.swim"
+        case .other: return "square.stack.3d.up"
+        }
+    }
+    
+    var workoutType: WorkoutType? {
+        switch self {
+        case .all: return nil
+        case .strength: return .strength
+        case .cardio: return .cardio
+        case .yoga: return .yoga
+        case .running: return .running
+        case .cycling: return .cycling
+        case .swimming: return .swimming
+        case .other: return .other
+        }
+    }
 }
 
 // MARK: - Codable Extensions for Export/Import
@@ -86,7 +147,6 @@ enum WorkoutType: String, Codable, CaseIterable, Identifiable {
 
 struct WorkoutExport: Codable {
     let id: UUID
-    let healthKitUUID: UUID?
     let type: WorkoutType
     let startDate: Date
     let duration: TimeInterval
@@ -96,9 +156,8 @@ struct WorkoutExport: Codable {
     let categoryIds: [UUID]?
     let subcategoryIds: [UUID]?
     
-    init(from workout: Workout) {
+    init(workout: Workout) {
         self.id = workout.id
-        self.healthKitUUID = workout.healthKitUUID
         self.type = workout.type
         self.startDate = workout.startDate
         self.duration = workout.duration
@@ -127,7 +186,7 @@ struct WorkoutCategoryExport: Codable {
     let color: String
     let workoutType: WorkoutType?
     
-    init(from category: WorkoutCategory) {
+    init(category: WorkoutCategory) {
         self.id = category.id
         self.name = category.name
         self.color = category.color
@@ -139,7 +198,7 @@ struct WorkoutSubcategoryExport: Codable {
     let id: UUID
     let name: String
     
-    init(from subcategory: WorkoutSubcategory) {
+    init(subcategory: WorkoutSubcategory) {
         self.id = subcategory.id
         self.name = subcategory.name
     }

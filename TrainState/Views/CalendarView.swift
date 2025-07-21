@@ -48,7 +48,12 @@ struct CalendarView: View {
     }
     
     private var workoutsForSelectedDate: [Workout] {
-        optimizedCache.getWorkouts(for: selectedDate).filter { selectedWorkoutTypes.contains($0.type) }
+        // Always use direct filtering for reliability
+        let workouts = allWorkouts.filter { workout in
+            calendar.isDate(workout.startDate, inSameDayAs: selectedDate) &&
+            selectedWorkoutTypes.contains(workout.type)
+        }
+        return workouts
     }
     
     private var filteredWorkoutCount: Int {
@@ -71,13 +76,8 @@ struct CalendarView: View {
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                // Enhanced background with subtle animation
-                EnhancedBackgroundView()
-                    .ignoresSafeArea()
-                
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 28) {
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 20) {
                         // Enhanced hero section with view mode toggle
                         EnhancedHeroSection(
                             monthString: monthString,
@@ -97,6 +97,7 @@ struct CalendarView: View {
                                 daysInMonth: daysInMonth,
                                 selectedDate: selectedDate,
                                 cache: optimizedCache,
+                                allWorkouts: allWorkouts,
                                 selectedWorkoutTypes: selectedWorkoutTypes,
                                 onDateSelected: { date in
                                     withAnimation(.interactiveSpring(response: 0.4, dampingFraction: 0.8, blendDuration: 0)) {
@@ -125,6 +126,7 @@ struct CalendarView: View {
                                 weekDates: weekDates,
                                 selectedDate: selectedDate,
                                 cache: optimizedCache,
+                                allWorkouts: allWorkouts,
                                 selectedWorkoutTypes: selectedWorkoutTypes,
                                 onDateSelected: { date in
                                     withAnimation(.interactiveSpring(response: 0.4, dampingFraction: 0.8, blendDuration: 0)) {
@@ -155,10 +157,13 @@ struct CalendarView: View {
                             workouts: workoutsForSelectedDate,
                             selectedWorkoutTypes: selectedWorkoutTypes
                         )
-                        .padding(.bottom, 20)
-                    }
+                        .padding(.bottom, 100)
                 }
             }
+            .background(
+                EnhancedBackgroundView()
+                    .ignoresSafeArea()
+            )
             .navigationTitle("Calendar")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
@@ -178,11 +183,15 @@ struct CalendarView: View {
             .task {
                 if !isInitialized {
                     await initializeCalendar()
+                    updateCache()
                     isInitialized = true
                 }
             }
             .onChange(of: displayedMonth) { _, _ in
                 Task { await refreshForMonth() }
+            }
+            .onChange(of: allWorkouts.count) { _, _ in
+                updateCache()
             }
             .sheet(isPresented: $showingFilters) {
                 WorkoutTypeFilterSheet(
@@ -200,6 +209,12 @@ struct CalendarView: View {
     }
     
     // MARK: - Performance Methods
+    
+    private func updateCache() {
+        Task {
+            await optimizedCache.buildCache(workouts: allWorkouts, calendar: calendar)
+        }
+    }
     
     @MainActor
     private func initializeCalendar() async {
@@ -503,15 +518,16 @@ struct EnhancedCalendarGrid: View {
     let daysInMonth: [Date?]
     let selectedDate: Date
     let cache: CalendarCache
+    let allWorkouts: [Workout]
     let selectedWorkoutTypes: Set<WorkoutType>
     let onDateSelected: (Date) -> Void
     
     private let calendar = Calendar.current
     private let daysOfWeek = ["S", "M", "T", "W", "T", "F", "S"]
-    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
     
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 12) {
             // Days of week header
             HStack(spacing: 0) {
                 ForEach(daysOfWeek, id: \.self) { day in
@@ -541,7 +557,7 @@ struct EnhancedCalendarGrid: View {
                         }
                     } else {
                         Color.clear
-                            .aspectRatio(1, contentMode: .fit)
+                            .frame(height: 44)
                     }
                 }
             }
@@ -561,15 +577,29 @@ struct EnhancedCalendarGrid: View {
     }
     
     private func hasFilteredWorkouts(for date: Date) -> Bool {
-        !cache.getWorkouts(for: date).filter { selectedWorkoutTypes.contains($0.type) }.isEmpty
+        !getWorkoutsForDate(date).isEmpty
     }
     
     private func getFilteredWorkoutTypes(for date: Date) -> Set<WorkoutType> {
-        Set(cache.getWorkouts(for: date).filter { selectedWorkoutTypes.contains($0.type) }.map { $0.type })
+        Set(getWorkoutsForDate(date).map { $0.type })
     }
     
     private func getFilteredWorkoutCount(for date: Date) -> Int {
-        cache.getWorkouts(for: date).filter { selectedWorkoutTypes.contains($0.type) }.count
+        getWorkoutsForDate(date).count
+    }
+    
+    private func getWorkoutsForDate(_ date: Date) -> [Workout] {
+        // Try cache first, fallback to direct filtering
+        let cachedWorkouts = cache.getWorkouts(for: date)
+        if !cachedWorkouts.isEmpty {
+            return cachedWorkouts.filter { selectedWorkoutTypes.contains($0.type) }
+        }
+        
+        // Fallback to direct filtering from allWorkouts
+        return allWorkouts.filter { workout in
+            calendar.isDate(workout.startDate, inSameDayAs: date) &&
+            selectedWorkoutTypes.contains(workout.type)
+        }
     }
 }
 
@@ -650,9 +680,8 @@ struct EnhancedDayCell: View {
                     .frame(height: 8)
             }
         }
-        .frame(maxWidth: .infinity)
-        .aspectRatio(1, contentMode: .fit)
-        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: 44)
+        .padding(.vertical, 4)
     }
     
     private func workoutTypeColor(_ type: WorkoutType) -> Color {
@@ -672,6 +701,7 @@ struct EnhancedWeekView: View {
     let weekDates: [Date]
     let selectedDate: Date
     let cache: CalendarCache
+    let allWorkouts: [Workout]
     let selectedWorkoutTypes: Set<WorkoutType>
     let onDateSelected: (Date) -> Void
     
@@ -693,7 +723,7 @@ struct EnhancedWeekView: View {
                                 date: date,
                                 isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                                 isToday: calendar.isDateInToday(date),
-                                workouts: cache.getWorkouts(for: date).filter { selectedWorkoutTypes.contains($0.type) }
+                                workouts: getWorkoutsForDate(date)
                             )
                         }
                         .buttonStyle(PlainButtonStyle())
@@ -714,6 +744,20 @@ struct EnhancedWeekView: View {
         )
         .shadow(color: .black.opacity(0.06), radius: 16, x: 0, y: 4)
         .padding(.horizontal, 20)
+    }
+    
+    private func getWorkoutsForDate(_ date: Date) -> [Workout] {
+        // Try cache first, fallback to direct filtering
+        let cachedWorkouts = cache.getWorkouts(for: date)
+        if !cachedWorkouts.isEmpty {
+            return cachedWorkouts.filter { selectedWorkoutTypes.contains($0.type) }
+        }
+        
+        // Fallback to direct filtering from allWorkouts
+        return allWorkouts.filter { workout in
+            calendar.isDate(workout.startDate, inSameDayAs: date) &&
+            selectedWorkoutTypes.contains(workout.type)
+        }
     }
 }
 
@@ -1218,7 +1262,7 @@ struct OptimizedCalendarGrid: View {
                         }
                     } else {
                         Color.clear
-                            .aspectRatio(1, contentMode: .fit)
+                            .frame(height: 44)
                     }
                 }
             }

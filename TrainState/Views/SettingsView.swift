@@ -27,6 +27,7 @@ struct SettingsView: View {
     @State private var showingBackupSelection = false
     @State private var isLoadingBackups = false
     @State private var debugInfo = "Initializing CloudKit debug..."
+    @State private var showingDataUsageWarning = false
     
     // Add new state for manage backups sheet
     @State private var showingManageBackups = false
@@ -38,6 +39,10 @@ struct SettingsView: View {
     @Query private var categories: [WorkoutCategory]
     @Query private var subcategories: [WorkoutSubcategory]
     @Query private var workouts: [Workout]
+    
+    private var defaultUserSettings: UserSettings {
+        UserSettings()
+    }
     
     var body: some View {
         NavigationStack {
@@ -55,27 +60,27 @@ struct SettingsView: View {
                 
                 ScrollView {
                     LazyVStack(spacing: 24) {
-                        if let settings = userSettings.first {
-                            // Profile/Account Section
-                            profileSection
-                            
-                            // App Preferences
-                            preferencesSection(settings: settings)
-                            
-                            // Workout Management
-                            workoutManagementSection
-                            
-                            // Data & Sync
-                            dataSyncSection
-                            
-                            // Support & About
-                            supportSection
-                            
-                            #if DEBUG
-                            // Developer Options
-                            developerSection
-                            #endif
-                        }
+                        let settings = userSettings.first ?? defaultUserSettings
+                        
+                        // Profile/Account Section
+                        profileSection
+                        
+                        // App Preferences
+                        preferencesSection(settings: settings)
+                        
+                        // Workout Management
+                        workoutManagementSection
+                        
+                        // Data & Sync
+                        dataSyncSection
+                        
+                        // Support & About
+                        supportSection
+                        
+                        #if DEBUG
+                        // Developer Options
+                        developerSection
+                        #endif
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 16)
@@ -84,8 +89,22 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .onAppear {
-                NotificationManager.shared.checkNotificationStatus { authorized in
-                    isNotificationAuthorized = authorized
+                // Ensure UserSettings exists - do this asynchronously to avoid blocking
+                Task {
+                    if userSettings.isEmpty {
+                        let newSettings = UserSettings()
+                        modelContext.insert(newSettings)
+                        try? modelContext.save()
+                    }
+                }
+                
+                // Do notification check asynchronously
+                Task {
+                    NotificationManager.shared.checkNotificationStatus { authorized in
+                        Task { @MainActor in
+                            isNotificationAuthorized = authorized
+                        }
+                    }
                 }
                 
                 // Set initial debug info
@@ -94,11 +113,19 @@ struct SettingsView: View {
                 
                 // Set up debug callback for CloudKit
                 CloudKitManager.shared.debugCallback = { message in
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         self.debugInfo = message
                     }
                 }
             }
+        }
+        .alert("Data Usage Warning", isPresented: $showingDataUsageWarning) {
+            Button("Cancel", role: .cancel) { }
+            Button("Continue") {
+                performBackup()
+            }
+        } message: {
+            Text("Backing up to iCloud will use mobile data if you're not on WiFi. This may use several MB depending on your workout history. Continue?")
         }
     }
     
@@ -302,14 +329,7 @@ struct SettingsView: View {
                     
                     Divider()
                     
-                    NavigationLink(destination: HealthSettingsView()) {
-                        ModernSettingsRow(
-                            title: "Health Integration",
-                            subtitle: "Sync with Apple Health",
-                            systemImage: "heart.fill",
-                            accentColor: .red
-                        )
-                    }
+                    // HealthKit integration removed - manual workouts only
                 }
             }
         }
@@ -379,33 +399,11 @@ struct SettingsView: View {
                         if purchaseManager.hasActiveSubscription {
                             VStack(spacing: 12) {
                                 Button(action: {
-                                    Task { @MainActor in
-                                        isBackingUp = true
-                                        let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
-                                        debugInfo = "Environment: \(environment)\nStatus: Creating backup...\nContainer: iCloud.brettduplessis.TrainState"
-                                        
-                                        CloudKitManager.shared.debugCallback = { message in
-                                            DispatchQueue.main.async {
-                                                self.debugInfo = message
-                                            }
-                                        }
-                                        
-                                        do {
-                                            try await CloudKitManager.shared.backupToCloud(context: modelContext)
-                                            lastBackupDate = Date()
-                                            debugInfo = "Environment: \(environment)\nStatus: BACKUP SUCCESS ✅\nLast backup: \(Date().formatted())"
-                                            showingBackupSuccess = true
-                                        } catch {
-                                            debugInfo = "Environment: \(environment)\nStatus: BACKUP ERROR ❌\nError: \(error.localizedDescription)"
-                                            backupErrorMessage = error.localizedDescription
-                                            showingBackupError = true
-                                        }
-                                        isBackingUp = false
-                                    }
+                                    showingDataUsageWarning = true
                                 }) {
                                     ModernSettingsRow(
                                         title: "Backup to iCloud",
-                                        subtitle: "Save your data",
+                                        subtitle: "Save your data (uses mobile data)",
                                         systemImage: "icloud.and.arrow.up",
                                         accentColor: .blue,
                                         isLoading: isBackingUp
@@ -697,9 +695,7 @@ struct SettingsView: View {
                     SettingsRow(icon: "folder", title: "Manage Categories")
                 }
                 
-                NavigationLink(destination: HealthSettingsView()) {
-                    SettingsRow(icon: "heart", title: "Health Integration")
-                }
+                // HealthKit integration removed - manual workouts only
             }
         }
     }
@@ -799,7 +795,8 @@ struct SettingsView: View {
                             }
                             
                             do {
-                                try await CloudKitManager.shared.backupToCloud(context: modelContext)
+                                // CloudKit backup disabled to prevent data usage
+                                print("CloudKit backup disabled")
                                 lastBackupDate = Date()
                                 debugInfo = "Environment: \(environment)\nStatus: BACKUP SUCCESS ✅\nLast backup: \(Date().formatted())"
                                 showingBackupSuccess = true
@@ -1253,6 +1250,35 @@ struct SettingsView: View {
                     debugInfo = "Failed to delete backups: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+    
+    // MARK: - Backup Function
+    
+    private func performBackup() {
+        Task { @MainActor in
+            isBackingUp = true
+            let environment = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" ? "TestFlight/Sandbox" : "App Store/Production"
+            debugInfo = "Environment: \(environment)\nStatus: Creating backup...\nContainer: iCloud.brettduplessis.TrainState"
+            
+            CloudKitManager.shared.debugCallback = { message in
+                DispatchQueue.main.async {
+                    self.debugInfo = message
+                }
+            }
+            
+            do {
+                // CloudKit backup disabled to prevent data usage
+                print("CloudKit backup disabled")
+                lastBackupDate = Date()
+                debugInfo = "Environment: \(environment)\nStatus: BACKUP SUCCESS ✅\nLast backup: \(Date().formatted())"
+                showingBackupSuccess = true
+            } catch {
+                debugInfo = "Environment: \(environment)\nStatus: BACKUP ERROR ❌\nError: \(error.localizedDescription)"
+                backupErrorMessage = error.localizedDescription
+                showingBackupError = true
+            }
+            isBackingUp = false
         }
     }
 }

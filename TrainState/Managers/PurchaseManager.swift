@@ -59,17 +59,17 @@ class PurchaseManager: ObservableObject {
         debugLog += "PurchaseManager: Starting transaction listener...\n"
         updateListenerTask = listenForTransactions()
         
-        // Finally, load products
-        print("PurchaseManager: Starting initial product load...")
-        debugLog += "PurchaseManager: Starting initial product load...\n"
+        // DISABLED - Prevents data usage
+        print("PurchaseManager: Product loading DISABLED to prevent data usage")
+        debugLog += "PurchaseManager: Product loading DISABLED to prevent data usage\n"
         
-        Task { [weak self] in
-            guard let self = self else { return }
-            print("PurchaseManager: Loading products...")
-            await self.loadProducts()
-            print("PurchaseManager: Updating purchased products...")
-            await self.updatePurchasedProducts()
-        }
+        // Task { [weak self] in
+        //     guard let self = self else { return }
+        //     print("PurchaseManager: Loading products...")
+        //     await self.loadProducts()
+        //     print("PurchaseManager: Updating purchased products...")
+        //     await self.updatePurchasedProducts()
+        // }
     }
     
     deinit {
@@ -78,13 +78,14 @@ class PurchaseManager: ObservableObject {
     }
     
     private func listenForTransactions() -> Task<Void, Error> {
-        print("PurchaseManager: Setting up transaction listener...")
+        print("PurchaseManager: Transaction listener DISABLED to prevent data usage")
         return Task.detached { [weak self] in
             guard let self = self else { return }
-            print("PurchaseManager: Transaction listener started")
-            for await result in StoreKit.Transaction.updates {
-                await self.handleTransactionResult(result)
-            }
+            print("PurchaseManager: Transaction listener disabled")
+            // DISABLED - Prevents data usage
+            // for await result in StoreKit.Transaction.updates {
+            //     await self.handleTransactionResult(result)
+            // }
         }
     }
     

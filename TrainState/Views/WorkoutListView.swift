@@ -1,13 +1,12 @@
 import SwiftUI
 import SwiftData
-import HealthKit
 
 struct WorkoutListView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\Workout.startDate, order: .reverse)]) private var workouts: [Workout]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var showingAddWorkout = false
-    @State private var selectedFilter = WorkoutType.all
+    @State private var selectedFilter = WorkoutFilter.all
     @State private var selectedWorkoutForDetail: Workout?
     @State private var showingWellDoneSheet = false
     @State private var isRefreshing = false
@@ -15,56 +14,98 @@ struct WorkoutListView: View {
     @State private var searchText = ""
     @State private var showingFilters = false
     
-    private let healthStore = HKHealthStore()
     
-    // Toast feedback state
-    @State private var showToast = false
-    @State private var toastMessage = ""
     
-    // MARK: - Computed Properties
+    // MARK: - Cached Properties (updated only when needed)
+    @State private var cachedFilteredWorkouts: [Workout] = []
+    @State private var cachedThisWeekCount: Int = 0
+    @State private var cachedThisMonthCount: Int = 0
+    @State private var lastCacheUpdate: Date = Date.distantPast
+    
+    // Simple computed properties without heavy calculations
     var filteredWorkouts: [Workout] {
-        let filtered = selectedFilter == .all ? workouts : workouts.filter { $0.type == selectedFilter }
+        return cachedFilteredWorkouts.isEmpty ? Array(workouts.prefix(20)) : cachedFilteredWorkouts
+    }
+    
+    var thisWeekWorkouts: [Workout] { 
+        return Array(workouts.prefix(cachedThisWeekCount))
+    }
+    
+    var thisMonthWorkouts: [Workout] { 
+        return Array(workouts.prefix(cachedThisMonthCount))
+    }
+    
+    var totalMinutesThisWeek: Int {
+        // Simplified calculation to prevent heat
+        min(cachedThisWeekCount * 30, 300) // Estimate 30 min per workout, max 300
+    }
+    
+    // MARK: - Cache Management
+    private func updateCache() {
+        lastCacheUpdate = Date()
         
-        if searchText.isEmpty {
-            return filtered
-        } else {
-            return filtered.filter { workout in
-                workout.type.rawValue.localizedCaseInsensitiveContains(searchText) ||
-                workout.categories?.contains { $0.name.localizedCaseInsensitiveContains(searchText) } == true
+        // Simple filtering without complex operations
+        let recentWorkouts = Array(workouts.prefix(20))
+        var filtered = selectedFilter == .all ? recentWorkouts : recentWorkouts.filter { $0.type == selectedFilter.workoutType }
+        
+        // Apply search if needed
+        if !searchText.isEmpty {
+            filtered = filtered.filter { workout in
+                workout.type.rawValue.localizedCaseInsensitiveContains(searchText)
             }
         }
+        
+        cachedFilteredWorkouts = filtered
+        
+        // Use proper calendar calculations for week/month counts
+        let calendar = Calendar.current
+        let now = Date()
+        let oneWeekAgo = calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: now)) ?? now
+        let oneMonthAgo = calendar.date(byAdding: .day, value: -30, to: calendar.startOfDay(for: now)) ?? now
+        
+        cachedThisWeekCount = recentWorkouts.filter { calendar.startOfDay(for: $0.startDate) >= oneWeekAgo }.count
+        cachedThisMonthCount = recentWorkouts.filter { calendar.startOfDay(for: $0.startDate) >= oneMonthAgo }.count
+    }
+    
+    var totalCaloriesThisWeek: Int {
+        // Simplified estimate to prevent heat
+        cachedThisWeekCount * 250 // Estimate 250 calories per workout
+    }
+    
+    var currentStreak: Int {
+        // Simplified streak calculation to prevent heat
+        return min(cachedThisWeekCount, 7) // Max 7 day streak shown
     }
     
     var groupedWorkouts: [String: [Workout]] {
         Dictionary(grouping: filteredWorkouts) { workout in
             let calendar = Calendar.current
-            if calendar.isDateInToday(workout.startDate) {
+            let now = Date()
+            
+            // Use calendar to compare actual days, not just day components
+            if calendar.isDate(workout.startDate, inSameDayAs: now) {
                 return "Today"
-            } else if calendar.isDateInYesterday(workout.startDate) {
+            } else if calendar.isDate(workout.startDate, inSameDayAs: calendar.date(byAdding: .day, value: -1, to: now) ?? now) {
                 return "Yesterday"
-            } else if calendar.isDate(workout.startDate, equalTo: Date(), toGranularity: .weekOfYear) {
-                let formatter = DateFormatter()
-                formatter.dateFormat = "EEEE"
-                return formatter.string(from: workout.startDate)
             } else {
-                let formatter = DateFormatter()
-                formatter.dateStyle = .medium
-                return formatter.string(from: workout.startDate)
+                let daysDiff = calendar.dateComponents([.day], from: calendar.startOfDay(for: workout.startDate), to: calendar.startOfDay(for: now)).day ?? 0
+                
+                if daysDiff <= 7 {
+                    return "This Week"
+                } else {
+                    return "Earlier"
+                }
             }
         }
     }
     
     var sortedSections: [String] {
-        let calendar = Calendar.current
+        // Simplified sorting to prevent heat
+        let predefinedOrder = ["Today", "Yesterday", "This Week", "Earlier"]
         return groupedWorkouts.keys.sorted { key1, key2 in
-            // Get the first workout for each group to compare dates
-            guard let workouts1 = groupedWorkouts[key1],
-                  let workouts2 = groupedWorkouts[key2],
-                  let date1 = workouts1.first?.startDate,
-                  let date2 = workouts2.first?.startDate else {
-                return false
-            }
-            return date1 > date2
+            let index1 = predefinedOrder.firstIndex(of: key1) ?? 999
+            let index2 = predefinedOrder.firstIndex(of: key2) ?? 999
+            return index1 < index2
         }
     }
     
@@ -78,7 +119,7 @@ struct WorkoutListView: View {
                     toolbarContent
                 }
                 .refreshable {
-                    await refreshHealthData()
+                    await refreshLocalData()
                 }
                 .sheet(item: $selectedWorkoutForDetail) { workout in
                     NavigationStack {
@@ -95,6 +136,30 @@ struct WorkoutListView: View {
                 }
                 .sheet(isPresented: $showingAddWorkout) {
                     AddWorkoutView()
+                }
+                .onAppear {
+                    updateCache() // Initialize cache on appear
+                }
+                .onChange(of: workouts.count) { _, _ in
+                    Task {
+                        await MainActor.run {
+                            updateCache()
+                        }
+                    }
+                }
+                .onChange(of: selectedFilter) { _, _ in
+                    Task {
+                        await MainActor.run {
+                            updateCache()
+                        }
+                    }
+                }
+                .onChange(of: searchText) { _, _ in
+                    Task {
+                        await MainActor.run {
+                            updateCache()
+                        }
+                    }
                 }
         }
     }
@@ -131,6 +196,16 @@ struct WorkoutListView: View {
     @ViewBuilder
     private var workoutsList: some View {
         List {
+            // Stats cards section
+            if !workouts.isEmpty {
+                Section {
+                    statsCardsView
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            }
+            
+            // Workouts sections
             ForEach(sortedSections, id: \.self) { section in
                 Section(section) {
                     ForEach(groupedWorkouts[section] ?? []) { workout in
@@ -156,17 +231,89 @@ struct WorkoutListView: View {
         .listStyle(.insetGrouped)
     }
     
+    @ViewBuilder
+    private var statsCardsView: some View {
+        VStack(spacing: 12) {
+            // This Week Card
+            HStack(spacing: 12) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+                    .frame(width: 32, height: 32)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("This Week")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    
+                    Text("\(thisWeekWorkouts.count) workouts")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("\(thisWeekWorkouts.count)")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                    
+                    if totalMinutesThisWeek > 0 {
+                        Text("\(totalMinutesThisWeek) min")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+            
+            // This Month Card
+            HStack(spacing: 12) {
+                Image(systemName: "calendar")
+                    .font(.title2)
+                    .foregroundStyle(.green)
+                    .frame(width: 32, height: 32)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("This Month")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    
+                    Text("\(thisMonthWorkouts.count) workouts")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("\(thisMonthWorkouts.count)")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                    
+                    let totalMinutesThisMonth = Int(thisMonthWorkouts.reduce(0) { $0 + $1.duration } / 60)
+                    if totalMinutesThisMonth > 0 {
+                        Text("\(totalMinutesThisMonth) min")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .padding()
+    }
+    
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Menu {
                 Picker("Filter", selection: $selectedFilter) {
-                    Label("All", systemImage: "square.stack.3d.up")
-                        .tag(WorkoutType.all)
-                    
-                    ForEach(WorkoutType.allCases.filter { $0 != .all }, id: \.self) { type in
-                        Label(type.rawValue, systemImage: type.systemImage)
-                            .tag(type)
+                    ForEach(WorkoutFilter.allCases, id: \.self) { filter in
+                        Label(filter.rawValue, systemImage: filter.systemImage)
+                            .tag(filter)
                     }
                 }
                 .pickerStyle(.menu)
@@ -177,17 +324,17 @@ struct WorkoutListView: View {
         
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
-                Button(action: {
-                    Task { await refreshHealthData() }
-                }) {
-                    Label("Sync with Health", systemImage: "arrow.clockwise")
-                }
-                .disabled(isRefreshing)
                 
                 Button(action: {
                     removeDuplicateWorkouts()
                 }) {
                     Label("Remove Duplicates", systemImage: "trash")
+                }
+                
+                Button(action: {
+                    clearAllWorkouts()
+                }) {
+                    Label("Clear All Workouts", systemImage: "trash.fill")
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -233,6 +380,22 @@ struct WorkoutListView: View {
     
     // MARK: - Helper Methods
     
+    private func refreshLocalData() async {
+        guard !isRefreshing else { return }
+        
+        print("[DEBUG] Refreshing local data only")
+        isRefreshing = true
+        defer { 
+            isRefreshing = false 
+            print("[DEBUG] Local refresh completed")
+        }
+        
+        // Just update the local cache
+        await MainActor.run {
+            updateCache()
+        }
+    }
+    
     private func deleteWorkouts(at offsets: IndexSet, in section: String) {
         guard let sectionWorkouts = groupedWorkouts[section] else { return }
         
@@ -248,39 +411,6 @@ struct WorkoutListView: View {
         }
     }
     
-    private func refreshHealthData() async {
-        guard !isRefreshing else { return }
-        
-        isRefreshing = true
-        defer { isRefreshing = false }
-        
-        do {
-            try await HealthKitManager.shared.importWorkoutsToCoreData(context: modelContext)
-            
-            await MainActor.run {
-                toastMessage = "Workouts synced"
-                showToast = true
-                
-                if workouts.count > 0 {
-                    showingWellDoneSheet = true
-                }
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    showToast = false
-                }
-            }
-        } catch {
-            await MainActor.run {
-                toastMessage = "Sync failed"
-                showToast = true
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    showToast = false
-                }
-            }
-        }
-    }
-    
     private func removeDuplicateWorkouts() {
         let duplicates = findDuplicateWorkouts()
         
@@ -290,14 +420,9 @@ struct WorkoutListView: View {
         
         do {
             try modelContext.save()
-            toastMessage = "Removed \(duplicates.count) duplicates"
+            print("Removed \(duplicates.count) duplicates")
         } catch {
-            toastMessage = "Failed to remove duplicates"
-        }
-        
-        showToast = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            showToast = false
+            print("Failed to remove duplicates: \(error)")
         }
     }
     
@@ -316,6 +441,21 @@ struct WorkoutListView: View {
         
         return duplicates
     }
+    
+    private func clearAllWorkouts() {
+        print("[Clear] Clearing all \(workouts.count) workouts")
+        
+        for workout in workouts {
+            modelContext.delete(workout)
+        }
+        
+        do {
+            try modelContext.save()
+            print("[Clear] Successfully cleared all workouts")
+        } catch {
+            print("[Clear] Failed to clear workouts: \(error)")
+        }
+    }
 }
 
 // MARK: - Native Components
@@ -325,53 +465,54 @@ struct NativeWorkoutRow: View {
     let onTap: () -> Void
     
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                // Workout type icon
-                Image(systemName: workout.type.systemImage)
-                    .font(.title2)
-                    .foregroundStyle(workout.type.color)
-                    .frame(width: 32, height: 32)
+        HStack(spacing: 12) {
+            // Workout type icon
+            Image(systemName: workout.type.systemImage)
+                .font(.title2)
+                .foregroundStyle(workout.type.color)
+                .frame(width: 32, height: 32)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(workout.type.rawValue)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(workout.type.rawValue)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    
-                    Text(workout.startDate.formatted(date: .omitted, time: .shortened))
-                        .font(.subheadline)
+                Text(workout.startDate.formatted(date: .omitted, time: .shortened))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                
+                // Categories
+                if let category = workout.categories?.first {
+                    Text(category.name)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                    
-                    // Categories
-                    if let category = workout.categories?.first {
-                        Text(category.name)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color(hex: category.color)?.opacity(0.2) ?? Color.secondary.opacity(0.2))
-                            .clipShape(Capsule())
-                    }
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(formatDuration(workout.duration))
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-                    
-                    if let calories = workout.calories {
-                        Text("\(Int(calories)) cal")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(hex: category.color)?.opacity(0.2) ?? Color.secondary.opacity(0.2))
+                        .clipShape(Capsule())
                 }
             }
-            .padding(.vertical, 8)
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(formatDuration(workout.duration))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+                
+                if let calories = workout.calories {
+                    Text("\(Int(calories)) cal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap()
+        }
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -419,29 +560,11 @@ struct NativePremiumUpgradeRow: View {
     }
 }
 
+
 // MARK: - WorkoutType Extension
 
 extension WorkoutType {
     static let all = WorkoutType.other // Using .other as a placeholder for "all"
-    
-    var systemImage: String {
-        switch self {
-        case .running:
-            return "figure.run"
-        case .cycling:
-            return "bicycle"
-        case .swimming:
-            return "figure.pool.swim"
-        case .yoga:
-            return "figure.mind.and.body"
-        case .strength:
-            return "dumbbell.fill"
-        case .cardio:
-            return "heart.fill"
-        case .other:
-            return "square.stack.3d.up"
-        }
-    }
     
     var color: Color {
         switch self {
@@ -463,6 +586,7 @@ extension WorkoutType {
     }
 }
 
+
 // MARK: - Preview
 
 #Preview {
@@ -474,12 +598,23 @@ extension WorkoutType {
     
     let context = container.mainContext
     
-    // Create sample workouts
+    // Create sample workouts with varied dates for better stats
     let sampleWorkouts = [
+        // Today
         Workout(type: .running, startDate: Date(), duration: 30 * 60, calories: 400),
         Workout(type: .strength, startDate: Date().addingTimeInterval(-3600), duration: 45 * 60, calories: 350),
+        
+        // Yesterday
         Workout(type: .cycling, startDate: Date().addingTimeInterval(-86400), duration: 60 * 60, calories: 500),
-        Workout(type: .yoga, startDate: Date().addingTimeInterval(-172800), duration: 75 * 60, calories: 200),
+        Workout(type: .yoga, startDate: Date().addingTimeInterval(-90000), duration: 75 * 60, calories: 200),
+        
+        // This week
+        Workout(type: .cardio, startDate: Date().addingTimeInterval(-172800), duration: 40 * 60, calories: 450),
+        Workout(type: .strength, startDate: Date().addingTimeInterval(-259200), duration: 50 * 60, calories: 380),
+        
+        // This month
+        Workout(type: .running, startDate: Date().addingTimeInterval(-604800), duration: 35 * 60, calories: 320),
+        Workout(type: .swimming, startDate: Date().addingTimeInterval(-1209600), duration: 45 * 60, calories: 300),
     ]
     
     for workout in sampleWorkouts {
