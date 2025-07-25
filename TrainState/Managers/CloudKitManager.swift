@@ -51,26 +51,66 @@ class CloudKitManager {
     
     func backupToCloud(context: ModelContext) async throws {
         print("[DISABLED] CloudKit backup completely disabled to prevent data usage")
+        
+        // Additional network protection check
+        if !NetworkManager.shared.isSafeToUseData {
+            let networkStatus = NetworkManager.shared.statusDescription
+            print("[CloudKit] Blocking operation - not on WiFi (current: \(networkStatus))")
+            throw NetworkProtectionError.cellularDataBlocked
+        }
+        
         throw NSError(domain: "CloudKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "CloudKit disabled to prevent data usage"])
     }
     
     func fetchAvailableBackups() async throws -> [BackupInfo] {
         print("[DISABLED] CloudKit fetch completely disabled to prevent data usage")
+        
+        // Additional network protection check
+        if !NetworkManager.shared.isSafeToUseData {
+            let networkStatus = NetworkManager.shared.statusDescription
+            print("[CloudKit] Blocking operation - not on WiFi (current: \(networkStatus))")
+            throw NetworkProtectionError.cellularDataBlocked
+        }
+        
         return []
     }
     
     func restoreFromCloud(backupInfo: BackupInfo, context: ModelContext) async throws {
         print("[DISABLED] CloudKit restore completely disabled to prevent data usage")
+        
+        // Additional network protection check
+        if !NetworkManager.shared.isSafeToUseData {
+            let networkStatus = NetworkManager.shared.statusDescription
+            print("[CloudKit] Blocking operation - not on WiFi (current: \(networkStatus))")
+            throw NetworkProtectionError.cellularDataBlocked
+        }
+        
         throw NSError(domain: "CloudKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "CloudKit disabled to prevent data usage"])
     }
     
     func checkCloudStatus() async throws -> CKAccountStatus {
         print("[DISABLED] CloudKit status check disabled")
+        
+        // Additional network protection check
+        if !NetworkManager.shared.isSafeToUseData {
+            let networkStatus = NetworkManager.shared.statusDescription
+            print("[CloudKit] Blocking operation - not on WiFi (current: \(networkStatus))")
+            throw NetworkProtectionError.cellularDataBlocked
+        }
+        
         return .noAccount
     }
     
     func deleteBackups(_ backups: [BackupInfo]) async throws -> [BackupInfo] {
         print("[DISABLED] CloudKit delete disabled")
+        
+        // Additional network protection check
+        if !NetworkManager.shared.isSafeToUseData {
+            let networkStatus = NetworkManager.shared.statusDescription
+            print("[CloudKit] Blocking operation - not on WiFi (current: \(networkStatus))")
+            throw NetworkProtectionError.cellularDataBlocked
+        }
+        
         return []
     }
 }

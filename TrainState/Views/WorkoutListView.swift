@@ -14,6 +14,11 @@ struct WorkoutListView: View {
     @State private var searchText = ""
     @State private var showingFilters = false
     
+    // HealthKit import states
+    @State private var healthKitImportResult: String?
+    @State private var showingHealthKitImportError = false
+    @State private var healthKitImportError: HealthKitError?
+    
     
     
     // MARK: - Cached Properties (updated only when needed)
@@ -137,6 +142,11 @@ struct WorkoutListView: View {
                 .sheet(isPresented: $showingAddWorkout) {
                     AddWorkoutView()
                 }
+                .alert("HealthKit Import", isPresented: $showingHealthKitImportError) {
+                    Button("OK") { healthKitImportError = nil }
+                } message: {
+                    Text(healthKitImportError?.errorDescription ?? "Unknown error occurred")
+                }
                 .onAppear {
                     updateCache() // Initialize cache on appear
                 }
@@ -180,12 +190,33 @@ struct WorkoutListView: View {
             ContentUnavailableView {
                 Label("No Workouts", systemImage: "figure.run")
             } description: {
-                Text("Start your fitness journey by adding your first workout.")
+                Text("Start your fitness journey by adding your first workout or importing from HealthKit.")
             } actions: {
-                Button("Add Workout") {
-                    showingAddWorkout = true
+                VStack(spacing: 12) {
+                    Button("Add Workout") {
+                        showingAddWorkout = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    
+                    Button(action: {
+                        Task {
+                            await refreshLocalData()
+                        }
+                    }) {
+                        HStack {
+                            if isRefreshing {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                    .tint(.blue)
+                            } else {
+                                Image(systemName: "heart.fill")
+                            }
+                            Text(isRefreshing ? "Importing..." : "Import from HealthKit")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isRefreshing)
                 }
-                .buttonStyle(.borderedProminent)
             }
         } else {
             // Search results empty
@@ -203,6 +234,28 @@ struct WorkoutListView: View {
                 }
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
+            }
+            
+            // HealthKit import result
+            if let importResult = healthKitImportResult {
+                Section {
+                    HStack {
+                        Image(systemName: "heart.fill")
+                            .foregroundColor(.red)
+                            .font(.caption)
+                        Text(importResult)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Dismiss") {
+                            healthKitImportResult = nil
+                        }
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                    }
+                    .padding(.vertical, 8)
+                }
+                .listRowBackground(Color(.systemGray6))
             }
             
             // Workouts sections
@@ -229,6 +282,9 @@ struct WorkoutListView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .refreshable {
+            await refreshLocalData()
+        }
     }
     
     @ViewBuilder
@@ -246,7 +302,7 @@ struct WorkoutListView: View {
                         .font(.headline)
                         .foregroundStyle(.primary)
                     
-                    Text("\(thisWeekWorkouts.count) workouts")
+                    Text("\(thisWeekWorkouts.count) of \(workouts.count) workouts")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -280,7 +336,7 @@ struct WorkoutListView: View {
                         .font(.headline)
                         .foregroundStyle(.primary)
                     
-                    Text("\(thisMonthWorkouts.count) workouts")
+                    Text("\(thisMonthWorkouts.count) of \(workouts.count) workouts")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -324,6 +380,16 @@ struct WorkoutListView: View {
         
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
+                Button(action: {
+                    Task {
+                        await refreshLocalData()
+                    }
+                }) {
+                    Label("Refresh & Import HealthKit", systemImage: isRefreshing ? "arrow.clockwise" : "arrow.clockwise.circle")
+                }
+                .disabled(isRefreshing)
+                
+                Divider()
                 
                 Button(action: {
                     removeDuplicateWorkouts()
@@ -383,14 +449,47 @@ struct WorkoutListView: View {
     private func refreshLocalData() async {
         guard !isRefreshing else { return }
         
-        print("[DEBUG] Refreshing local data only")
+        print("[DEBUG] Refreshing local data and attempting HealthKit import")
         isRefreshing = true
         defer { 
             isRefreshing = false 
             print("[DEBUG] Local refresh completed")
         }
         
-        // Just update the local cache
+        // Clear previous import result
+        await MainActor.run {
+            healthKitImportResult = nil
+        }
+        
+        // Try HealthKit import - the manager will handle authorization internally
+        print("[WorkoutList] Attempting HealthKit import...")
+        do {
+            let result = try await HealthKitManager.shared.importWorkouts(to: modelContext)
+            await MainActor.run {
+                if result.added > 0 || result.skipped > 0 {
+                    healthKitImportResult = "HealthKit: +\(result.added) workouts, \(result.skipped) duplicates skipped"
+                    print("[HealthKit] Import successful: \(result.added) added, \(result.skipped) skipped")
+                } else {
+                    healthKitImportResult = "HealthKit: No new workouts to import"
+                    print("[HealthKit] No new workouts found")
+                }
+            }
+        } catch let error as HealthKitError {
+            // Only show critical errors, not rate limiting or authorization issues
+            if case .rateLimited = error {
+                await MainActor.run {
+                    healthKitImportResult = "HealthKit: \(error.localizedDescription)"
+                }
+            } else {
+                print("[HealthKit] Import failed: \(error.localizedDescription)")
+                // Don't show authorization errors on refresh - they're not critical
+            }
+        } catch {
+            print("[HealthKit] Import failed with unknown error: \(error)")
+            // Don't show unknown errors to user
+        }
+        
+        // Update the local cache
         await MainActor.run {
             updateCache()
         }

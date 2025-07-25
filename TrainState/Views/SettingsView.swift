@@ -29,6 +29,9 @@ struct SettingsView: View {
     @State private var debugInfo = "Initializing CloudKit debug..."
     @State private var showingDataUsageWarning = false
     
+    // Network monitoring
+    @StateObject private var networkManager = NetworkManager.shared
+    
     // Add new state for manage backups sheet
     @State private var showingManageBackups = false
     
@@ -119,13 +122,13 @@ struct SettingsView: View {
                 }
             }
         }
-        .alert("Data Usage Warning", isPresented: $showingDataUsageWarning) {
+        .alert("WiFi Backup Confirmation", isPresented: $showingDataUsageWarning) {
             Button("Cancel", role: .cancel) { }
             Button("Continue") {
                 performBackup()
             }
         } message: {
-            Text("Backing up to iCloud will use mobile data if you're not on WiFi. This may use several MB depending on your workout history. Continue?")
+            Text("You're connected to WiFi. Backup will proceed safely without using mobile data. Continue?")
         }
     }
     
@@ -329,7 +332,14 @@ struct SettingsView: View {
                     
                     Divider()
                     
-                    // HealthKit integration removed - manual workouts only
+                    NavigationLink(destination: HealthKitSettingsView()) {
+                        ModernSettingsRow(
+                            title: "HealthKit Import",
+                            subtitle: "Import workouts from Apple Health",
+                            systemImage: "heart.fill",
+                            accentColor: .red
+                        )
+                    }
                 }
             }
         }
@@ -393,19 +403,50 @@ struct SettingsView: View {
                     }
                 }
                 
+                // Network Status Indicator
+                ModernSettingsCard {
+                    HStack {
+                        Image(systemName: networkManager.isSafeToUseData ? "wifi" : "cellularbars")
+                            .foregroundColor(networkManager.isSafeToUseData ? .green : .orange)
+                            .frame(width: 20)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Network Status")
+                                .font(.body.weight(.medium))
+                            Text("\(networkManager.statusDescription) - \(networkManager.isSafeToUseData ? "Data operations allowed" : "Data operations blocked")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        if networkManager.isOnCellular {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                
                 // Backup & Restore
                 ModernSettingsCard {
                     VStack(spacing: 16) {
                         if purchaseManager.hasActiveSubscription {
                             VStack(spacing: 12) {
                                 Button(action: {
-                                    showingDataUsageWarning = true
+                                    if networkManager.isSafeToUseData {
+                                        showingDataUsageWarning = true
+                                    } else {
+                                        backupErrorMessage = "Please connect to WiFi to backup your data. CloudKit operations are blocked on cellular networks."
+                                        showingBackupError = true
+                                    }
                                 }) {
                                     ModernSettingsRow(
                                         title: "Backup to iCloud",
-                                        subtitle: "Save your data (uses mobile data)",
-                                        systemImage: "icloud.and.arrow.up",
-                                        accentColor: .blue,
+                                        subtitle: networkManager.isSafeToUseData ? "Save your data (WiFi only)" : "Requires WiFi connection",
+                                        systemImage: networkManager.isSafeToUseData ? "icloud.and.arrow.up" : "wifi.slash",
+                                        accentColor: networkManager.isSafeToUseData ? .blue : .orange,
                                         isLoading: isBackingUp
                                     )
                                 }
@@ -414,16 +455,21 @@ struct SettingsView: View {
                                 Divider()
                                 
                                 Button(action: {
-                                    Task {
-                                        await loadAvailableBackups()
-                                        showingBackupSelection = true
+                                    if networkManager.isSafeToUseData {
+                                        Task {
+                                            await loadAvailableBackups()
+                                            showingBackupSelection = true
+                                        }
+                                    } else {
+                                        restoreErrorMessage = "Please connect to WiFi to restore your data. CloudKit operations are blocked on cellular networks."
+                                        showingRestoreError = true
                                     }
                                 }) {
                                     ModernSettingsRow(
                                         title: "Restore from iCloud",
-                                        subtitle: "Restore your data",
-                                        systemImage: "icloud.and.arrow.down",
-                                        accentColor: .green,
+                                        subtitle: networkManager.isSafeToUseData ? "Restore your data (WiFi only)" : "Requires WiFi connection",
+                                        systemImage: networkManager.isSafeToUseData ? "icloud.and.arrow.down" : "wifi.slash",
+                                        accentColor: networkManager.isSafeToUseData ? .green : .orange,
                                         isLoading: isRestoring
                                     )
                                 }
@@ -1113,7 +1159,9 @@ struct SettingsView: View {
         .alert("Reset All Data?", isPresented: $showingResetConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Reset", role: .destructive) {
-                resetAllData()
+                Task {
+                    await performDataReset()
+                }
             }
         } message: {
             Text("This will delete all workouts, categories, and subcategories. This action cannot be undone.")
@@ -1131,27 +1179,86 @@ struct SettingsView: View {
     // MARK: - Helper Methods
     
     private func resetAllData() {
-        // Delete all workouts
-        for workout in workouts {
-            modelContext.delete(workout)
-        }
+        print("[Reset] Starting data reset...")
         
-        // Delete all subcategories
-        for subcategory in subcategories {
-            modelContext.delete(subcategory)
-        }
-        
-        // Delete all categories
-        for category in categories {
-            modelContext.delete(category)
-        }
-        
-        // Save changes
         do {
+            // Use batch deletion approach for better memory efficiency
+            
+            // 1. Delete workout routes first (no relationships to worry about)
+            let routeDescriptor = FetchDescriptor<WorkoutRoute>()
+            let allRoutes = try modelContext.fetch(routeDescriptor)
+            print("[Reset] Deleting \(allRoutes.count) routes...")
+            
+            for route in allRoutes {
+                modelContext.delete(route)
+            }
+            
+            // 2. Delete workouts in small batches to avoid memory issues
+            let workoutDescriptor = FetchDescriptor<Workout>()
+            let allWorkouts = try modelContext.fetch(workoutDescriptor)
+            print("[Reset] Deleting \(allWorkouts.count) workouts...")
+            
+            // Process in batches of 50 to avoid memory spikes
+            let batchSize = 50
+            for i in stride(from: 0, to: allWorkouts.count, by: batchSize) {
+                let endIndex = min(i + batchSize, allWorkouts.count)
+                let batch = Array(allWorkouts[i..<endIndex])
+                
+                for workout in batch {
+                    modelContext.delete(workout)
+                }
+                
+                // Save every batch to free memory
+                try modelContext.save()
+                print("[Reset] Deleted batch \(i/batchSize + 1), \(endIndex) of \(allWorkouts.count) workouts")
+            }
+            
+            // 3. Delete subcategories
+            let subcategoryDescriptor = FetchDescriptor<WorkoutSubcategory>()
+            let allSubcategories = try modelContext.fetch(subcategoryDescriptor)
+            print("[Reset] Deleting \(allSubcategories.count) subcategories...")
+            
+            for subcategory in allSubcategories {
+                modelContext.delete(subcategory)
+            }
+            
+            // 4. Delete categories
+            let categoryDescriptor = FetchDescriptor<WorkoutCategory>()
+            let allCategories = try modelContext.fetch(categoryDescriptor)
+            print("[Reset] Deleting \(allCategories.count) categories...")
+            
+            for category in allCategories {
+                modelContext.delete(category)
+            }
+            
+            // 5. Reset user settings (don't delete, just reset to defaults)
+            let settingsDescriptor = FetchDescriptor<UserSettings>()
+            let userSettings = try modelContext.fetch(settingsDescriptor)
+            for setting in userSettings {
+                modelContext.delete(setting)
+            }
+            
+            // Final save
             try modelContext.save()
-            print("Successfully reset all data")
+            print("[Reset] Successfully reset all data")
+            
         } catch {
-            print("Failed to reset data: \(error.localizedDescription)")
+            print("[Reset] Failed to reset data: \(error.localizedDescription)")
+            
+            // Rollback to prevent corruption
+            modelContext.rollback()
+            
+            if let detailedError = error as? NSError {
+                print("[Reset] Detailed error: \(detailedError)")
+            }
+        }
+    }
+    
+    // MARK: - Async Reset Helper
+    
+    private func performDataReset() async {
+        await MainActor.run {
+            resetAllData()
         }
     }
     
