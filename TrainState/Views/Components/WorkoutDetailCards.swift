@@ -227,33 +227,10 @@ private struct EditCategoriesButton: View {
     
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(
-                        gradient: Gradient(colors: [Color.blue.opacity(0.85), Color.blue.opacity(0.65)]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                    .frame(width: 40, height: 40)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                    )
-                    .overlay(
-                        Circle()
-                            .stroke(Color.white.opacity(0.5), lineWidth: 1.5)
-                    )
-                    .shadow(color: .blue.opacity(0.18), radius: 8, y: 3)
-                Image(systemName: "pencil.circle.fill")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(.white)
-                    .shadow(color: .blue.opacity(0.18), radius: 2, y: 1)
-            }
-            .contentShape(Circle())
-            .accessibilityLabel("Edit Categories")
+            Label("Edit", systemImage: "pencil")
+                .font(.subheadline.weight(.medium))
         }
-        .buttonStyle(.plain)
-        .padding(.trailing, 2)
+        .buttonStyle(.bordered)
     }
 }
 
@@ -262,22 +239,12 @@ private struct AddCategoriesButton: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.circle.fill")
-                    .symbolRenderingMode(.hierarchical)
-                Text("Add Categories")
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.blue)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 18)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            )
-            .shadow(color: .blue.opacity(0.08), radius: 6, y: 2)
+            Label("Add Categories", systemImage: "plus.circle")
+                .font(.subheadline.weight(.medium))
+                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderedProminent)
+        .tint(.blue)
     }
 }
 
@@ -463,9 +430,8 @@ struct WorkoutDetailExercisesCard: View {
         }
         .padding(24)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
         )
         .padding(.horizontal, 12)
     }
