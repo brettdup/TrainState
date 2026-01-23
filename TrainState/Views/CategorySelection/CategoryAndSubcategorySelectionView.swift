@@ -19,7 +19,7 @@ struct CategoryAndSubcategorySelectionView: View {
 
     // Memoized/Cached Data
     @State private var cachedCategories: [WorkoutCategory] = []
-    @State private var cachedSubcategoryOptions: [String: [WorkoutSubcategory]] = [:]
+    @State private var cachedSubcategoryOptions: [UUID: [WorkoutSubcategory]] = [:]
     
     // Optimized: Pre-computed sets for fast lookups
     @State private var selectedCategoryIDSet: Set<UUID> = []
@@ -30,47 +30,112 @@ struct CategoryAndSubcategorySelectionView: View {
     }
 
     private var searchResults: [WorkoutCategory] {
-        if searchText.isEmpty {
-            return cachedCategories
-        }
+        if searchText.isEmpty { return cachedCategories }
         return cachedCategories.filter { category in
-            category.name.localizedCaseInsensitiveContains(searchText) ||
-            (cachedSubcategoryOptions[category.name]?.contains { $0.name.localizedCaseInsensitiveContains(searchText) } ?? false)
+            let matchesName = category.name.localizedCaseInsensitiveContains(searchText)
+            let subs = cachedSubcategoryOptions[category.id] ?? []
+            let matchesSub = subs.contains { $0.name.localizedCaseInsensitiveContains(searchText) }
+            return matchesName || matchesSub
         }
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Simplified header
-            headerView
-            
-            // Optimized list
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    if searchResults.isEmpty && !searchText.isEmpty {
-                        noSearchResultsView
-                    } else {
-                        ForEach(searchResults) { category in
-                            categoryCard(for: category)
+        NavigationStack {
+            List {
+                if searchResults.isEmpty && !searchText.isEmpty {
+                    Section { noSearchResultsView.listRowInsets(EdgeInsets()) }
+                }
+                Section("Categories") {
+                    ForEach(searchResults) { category in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Button(action: { toggleCategory(category) }) {
+                                HStack {
+                                    Image(systemName: selectedCategoryIDSet.contains(category.id) ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(Color(hex: category.color) ?? workoutTypeColor)
+                                    Text(category.name)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            
+                            if selectedCategoryIDSet.contains(category.id) {
+                                let subs = cachedSubcategoryOptions[category.id] ?? []
+                                if subs.isEmpty {
+                                    Text("No exercises")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    ForEach(subs) { sub in
+                                        Button(action: { toggleSubcategory(sub) }) {
+                                            HStack {
+                                                Image(systemName: selectedSubcategoryIDSet.contains(sub.id) ? "checkmark" : "circle")
+                                                    .foregroundStyle(.secondary)
+                                                Text(sub.name)
+                                                    .foregroundStyle(.primary)
+                                                Spacer()
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+
+                if !selectedCategories.isEmpty || !selectedSubcategories.isEmpty {
+                    Section("Selected") {
+                        if !selectedCategories.isEmpty {
+                            ForEach(selectedCategories, id: \.id) { category in
+                                HStack {
+                                    Text(category.name)
+                                    Spacer()
+                                    Button("Remove") { toggleCategory(category) }
+                                }
+                            }
+                        }
+                        if !selectedSubcategories.isEmpty {
+                            ForEach(selectedSubcategories, id: \.id) { sub in
+                                HStack {
+                                    Text(sub.name)
+                                    Spacer()
+                                    Button("Remove") { toggleSubcategory(sub) }
+                                }
+                            }
+                        }
+                        Button(role: .destructive) {
+                            selectedCategories.removeAll()
+                            selectedSubcategories.removeAll()
+                            updateSelectedSets()
+                        } label: {
+                            Label("Clear Selected", systemImage: "xmark.circle")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Select Categories")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }.fontWeight(.semibold)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: { showingAddCategorySheet = true }) {
+                        Image(systemName: "plus")
+                    }
+                }
             }
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .navigationBar)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search categories or exercises")
         .onAppear(perform: initialSetup)
         .onChange(of: allWorkoutCategoriesFromDB) { _, _ in updateCachedData() }
         .onChange(of: workoutType) { _, _ in updateCachedData() }
         .onChange(of: selectedCategories) { _, _ in updateSelectedSets() }
         .onChange(of: selectedSubcategories) { _, _ in updateSelectedSets() }
-        .overlay(alignment: .bottomTrailing) {
-            addButton
-        }
         .sheet(isPresented: $showingAddCategorySheet) {
             AddNewCategorySheet(
                 workoutType: workoutType,
@@ -144,7 +209,7 @@ struct CategoryAndSubcategorySelectionView: View {
                     
                     Spacer()
                     
-                    if let subcategories = cachedSubcategoryOptions[category.name], !subcategories.isEmpty {
+                    if let subcategories = cachedSubcategoryOptions[category.id], !subcategories.isEmpty {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(.secondary)
@@ -163,7 +228,7 @@ struct CategoryAndSubcategorySelectionView: View {
             
             // Subcategories
             if isSelected {
-                let subcategories = cachedSubcategoryOptions[category.name] ?? []
+                let subcategories = cachedSubcategoryOptions[category.id] ?? []
                 if !subcategories.isEmpty {
                     VStack(spacing: 0) {
                         ForEach(subcategories) { subcategory in
@@ -250,12 +315,25 @@ struct CategoryAndSubcategorySelectionView: View {
     }
 
     private func updateCachedData() {
-        cachedCategories = allWorkoutCategoriesFromDB.filter { $0.workoutType == workoutType }
-        var options: [String: [WorkoutSubcategory]] = [:]
+        // Dedupe categories by name/type and sort
+        var seen = Set<String>()
+        var unique: [WorkoutCategory] = []
+        let filtered = allWorkoutCategoriesFromDB.filter { $0.workoutType == workoutType }
+        for cat in filtered {
+            let key = cat.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !key.isEmpty, !seen.contains(key) {
+                seen.insert(key)
+                unique.append(cat)
+            }
+        }
+        cachedCategories = unique.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        
+        var options: [UUID: [WorkoutSubcategory]] = [:]
         for category in cachedCategories {
-            let subs = (category.subcategories ?? []).sorted { $0.name < $1.name }
+            let subs = (category.subcategories ?? [])
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             if !subs.isEmpty {
-                options[category.name] = subs
+                options[category.id] = subs
             }
         }
         cachedSubcategoryOptions = options
@@ -287,6 +365,7 @@ struct CategoryAndSubcategorySelectionView: View {
 private struct AddNewCategorySheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query private var existingCategories: [WorkoutCategory]
     
     let workoutType: WorkoutType
     var onSave: (WorkoutCategory) -> Void
@@ -331,6 +410,17 @@ private struct AddNewCategorySheet: View {
     private func addNewCategory() {
         let trimmedName = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
+        
+        let normalized = trimmedName.lowercased()
+        if let existing = existingCategories.first(where: { cat in
+            cat.workoutType == workoutType &&
+            cat.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized
+        }) {
+            // Prevent duplicates: re-use existing category
+            onSave(existing)
+            dismiss()
+            return
+        }
         
         let newCategory = WorkoutCategory(
             name: trimmedName,

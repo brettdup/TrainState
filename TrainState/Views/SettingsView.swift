@@ -49,46 +49,38 @@ struct SettingsView: View {
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                // Modern gradient background
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(.systemBackground),
-                        Color(.systemGray6).opacity(0.3)
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                
-                ScrollView {
-                    LazyVStack(spacing: 24) {
-                        let settings = userSettings.first ?? defaultUserSettings
-                        
-                        // Profile/Account Section
-                        profileSection
-                        
-                        // App Preferences
-                        preferencesSection(settings: settings)
-                        
-                        // Workout Management
-                        workoutManagementSection
-                        
-                        // Data & Sync
-                        dataSyncSection
-                        
-                        // Support & About
-                        supportSection
-                        
-                        #if DEBUG
-                        // Developer Options
-                        developerSection
-                        #endif
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+            let settings = userSettings.first ?? defaultUserSettings
+
+            List {
+                Section {
+                    profileSection
                 }
+
+                Section {
+                    preferencesSection(settings: settings)
+                }
+
+                Section {
+                    workoutManagementSection
+                }
+
+                Section {
+                    dataSyncSection
+                }
+
+                Section {
+                    supportSection
+                }
+
+                #if DEBUG
+                Section {
+                    developerSection
+                }
+                #endif
             }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .onAppear {
@@ -320,11 +312,11 @@ struct SettingsView: View {
             SectionHeaderView(title: "Workout Management", systemImage: "dumbbell.fill")
             
             ModernSettingsCard {
-                VStack(spacing: 12) {
+                VStack(spacing: 16) {
                     NavigationLink(destination: CategoriesManagementView()) {
                         ModernSettingsRow(
-                            title: "Manage Categories",
-                            subtitle: "Organize your workouts",
+                            title: "Categories & Exercises",
+                            subtitle: "Manage your workout categories",
                             systemImage: "folder.fill",
                             accentColor: .blue
                         )
@@ -332,14 +324,8 @@ struct SettingsView: View {
                     
                     Divider()
                     
-                    NavigationLink(destination: HealthKitSettingsView()) {
-                        ModernSettingsRow(
-                            title: "HealthKit Import",
-                            subtitle: "Import workouts from Apple Health",
-                            systemImage: "heart.fill",
-                            accentColor: .red
-                        )
-                    }
+                    // HealthKit integration removed - manual workouts only
+                    // Users can manually add workouts through the main interface
                 }
             }
         }
@@ -1401,16 +1387,7 @@ struct ModernSettingsCard<Content: View>: View {
     
     var body: some View {
         content
-            .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
-            )
+            .appCard(padding: 20)
     }
 }
 

@@ -3,7 +3,7 @@ import SwiftUI
 struct FeatureRow: View {
     let icon: String
     let title: String
-    let description: String
+    let subtitle: String
     
     var body: some View {
         HStack(spacing: 16) {
@@ -15,7 +15,7 @@ struct FeatureRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline)
-                Text(description)
+                Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -27,7 +27,7 @@ struct FeatureRow: View {
     FeatureRow(
         icon: "star.fill",
         title: "Premium Feature",
-        description: "This is a premium feature description"
+        subtitle: "This is a premium feature description"
     )
     .padding()
 } 

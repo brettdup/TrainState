@@ -100,10 +100,10 @@ struct SubscriptionInfoView: View {
                         .font(.title2.weight(.bold))
                     
                     VStack(spacing: 12) {
-                        FeatureRow(icon: "infinity", title: "Unlimited Workouts", description: "Track as many workouts as you want")
-                        FeatureRow(icon: "chart.line.uptrend.xyaxis", title: "Advanced Analytics", description: "Get detailed insights into your fitness progress")
-                        FeatureRow(icon: "folder.fill", title: "Premium Categories", description: "Create unlimited custom categories and subcategories")
-                        FeatureRow(icon: "icloud.fill", title: "Cloud Sync", description: "Sync your data across all your devices")
+                        FeatureRow(icon: "infinity", title: "Unlimited Workouts", subtitle: "Track as many workouts as you want")
+                        FeatureRow(icon: "chart.line.uptrend.xyaxis", title: "Advanced Analytics", subtitle: "Get detailed insights into your fitness progress")
+                        FeatureRow(icon: "folder.fill", title: "Premium Categories", subtitle: "Create unlimited custom categories and subcategories")
+                        FeatureRow(icon: "icloud.fill", title: "Cloud Sync", subtitle: "Sync your data across all your devices")
                     }
                     .padding()
                     .background(Color(.systemBackground))

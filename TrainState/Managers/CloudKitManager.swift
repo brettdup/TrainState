@@ -51,7 +51,9 @@ class CloudKitManager {
     
     func backupToCloud(context: ModelContext) async throws {
         print("[DISABLED] CloudKit backup completely disabled to prevent data usage")
-        
+
+        await NetworkManager.shared.refreshNetworkStatus()
+
         // Additional network protection check
         if !NetworkManager.shared.isSafeToUseData {
             let networkStatus = NetworkManager.shared.statusDescription
@@ -64,7 +66,9 @@ class CloudKitManager {
     
     func fetchAvailableBackups() async throws -> [BackupInfo] {
         print("[DISABLED] CloudKit fetch completely disabled to prevent data usage")
-        
+
+        await NetworkManager.shared.refreshNetworkStatus()
+
         // Additional network protection check
         if !NetworkManager.shared.isSafeToUseData {
             let networkStatus = NetworkManager.shared.statusDescription
@@ -77,7 +81,9 @@ class CloudKitManager {
     
     func restoreFromCloud(backupInfo: BackupInfo, context: ModelContext) async throws {
         print("[DISABLED] CloudKit restore completely disabled to prevent data usage")
-        
+
+        await NetworkManager.shared.refreshNetworkStatus()
+
         // Additional network protection check
         if !NetworkManager.shared.isSafeToUseData {
             let networkStatus = NetworkManager.shared.statusDescription
@@ -90,7 +96,9 @@ class CloudKitManager {
     
     func checkCloudStatus() async throws -> CKAccountStatus {
         print("[DISABLED] CloudKit status check disabled")
-        
+
+        await NetworkManager.shared.refreshNetworkStatus()
+
         // Additional network protection check
         if !NetworkManager.shared.isSafeToUseData {
             let networkStatus = NetworkManager.shared.statusDescription
@@ -103,7 +111,9 @@ class CloudKitManager {
     
     func deleteBackups(_ backups: [BackupInfo]) async throws -> [BackupInfo] {
         print("[DISABLED] CloudKit delete disabled")
-        
+
+        await NetworkManager.shared.refreshNetworkStatus()
+
         // Additional network protection check
         if !NetworkManager.shared.isSafeToUseData {
             let networkStatus = NetworkManager.shared.statusDescription

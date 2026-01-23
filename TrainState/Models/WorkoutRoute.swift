@@ -19,21 +19,29 @@ final class WorkoutRoute {
     // Helper to get/set route as [CLLocation]
     var decodedRoute: [CLLocation]? {
         get {
+            print("[WorkoutRoute] Decoding route data: data exists? \(routeData != nil)")
+            if let data = routeData {
+                print("[WorkoutRoute] Data size: \(data.count) bytes")
+            }
             guard let data = routeData else { return nil }
             do {
                 let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
                 unarchiver.requiresSecureCoding = false
-                
-                // Add timeout and memory protection
                 let locations = try unarchiver.decodeTopLevelObject(forKey: NSKeyedArchiveRootObjectKey) as? [CLLocation]
                 unarchiver.finishDecoding()
-                
-                // Validate the decoded data
+                print("[WorkoutRoute] Decoded locations count: \(locations?.count ?? 0)")
+                if let locations = locations, !locations.isEmpty {
+                    print("[WorkoutRoute] First location: \(locations.first!)")
+                    print("[WorkoutRoute] Last location: \(locations.last!)")
+                    print("[WorkoutRoute] Sample locations:")
+                    for i in stride(from: 0, to: locations.count, by: max(1, locations.count/10)) {
+                        print("  [\(i)] \(locations[i])")
+                    }
+                }
                 guard let locations = locations, locations.count <= 2000 else {
                     print("[WorkoutRoute] Invalid location data: too many points or nil data")
                     return nil
                 }
-                
                 return locations
             } catch {
                 print("[WorkoutRoute] Error decoding route data: \(error.localizedDescription)")
@@ -41,17 +49,20 @@ final class WorkoutRoute {
             }
         }
         set {
+            if let locations = newValue {
+                print("[WorkoutRoute] Encoding locations count: \(locations.count)")
+            } else {
+                print("[WorkoutRoute] Setting decodedRoute to nil")
+            }
             guard let locations = newValue else {
                 routeData = nil
                 return
             }
-            
-            // Limit the number of points to prevent memory issues
-            let maxPoints = 1000
-            let limitedLocations = locations.count > maxPoints ? Array(locations.prefix(maxPoints)) : locations
-            
+            // Save all points, no limit
+            let limitedLocations = locations
             do {
                 let data = try NSKeyedArchiver.archivedData(withRootObject: limitedLocations, requiringSecureCoding: false)
+                print("[WorkoutRoute] Encoded data size: \(data.count) bytes")
                 routeData = data
             } catch {
                 print("[WorkoutRoute] Error encoding route data: \(error.localizedDescription)")

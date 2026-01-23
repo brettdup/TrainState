@@ -16,19 +16,16 @@ struct DailyWorkoutSummary: Identifiable {
     let runningDuration: TimeInterval
     let runningDistance: Double
     let strengthDuration: TimeInterval
-    let strengthCalories: Double
     
     var hasAnyActivity: Bool {
-        runningDuration > 0 || runningDistance > 0 || strengthDuration > 0 || strengthCalories > 0
+        runningDuration > 0 || runningDistance > 0 || strengthDuration > 0
     }
     
     var totalDuration: TimeInterval {
         runningDuration + strengthDuration
     }
     
-    var totalCalories: Double {
-        strengthCalories
-    }
+    
 }
 
 // MARK: - Analytics View (Modern Redesign)
@@ -67,6 +64,16 @@ struct AnalyticsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
+                    if isLoadingData {
+                        HStack {
+                            ProgressView()
+                            Text("Loading analytics...")
+                                .foregroundStyle(.secondary)
+                                .font(.subheadline)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal)
+                    }
                     // Hero Card
                     HeroStatsCard(
                         totalWorkouts: (cachedData?.filteredWorkouts.running.count ?? 0) + (cachedData?.filteredWorkouts.strength.count ?? 0),
@@ -129,7 +136,7 @@ struct AnalyticsView: View {
                 }
                 .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .background(BackgroundView().ignoresSafeArea())
             .navigationTitle("Analytics")
             .navigationBarTitleDisplayMode(.large)
             .sheet(isPresented: $showingPremiumPaywall) {
@@ -162,7 +169,7 @@ struct AnalyticsView: View {
         guard cachedData == nil || timeSinceLastUpdate > 1.0 else { return }
         lastUpdateTime = now
         isLoadingData = true
-        Task {
+        Task.detached(priority: .userInitiated) {
             let newCachedData = await processAnalyticsData()
             await MainActor.run {
                 cachedData = newCachedData
@@ -211,14 +218,12 @@ struct AnalyticsView: View {
             let runningDuration = runningWorkouts.reduce(0) { $0 + $1.duration }
             let runningDistance = runningWorkouts.compactMap { $0.distance }.reduce(0, +)
             let strengthDuration = strengthWorkouts.reduce(0) { $0 + $1.duration }
-            let strengthCalories = strengthWorkouts.compactMap { $0.calories }.reduce(0, +)
             
             summaries.append(DailyWorkoutSummary(
                 date: dayStart,
                 runningDuration: runningDuration,
                 runningDistance: runningDistance,
-                strengthDuration: strengthDuration,
-                strengthCalories: strengthCalories
+                strengthDuration: strengthDuration
             ))
             
             currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
@@ -342,10 +347,7 @@ struct HeroStatsCard: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .padding()
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .appCard()
     }
 }
 
@@ -364,10 +366,7 @@ struct TimePeriodPickerCard: View {
             }
             .pickerStyle(.segmented)
         }
-        .padding()
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .appCard()
     }
 }
 
@@ -402,10 +401,8 @@ struct ActivityChartCard: View {
                 }
             }
         }
-        .padding()
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .appCard()
+        .appCard()
     }
 }
 
@@ -428,7 +425,6 @@ struct WorkoutTypeBreakdownRow: View {
             )
             let strength = cachedData?.filteredWorkouts.strength ?? []
             let strengthDuration = strength.reduce(0) { $0 + $1.duration }
-            let strengthCalories = strength.compactMap { $0.calories }.reduce(0, +)
             AnalyticsWorkoutTypeCard(
                 title: "Strength",
                 icon: "dumbbell.fill",
@@ -436,7 +432,7 @@ struct WorkoutTypeBreakdownRow: View {
                 count: strength.count,
                 duration: strengthDuration,
                 distance: nil,
-                calories: strengthCalories
+                calories: nil
             )
         }
         .frame(maxHeight: 180)
@@ -593,10 +589,7 @@ struct DailyBreakdownCard: View {
                 DailyBreakdownRow(summary: summary, calendar: calendar)
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .appCard()
     }
 }
 
@@ -623,10 +616,7 @@ struct PremiumUpsellCard: View {
             .buttonStyle(.borderedProminent)
             .tint(.yellow)
         }
-        .padding()
-        .background(Color.yellow.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .yellow.opacity(0.08), radius: 4, y: 2)
+        .appCard()
     }
 }
 
@@ -675,10 +665,7 @@ struct WeeklySummaryCard: View {
                 color: .purple
             )
         }
-        .padding(20)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(radius: 2)
+        .appCard(padding: 20)
         .padding(.horizontal)
     }
 }
@@ -716,11 +703,6 @@ struct WorkoutTypeSummary: View {
                         let totalDistance = workouts.compactMap { $0.distance }.reduce(0, +)
                         if totalDistance > 0 {
                             StatView(icon: "figure.run", title: "Distance", value: formatDistance(totalDistance), color: color)
-                        }
-                    } else {
-                        let calories = workouts.compactMap { $0.calories }.reduce(0, +)
-                        if calories > 0 {
-                            StatView(icon: "flame.fill", title: "Calories", value: "\(Int(calories))", color: color)
                         }
                     }
                 }
@@ -857,8 +839,8 @@ struct DailySummaryRowModern: View {
                             title: "Strength",
                             icon: "dumbbell.fill",
                             color: .purple,
-                            primaryMetric: "\(Int(summary.strengthCalories)) cal",
-                            secondaryMetric: formatDuration(summary.strengthDuration)
+                            primaryMetric: formatDuration(summary.strengthDuration),
+                            secondaryMetric: ""
                         )
                     }
                 }
@@ -1018,7 +1000,7 @@ private func createSampleWorkout(type: WorkoutType, daysAgo: Int, duration: Time
     let today = Date()
     let calendar = Calendar.current
     let date = calendar.date(byAdding: .day, value: -daysAgo, to: today)!
-    return Workout(type: type, startDate: date, duration: duration, calories: calories)
+    return Workout(type: type, startDate: date, duration: duration)
 }
 
 struct AnalyticsView_Previews: PreviewProvider {
@@ -1032,15 +1014,15 @@ struct AnalyticsView_Previews: PreviewProvider {
         // Add sample workouts to the context
         let sampleWorkouts = [
             // Last 7 Days
-            createSampleWorkout(type: .running, daysAgo: 0, duration: 1800, calories: 250), // Today
-            createSampleWorkout(type: .strength, daysAgo: 1, duration: 3600, calories: 300), // Yesterday
-            createSampleWorkout(type: .running, daysAgo: 2, duration: 2400, calories: 350),
-            createSampleWorkout(type: .strength, daysAgo: 3, duration: 3000, calories: 280),
-            createSampleWorkout(type: .running, daysAgo: 5, duration: 1500, calories: 200),
+            createSampleWorkout(type: .running, daysAgo: 0, duration: 1800, calories: nil), // Today
+            createSampleWorkout(type: .strength, daysAgo: 1, duration: 3600, calories: nil), // Yesterday
+            createSampleWorkout(type: .running, daysAgo: 2, duration: 2400, calories: nil),
+            createSampleWorkout(type: .strength, daysAgo: 3, duration: 3000, calories: nil),
+            createSampleWorkout(type: .running, daysAgo: 5, duration: 1500, calories: nil),
             // Older workouts for streak testing
-            createSampleWorkout(type: .running, daysAgo: 8, duration: 2200, calories: 320),
-            createSampleWorkout(type: .strength, daysAgo: 10, duration: 3300, calories: 290),
-            createSampleWorkout(type: .running, daysAgo: 15, duration: 1800, calories: 260)
+            createSampleWorkout(type: .running, daysAgo: 8, duration: 2200, calories: nil),
+            createSampleWorkout(type: .strength, daysAgo: 10, duration: 3300, calories: nil),
+            createSampleWorkout(type: .running, daysAgo: 15, duration: 1800, calories: nil)
         ]
 
         for workout in sampleWorkouts {
@@ -1296,7 +1278,7 @@ struct DailyBreakdownRow: View {
                                 .foregroundStyle(.blue)
                         }
                         if summary.strengthDuration > 0 {
-                            Label("\(Int(summary.strengthCalories))cal", systemImage: "dumbbell.fill")
+                            Label(formatDuration(summary.strengthDuration), systemImage: "dumbbell.fill")
                                 .font(.caption)
                                 .foregroundStyle(.purple)
                         }

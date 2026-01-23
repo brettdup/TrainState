@@ -78,14 +78,12 @@ class PurchaseManager: ObservableObject {
     }
     
     private func listenForTransactions() -> Task<Void, Error> {
-        print("PurchaseManager: Transaction listener DISABLED to prevent data usage")
+        print("PurchaseManager: Transaction listener starting…")
         return Task.detached { [weak self] in
-            guard let self = self else { return }
-            print("PurchaseManager: Transaction listener disabled")
-            // DISABLED - Prevents data usage
-            // for await result in StoreKit.Transaction.updates {
-            //     await self.handleTransactionResult(result)
-            // }
+            guard let self else { return }
+            for await result in StoreKit.Transaction.updates {
+                await self.handleTransactionResult(result)
+            }
         }
     }
     
@@ -112,6 +110,13 @@ class PurchaseManager: ObservableObject {
     }
     
     func loadProducts() async {
+        await NetworkManager.shared.refreshNetworkStatus()
+
+        // Block on cellular to avoid any network usage
+        guard NetworkManager.shared.isSafeToUseData else {
+            print("[StoreKit] Skipping product load on cellular (Wi‑Fi only)")
+            return
+        }
         print("PurchaseManager: Starting product load...")
         isLoadingProducts = true
         productLoadError = nil

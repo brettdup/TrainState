@@ -8,7 +8,7 @@ TrainState is a comprehensive workout tracking application built for iOS that he
 
 - Log different types of workouts (Strength Training, Running, Yoga, etc.)
 - Track workout duration, date, and time
-- Record calories burned
+ 
 - Add notes to workouts
 - Categorize workouts with custom categories and subcategories
 

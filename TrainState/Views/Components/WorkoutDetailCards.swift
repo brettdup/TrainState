@@ -7,52 +7,103 @@ struct WorkoutDetailHeaderCard: View {
     let workout: Workout
     
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 16) {
                 ZStack {
                     Circle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 64, height: 64)
-                        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+                        .fill(Color.blue.opacity(0.12))
+                        .frame(width: 56, height: 56)
                     Image(systemName: WorkoutTypeHelper.iconForType(workout.type))
-                        .font(.system(size: 32, weight: .semibold))
+                        .font(.system(size: 26, weight: .semibold))
                         .foregroundStyle(.blue)
                 }
-                VStack(alignment: .leading, spacing: 6) {
+                
+                VStack(alignment: .leading, spacing: 4) {
                     Text(workout.type.rawValue)
                         .font(.title2.weight(.bold))
                         .foregroundStyle(.primary)
-                    Text(DateFormatHelper.friendlyDateTime(workout.startDate))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    
+                    if let hkName = workout.hkActivityTypeName {
+                        Text(hkName)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(DateFormatHelper.friendlyDateTime(workout.startDate))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                
                 Spacer()
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 8)
             
-            Divider()
-                .background(Color.secondary.opacity(0.08))
-                .padding(.horizontal, 20)
+            HStack(spacing: 12) {
+                HeaderStatChip(
+                    icon: "clock.fill",
+                    title: "Duration",
+                    value: DurationFormatHelper.formatDuration(workout.duration)
+                )
+                
+                if let distance = workout.distance {
+                    HeaderStatChip(
+                        icon: "figure.walk",
+                        title: "Distance",
+                        value: String(format: "%.1f km", distance / 1000)
+                    )
+                }
+                
+                if let calories = workout.calories {
+                    HeaderStatChip(
+                        icon: "flame.fill",
+                        title: "Calories",
+                        value: "\(Int(calories)) kcal"
+                    )
+                }
+            }
             
             HStack(spacing: 8) {
                 Image(systemName: "calendar")
                     .foregroundStyle(.secondary)
                 Text(DateFormatHelper.formattedDate(workout.startDate))
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
         }
+        .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
         )
         .padding(.horizontal, 12)
+    }
+}
+
+private struct HeaderStatChip: View {
+    let icon: String
+    let title: String
+    let value: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(value)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.secondarySystemBackground).opacity(0.9))
+        )
     }
 }
 
@@ -81,15 +132,7 @@ struct WorkoutDetailInfoCard: View {
                 Spacer()
             }
             
-            if let calories = workout.calories {
-                HStack(spacing: 16) {
-                    Image(systemName: "flame.fill")
-                        .foregroundStyle(.orange)
-                    Text("\(Int(calories)) cal")
-                        .font(.body.weight(.medium))
-                    Spacer()
-                }
-            }
+            
             
             if let distance = workout.distance {
                 HStack(spacing: 16) {
@@ -111,9 +154,8 @@ struct WorkoutDetailInfoCard: View {
         }
         .padding(24)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
         )
         .padding(.horizontal, 12)
     }
@@ -125,10 +167,10 @@ struct WorkoutDetailCategoriesCard: View {
     let onEditTapped: () -> Void
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Categories & Subcategories")
-                    .font(.title3.weight(.semibold))
+                Text("Categories")
+                    .font(.headline)
                 Spacer()
                 if !(workout.categories?.isEmpty ?? true) || !(workout.subcategories?.isEmpty ?? true) {
                     EditCategoriesButton(action: onEditTapped)
@@ -148,9 +190,8 @@ struct WorkoutDetailCategoriesCard: View {
         }
         .padding(24)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
         )
         .padding(.horizontal, 12)
     }
@@ -164,6 +205,7 @@ struct WorkoutDetailNotesCard: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Notes")
                 .font(.headline)
+                .foregroundStyle(.primary)
             Text(notes)
                 .font(.body)
                 .foregroundStyle(.secondary)
@@ -172,9 +214,8 @@ struct WorkoutDetailNotesCard: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
         )
         .padding(.horizontal, 12)
     }
@@ -281,6 +322,13 @@ struct RunningMapAndStatsCard: View {
     let route: [CLLocation]
     let duration: TimeInterval
     let distance: Double?
+    @StateObject private var networkManager = NetworkManager.shared
+
+    init(route: [CLLocation], duration: TimeInterval, distance: Double?) {
+        self.route = route
+        self.duration = duration
+        self.distance = distance
+    }
 
     // Use mock route if real route is empty
     private var displayRoute: [CLLocation] {
@@ -289,40 +337,64 @@ struct RunningMapAndStatsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Route Map & Splits")
-                .font(.headline)
-            Text("Route points: \(displayRoute.count)")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            RouteMapView(route: displayRoute)
-                .frame(height: 220)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(radius: 6)
-            if let pace = averagePaceString {
-                HStack {
-                    Image(systemName: "speedometer")
-                        .foregroundColor(.blue)
-                    Text("Avg Pace: \(pace)")
-                        .font(.body.weight(.medium))
+            HStack {
+                Text("Route & Splits")
+                    .font(.headline)
+                Spacer()
+                if let pace = averagePaceString {
+                    HStack(spacing: 4) {
+                        Image(systemName: "speedometer")
+                            .foregroundColor(.blue)
+                        Text(pace)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.primary)
+                    }
                 }
             }
+
+            if networkManager.isSafeToUseData {
+                RouteMapView(route: displayRoute)
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shadow(radius: 6)
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                        .frame(height: 220)
+                    HStack(spacing: 8) {
+                        Image(systemName: "wifi.slash")
+                            .foregroundColor(.secondary)
+                        Text("Map disabled on cellular to save data")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .shadow(radius: 6)
+            }
+
             if !splits.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Splits")
                         .font(.subheadline.weight(.semibold))
                     ForEach(Array(splits.enumerated()), id: \.0) { (i, split) in
-                        Text("\(i+1) km: \(split)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        HStack {
+                            Text("\(i+1) km")
+                                .font(.caption.weight(.medium))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(split)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
         )
         .padding(.horizontal, 12)
     }
@@ -372,4 +444,72 @@ struct RunningMapAndStatsCard: View {
             CLLocation(coordinate: loc.coordinate, altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5, course: 0, speed: 2, timestamp: startTime.addingTimeInterval(Double(i) * 60))
         }
     }
-} 
+}
+
+// MARK: - Exercises Card
+struct WorkoutDetailExercisesCard: View {
+    let exercises: [WorkoutExercise]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Exercises")
+                .font(.title3.weight(.semibold))
+            
+            VStack(spacing: 12) {
+                ForEach(exercises, id: \.id) { exercise in
+                    ExerciseRow(exercise: exercise)
+                }
+            }
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.07), radius: 12, y: 6)
+        )
+        .padding(.horizontal, 12)
+    }
+}
+
+private struct ExerciseRow: View {
+    let exercise: WorkoutExercise
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(exercise.name)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+            
+            HStack(spacing: 16) {
+                if let sets = exercise.sets {
+                    Label("\(sets) sets", systemImage: "number")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                if let reps = exercise.reps {
+                    Label("\(reps) reps", systemImage: "arrow.clockwise")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                if let weight = exercise.weight {
+                    Label(String(format: "%.1f kg", weight), systemImage: "scalemass")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            if let notes = exercise.notes, !notes.isEmpty {
+                Text(notes)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
+    }
+}

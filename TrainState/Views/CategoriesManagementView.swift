@@ -272,6 +272,7 @@ private struct SubcategoryItemView: View {
 struct CategoriesManagementView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var categories: [WorkoutCategory]
+    @Query private var workouts: [Workout]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var selectedWorkoutType: WorkoutType = .strength
     @State private var showingAddCategory = false
@@ -396,6 +397,14 @@ struct CategoriesManagementView: View {
         } message: {
             Text("This will remove all categories and their subcategories for the selected workout type. Workouts will remain but will be uncategorized. This action cannot be undone.")
         }
+        .alert("Reset to Default?", isPresented: $showingResetConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) {
+                resetAllCategoriesToDefault()
+            }
+        } message: {
+            Text("This will delete ALL categories and subcategories, then recreate the full default set. Workouts will remain but will be uncategorized.")
+        }
     }
     
     private var workoutTypeSelector: some View {
@@ -456,12 +465,118 @@ struct CategoriesManagementView: View {
             }
         }
     }
+    
+    private func resetAllCategoriesToDefault() {
+        // 1) Remove ALL category/subcategory relationships from workouts (avoid dangling references)
+        for workout in workouts {
+            workout.categories = nil
+            workout.subcategories = nil
+        }
+        
+        // 2) Delete ALL categories (subcategories cascade)
+        withAnimation {
+            for category in categories {
+                modelContext.delete(category)
+            }
+        }
+        
+        // Save the wipe first so the store is in a clean state
+        try? modelContext.save()
+        
+        // 3) Recreate defaults for ALL workout types (no duplicates by type+name)
+        var createdByKey: [String: WorkoutCategory] = [:]
+        
+        for type in WorkoutType.allCases {
+            for t in defaultCategoryTemplates(for: type) {
+                let trimmedName = t.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedName.isEmpty else { continue }
+                
+                let key = "\(type.rawValue.lowercased())::\(trimmedName.lowercased())"
+                let category: WorkoutCategory
+                if let existing = createdByKey[key] {
+                    category = existing
+                } else {
+                    let new = WorkoutCategory(
+                        name: trimmedName,
+                        color: t.color.toHex() ?? "#0000FF",
+                        workoutType: type
+                    )
+                    modelContext.insert(new)
+                    createdByKey[key] = new
+                    category = new
+                }
+                
+                // Add default subcategories/exercises, de-duped by name within category
+                var subSeen = Set<String>()
+                for subName in t.subcategories {
+                    let trimmedSub = subName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmedSub.isEmpty else { continue }
+                    let subKey = trimmedSub.lowercased()
+                    guard subSeen.insert(subKey).inserted else { continue }
+                    
+                    let sub = WorkoutSubcategory(name: trimmedSub)
+                    sub.category = category
+                    modelContext.insert(sub)
+                }
+            }
+        }
+        
+        try? modelContext.save()
+    }
+    
+    private func defaultCategoryTemplates(for type: WorkoutType) -> [(name: String, color: Color, subcategories: [String])] {
+        switch type {
+        case .strength:
+            // Use the existing CategoryManager “defaults”
+            let base = CategoryManager.shared.categories
+            return [
+                (name: "Push", color: .red, subcategories: base["Push"] ?? []),
+                (name: "Pull", color: .blue, subcategories: base["Pull"] ?? []),
+                (name: "Legs", color: .green, subcategories: base["Legs"] ?? [])
+            ]
+        case .running:
+            return [
+                (name: "Easy", color: .blue, subcategories: ["Warmup", "Cooldown"]),
+                (name: "Tempo", color: .orange, subcategories: ["Intervals"]),
+                (name: "Long Run", color: .purple, subcategories: [])
+            ]
+        case .cardio:
+            return [
+                (name: "Zone 2", color: .green, subcategories: []),
+                (name: "Intervals", color: .orange, subcategories: []),
+                (name: "Recovery", color: .mint, subcategories: [])
+            ]
+        case .cycling:
+            return [
+                (name: "Endurance", color: .green, subcategories: []),
+                (name: "Intervals", color: .orange, subcategories: []),
+                (name: "Recovery", color: .mint, subcategories: [])
+            ]
+        case .swimming:
+            return [
+                (name: "Technique", color: .cyan, subcategories: []),
+                (name: "Endurance", color: .green, subcategories: []),
+                (name: "Speed", color: .orange, subcategories: [])
+            ]
+        case .yoga:
+            return [
+                (name: "Flow", color: .mint, subcategories: []),
+                (name: "Mobility", color: .green, subcategories: []),
+                (name: "Recovery", color: .blue, subcategories: [])
+            ]
+        case .other:
+            return [
+                (name: "General", color: .gray, subcategories: [])
+            ]
+        }
+    }
 }
 
 // MARK: - Simple Add Category View
 struct SimpleAddCategoryView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Query private var allCategories: [WorkoutCategory]
     
     let workoutType: WorkoutType
     @State private var name = ""
@@ -490,8 +605,21 @@ struct SimpleAddCategoryView: View {
     }
     
     private func saveCategory() {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        
+        let normalized = trimmed.lowercased()
+        if let existing = allCategories.first(where: { cat in
+            cat.workoutType == workoutType &&
+            cat.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized
+        }) {
+            // Category already exists (no duplicates)
+            dismiss()
+            return
+        }
+        
         let category = WorkoutCategory(
-            name: name,
+            name: trimmed,
             color: color.toHex() ?? "#0000FF",
             workoutType: workoutType
         )
@@ -709,12 +837,6 @@ struct SimpleWorkoutRowView: View {
                 Text(formatDuration(workout.duration))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
-                
-                if let calories = workout.calories {
-                    Text("\(Int(calories)) cal")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
         }
         .padding(.vertical, 12)

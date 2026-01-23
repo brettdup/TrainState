@@ -30,22 +30,22 @@ class NetworkManager: ObservableObject {
     
     private func startMonitoring() {
         monitor.pathUpdateHandler = { [weak self] path in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.updateNetworkStatus(path: path)
             }
         }
         monitor.start(queue: queue)
     }
-    
+
+    @MainActor
     private func updateNetworkStatus(path: NWPath) {
         let newStatus: NetworkStatus
         let newIsWiFi: Bool
-        
+
         if path.status == .satisfied {
             if path.usesInterfaceType(.wifi) {
                 newStatus = .wifi
                 newIsWiFi = true
-                print("[Network] Connected to WiFi")
             } else if path.usesInterfaceType(.cellular) {
                 newStatus = .cellular
                 newIsWiFi = false
@@ -54,6 +54,10 @@ class NetworkManager: ObservableObject {
                 newStatus = .ethernet
                 newIsWiFi = true
                 print("[Network] Connected to Ethernet")
+            } else if path.isExpensive || path.isConstrained {
+                newStatus = .cellular
+                newIsWiFi = false
+                print("[Network] Connection marked expensive/constrained - treating as cellular (DATA OPERATIONS BLOCKED)")
             } else {
                 newStatus = .unknown
                 newIsWiFi = false
@@ -105,7 +109,7 @@ class NetworkManager: ObservableObject {
     
     // MARK: - Public Methods
     
-    /// Returns true if it's safe to use data (WiFi or Ethernet only)
+    /// Returns true if it's safe to use data (WiFi or Ethernet only).
     var isSafeToUseData: Bool {
         return networkStatus == .wifi || networkStatus == .ethernet
     }
@@ -132,10 +136,13 @@ class NetworkManager: ObservableObject {
     }
     
     /// Force a network status check (useful for debugging)
-    func refreshNetworkStatus() {
+    func refreshNetworkStatus() async {
         // The monitor will automatically update, but we can force a check
         print("[Network] Forcing network status refresh...")
-        checkInitialNetworkStatus()
+        let currentPath = monitor.currentPath
+        await MainActor.run {
+            self.updateNetworkStatus(path: currentPath)
+        }
     }
 }
 
