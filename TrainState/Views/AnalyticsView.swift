@@ -122,9 +122,9 @@ struct AnalyticsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .padding()
-                        .background(.ultraThinMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .shadow(color: .primary.opacity(0.06), radius: 8, y: 4)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
                         .padding(.horizontal)
                     }
 
@@ -136,7 +136,7 @@ struct AnalyticsView: View {
                 }
                 .padding(.vertical)
             }
-            .background(BackgroundView().ignoresSafeArea())
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Analytics")
             .navigationBarTitleDisplayMode(.large)
             .sheet(isPresented: $showingPremiumPaywall) {
@@ -347,7 +347,10 @@ struct HeroStatsCard: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .appCard()
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 }
 
@@ -366,7 +369,10 @@ struct TimePeriodPickerCard: View {
             }
             .pickerStyle(.segmented)
         }
-        .appCard()
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 }
 
@@ -401,8 +407,10 @@ struct ActivityChartCard: View {
                 }
             }
         }
-        .appCard()
-        .appCard()
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 }
 
@@ -509,9 +517,9 @@ struct AnalyticsWorkoutTypeCard: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding()
-        .background(Color(.systemBackground))
+        .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.03), radius: 2, y: 1)
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 }
 
@@ -521,34 +529,26 @@ struct TotalStatsRow: View {
     let totalStrengthMinutes: Int // in minutes
     
     var body: some View {
-        ZStack {
-            // Glassy background with border
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .primary.opacity(0.08), radius: 16, y: 6)
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1.2)
-            HStack(spacing: 0) {
-                statColumn(
-                    icon: "figure.run",
-                    iconColor: .blue,
-                    value: formatDistance(totalDistance),
-                    label: "Total Distance"
-                )
-                Spacer(minLength: 0)
-                statColumn(
-                    icon: "dumbbell.fill",
-                    iconColor: .purple,
-                    value: "\(totalStrengthMinutes) min",
-                    label: "Strength Minutes"
-                )
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
+        HStack(spacing: 0) {
+            statColumn(
+                icon: "figure.run",
+                iconColor: .blue,
+                value: formatDistance(totalDistance),
+                label: "Total Distance"
+            )
+            Spacer(minLength: 0)
+            statColumn(
+                icon: "dumbbell.fill",
+                iconColor: .purple,
+                value: "\(totalStrengthMinutes) min",
+                label: "Strength Minutes"
+            )
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal)
-        .padding(.vertical, 2)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
     
     @ViewBuilder
@@ -589,7 +589,10 @@ struct DailyBreakdownCard: View {
                 DailyBreakdownRow(summary: summary, calendar: calendar)
             }
         }
-        .appCard()
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 }
 
@@ -616,7 +619,10 @@ struct PremiumUpsellCard: View {
             .buttonStyle(.borderedProminent)
             .tint(.yellow)
         }
-        .appCard()
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 }
 
@@ -742,9 +748,9 @@ struct ActivityChartView: View {
             }
         }
         .padding(20)
-        .background(.ultraThinMaterial)
+        .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(radius: 2)
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
         .padding(.horizontal)
     }
 }
@@ -779,24 +785,15 @@ struct DailyBreakdownView: View {
             }
         }
         .padding(.vertical, 8)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .primary.opacity(0.06), radius: 24, y: 8)
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(LinearGradient(
-                        gradient: Gradient(colors: [Color.white.opacity(0.18), Color.blue.opacity(0.08)]),
-                        startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2)
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
         .padding(.horizontal, 0)
         .padding(.bottom, 8)
     }
 }
 
-// Modern, glassy row for daily summary
+// Daily summary row
 struct DailySummaryRowModern: View {
     let summary: DailyWorkoutSummary
     let calendar: Calendar
@@ -856,16 +853,9 @@ struct DailySummaryRowModern: View {
             }
         }
         .padding(20)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.13), lineWidth: 1)
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: .primary.opacity(0.08), radius: 10, y: 4)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 }
 
@@ -945,9 +935,9 @@ struct StreakCardView: View {
             }
         }
         .padding(20)
-        .background(.ultraThinMaterial)
+        .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(radius: 2)
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
         .padding(.horizontal)
     }
 }

@@ -319,9 +319,19 @@ struct WeeklyWorkoutRow: View {
                 Spacer()
             }
         }
-        .contextMenu {
-            Button("Edit Categories") {
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
                 onEditCategories()
+            } label: {
+                Label("Edit Categories", systemImage: "tag")
+            }
+            .tint(.blue)
+        }
+        .contextMenu {
+            Button {
+                onEditCategories()
+            } label: {
+                Label("Edit Categories", systemImage: "tag")
             }
         }
     }

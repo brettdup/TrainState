@@ -15,6 +15,7 @@ struct WorkoutListView: View {
     @State private var showAllWorkouts = false
     private let refreshCooldownInterval: TimeInterval = 30
     @State private var categorySheetWorkout: Workout?
+    @State private var selectedFilter: WorkoutFilter = .all
 
     var body: some View {
         NavigationStack {
@@ -44,9 +45,9 @@ struct WorkoutListView: View {
                             }
                         }
                     }
-                    if workouts.count > maxVisibleWorkouts {
+                    if filteredWorkouts.count > maxVisibleWorkouts {
                         Section {
-                            Button(showAllWorkouts ? "Show recent workouts only" : "Show all \(workouts.count) workouts") {
+                            Button(showAllWorkouts ? "Show recent workouts only" : "Show all \(filteredWorkouts.count) workouts") {
                                 withAnimation { showAllWorkouts.toggle() }
                             }
                         }
@@ -65,6 +66,27 @@ struct WorkoutListView: View {
                     }
                     .disabled(isRefreshing)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Section("Filter by Type") {
+                            ForEach(WorkoutFilter.allCases) { filter in
+                                Button {
+                                    withAnimation { selectedFilter = filter }
+                                } label: {
+                                    HStack {
+                                        Label(filter.rawValue, systemImage: filter.systemImage)
+                                        if selectedFilter == filter {
+                                            Spacer()
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: selectedFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { showingAddWorkout = true } label: { Image(systemName: "plus") }
                 }
@@ -79,21 +101,26 @@ struct WorkoutListView: View {
 
     private var headerSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Your training").font(.headline)
+                    Text("Sync Status")
+                        .font(.headline)
                     Spacer()
                     if !NetworkManager.shared.isSafeToUseData {
                         Button("Force Sync") { showingForceSyncConfirm = true }
                             .buttonStyle(.borderedProminent)
                             .tint(.orange)
+                            .controlSize(.small)
                     } else {
                         Button("Sync") { Task { await refreshData() } }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                     }
                 }
                 if isRefreshing {
                     HStack(spacing: 8) {
-                        ProgressView().scaleEffect(0.9)
+                        ProgressView()
+                            .scaleEffect(0.8)
                         Text(syncStatus.isEmpty ? "Syncing..." : syncStatus)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -104,6 +131,7 @@ struct WorkoutListView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .padding(.vertical, 4)
         }
         .alert("Force Sync on Cellular?", isPresented: $showingForceSyncConfirm) {
             Button("Cancel", role: .cancel) { }
@@ -113,9 +141,18 @@ struct WorkoutListView: View {
         }
     }
 
+    private var filteredWorkouts: [Workout] {
+        if selectedFilter == .all {
+            return workouts
+        }
+        guard let filterType = selectedFilter.workoutType else { return workouts }
+        return workouts.filter { $0.type == filterType }
+    }
+    
     private var visibleWorkouts: [Workout] {
-        guard !showAllWorkouts else { return workouts }
-        return Array(workouts.prefix(maxVisibleWorkouts))
+        let filtered = filteredWorkouts
+        guard !showAllWorkouts else { return filtered }
+        return Array(filtered.prefix(maxVisibleWorkouts))
     }
 
     private var groupedVisibleWorkouts: [(date: Date, items: [Workout])] {

@@ -52,30 +52,18 @@ struct SettingsView: View {
             let settings = userSettings.first ?? defaultUserSettings
 
             List {
-                Section {
-                    profileSection
-                }
-
-                Section {
-                    preferencesSection(settings: settings)
-                }
-
-                Section {
-                    workoutManagementSection
-                }
-
-                Section {
-                    dataSyncSection
-                }
-
-                Section {
-                    supportSection
-                }
+                profileSection
+                
+                preferencesSection(settings: settings)
+                
+                workoutManagementSection
+                
+                dataSyncSection
+                
+                supportSection
 
                 #if DEBUG
-                Section {
-                    developerSection
-                }
+                developerSection
                 #endif
             }
             .listStyle(.insetGrouped)
@@ -127,363 +115,263 @@ struct SettingsView: View {
     // MARK: - New Section Views
     
     private var profileSection: some View {
-        ModernSettingsCard {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack(spacing: 16) {
-                    Circle()
-                        .fill(LinearGradient(
-                            gradient: Gradient(colors: [.blue, .purple]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ))
-                        .frame(width: 60, height: 60)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 24, weight: .medium))
-                                .foregroundColor(.white)
-                        )
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("TrainState User")
-                            .font(.title3.weight(.semibold))
-                        Text("Fitness Journey")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
+        Section {
+            HStack(spacing: 16) {
+                Circle()
+                    .fill(LinearGradient(
+                        gradient: Gradient(colors: [.blue, .purple]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                    .frame(width: 60, height: 60)
+                    .overlay(
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundColor(.white)
+                    )
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("TrainState User")
+                        .font(.title3.weight(.semibold))
+                    Text("Fitness Journey")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                 }
                 
-                // Quick stats
-                HStack(spacing: 24) {
-                    ProfileStatView(value: "\(workouts.count)", label: "Workouts", color: .blue)
-                    ProfileStatView(value: "\(categories.count)", label: "Categories", color: .green)
-                    ProfileStatView(value: "\(subcategories.count)", label: "Subcategories", color: .purple)
-                }
+                Spacer()
             }
+            .padding(.vertical, 8)
+            
+            HStack(spacing: 24) {
+                ProfileStatView(value: "\(workouts.count)", label: "Workouts", color: .blue)
+                ProfileStatView(value: "\(categories.count)", label: "Categories", color: .green)
+                ProfileStatView(value: "\(subcategories.count)", label: "Subcategories", color: .purple)
+            }
+            .padding(.vertical, 8)
         }
     }
     
     private func preferencesSection(settings: UserSettings) -> some View {
-        VStack(spacing: 12) {
-            SectionHeaderView(title: "Preferences", systemImage: "gear")
+        Section(header: Text("Preferences")) {
+            // Dark Mode Toggle
+            Toggle(isOn: Binding(
+                get: { settings.darkModeEnabled },
+                set: { settings.darkModeEnabled = $0 }
+            )) {
+                Label("Dark Mode", systemImage: "moon.fill")
+            }
             
-            ModernSettingsCard {
-                VStack(spacing: 16) {
-                    // Dark Mode Toggle
-                    ModernToggleRow(
-                        title: "Dark Mode",
-                        subtitle: "Appearance setting",
-                        systemImage: "moon.fill",
-                        isOn: Binding(
-                            get: { settings.darkModeEnabled },
-                            set: { settings.darkModeEnabled = $0 }
-                        ),
-                        accentColor: .indigo
-                    )
-                    
-                    Divider()
-                    
-                    // Measurement System
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Image(systemName: "ruler.fill")
-                                .foregroundColor(.orange)
-                                .frame(width: 20)
-                            Text("Measurement System")
-                                .font(.body.weight(.medium))
-                            Spacer()
-                        }
-                        
-                        Picker("Measurement System", selection: Binding(
-                            get: { settings.measurementSystem },
-                            set: { settings.measurementSystem = $0 }
-                        )) {
-                            Text("Metric").tag(MeasurementSystem.metric)
-                            Text("Imperial").tag(MeasurementSystem.imperial)
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    
-                    Divider()
-                    
-                    // App Icon
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Image(systemName: "app.fill")
-                                .foregroundColor(.pink)
-                                .frame(width: 20)
-                            Text("App Icon")
-                                .font(.body.weight(.medium))
-                            Spacer()
-                        }
-                        
-                        Menu {
-                            Button(action: {
-                                selectedAppIcon = nil
-                                AppIconManager.shared.resetToDefaultIcon()
-                            }) {
-                                Label("Default", systemImage: "app")
-                            }
-                            
-                            Button(action: {
-                                selectedAppIcon = "TrainState-iOS-Dark"
-                                AppIconManager.shared.setAppIcon(for: "TrainState-iOS-Dark")
-                            }) {
-                                Label("Dark", systemImage: "moon.fill")
-                            }
-                            
-                            Button(action: {
-                                selectedAppIcon = "TrainState-iOS-TintedDark"
-                                AppIconManager.shared.setAppIcon(for: "TrainState-iOS-TintedDark")
-                            }) {
-                                Label("Tinted Dark", systemImage: "moon.stars.fill")
-                            }
-                        } label: {
-                            HStack {
-                                Text(selectedAppIcon == nil ? "Default" : selectedAppIcon ?? "Default")
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    // Notifications
-                    ModernToggleRow(
-                        title: "Notifications",
-                        subtitle: "Workout reminders",
-                        systemImage: "bell.fill",
-                        isOn: Binding(
-                            get: { settings.notificationEnabled },
-                            set: { newValue in
-                                settings.notificationEnabled = newValue
-                                if newValue {
-                                    NotificationManager.shared.requestAuthorization()
-                                } else {
-                                    NotificationManager.shared.cancelWorkoutReminder()
-                                }
-                            }
-                        ),
-                        accentColor: .orange
-                    )
-                    
-                    if settings.notificationEnabled {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "clock.fill")
-                                    .foregroundColor(.orange)
-                                    .frame(width: 20)
-                                Text("Reminder Time")
-                                    .font(.body.weight(.medium))
-                                Spacer()
-                            }
-                            
-                            DatePicker(
-                                "Reminder Time",
-                                selection: Binding(
-                                    get: { settings.notificationTime ?? Date() },
-                                    set: { newValue in
-                                        settings.notificationTime = newValue
-                                        NotificationManager.shared.scheduleWorkoutReminder(at: newValue)
-                                    }
-                                ),
-                                displayedComponents: .hourAndMinute
-                            )
-                            .datePickerStyle(.compact)
-                            .labelsHidden()
-                        }
+            // Measurement System
+            Picker(selection: Binding(
+                get: { settings.measurementSystem },
+                set: { settings.measurementSystem = $0 }
+            )) {
+                Text("Metric").tag(MeasurementSystem.metric)
+                Text("Imperial").tag(MeasurementSystem.imperial)
+            } label: {
+                Label("Measurement System", systemImage: "ruler.fill")
+            }
+            .pickerStyle(.menu)
+            
+            // App Icon
+            Menu {
+                Button(action: {
+                    selectedAppIcon = nil
+                    AppIconManager.shared.resetToDefaultIcon()
+                }) {
+                    Label("Default", systemImage: "app")
+                }
+                
+                Button(action: {
+                    selectedAppIcon = "TrainState-iOS-Dark"
+                    AppIconManager.shared.setAppIcon(for: "TrainState-iOS-Dark")
+                }) {
+                    Label("Dark", systemImage: "moon.fill")
+                }
+                
+                Button(action: {
+                    selectedAppIcon = "TrainState-iOS-TintedDark"
+                    AppIconManager.shared.setAppIcon(for: "TrainState-iOS-TintedDark")
+                }) {
+                    Label("Tinted Dark", systemImage: "moon.stars.fill")
+                }
+            } label: {
+                Label("App Icon", systemImage: "app.fill")
+            }
+            
+            // Notifications
+            Toggle(isOn: Binding(
+                get: { settings.notificationEnabled },
+                set: { newValue in
+                    settings.notificationEnabled = newValue
+                    if newValue {
+                        NotificationManager.shared.requestAuthorization()
+                    } else {
+                        NotificationManager.shared.cancelWorkoutReminder()
                     }
                 }
+            )) {
+                Label("Notifications", systemImage: "bell.fill")
+            }
+            
+            if settings.notificationEnabled {
+                DatePicker(
+                    "Reminder Time",
+                    selection: Binding(
+                        get: { settings.notificationTime ?? Date() },
+                        set: { newValue in
+                            settings.notificationTime = newValue
+                            NotificationManager.shared.scheduleWorkoutReminder(at: newValue)
+                        }
+                    ),
+                    displayedComponents: .hourAndMinute
+                )
             }
         }
     }
     
     private var workoutManagementSection: some View {
-        VStack(spacing: 12) {
-            SectionHeaderView(title: "Workout Management", systemImage: "dumbbell.fill")
-            
-            ModernSettingsCard {
-                VStack(spacing: 16) {
-                    NavigationLink(destination: CategoriesManagementView()) {
-                        ModernSettingsRow(
-                            title: "Categories & Exercises",
-                            subtitle: "Manage your workout categories",
-                            systemImage: "folder.fill",
-                            accentColor: .blue
-                        )
-                    }
-                    
-                    Divider()
-                    
-                    // HealthKit integration removed - manual workouts only
-                    // Users can manually add workouts through the main interface
-                }
+        Section(header: Text("Workout Management")) {
+            NavigationLink(destination: CategoriesManagementView()) {
+                Label("Categories & Exercises", systemImage: "folder.fill")
             }
         }
     }
     
     private var dataSyncSection: some View {
-        VStack(spacing: 12) {
-            SectionHeaderView(title: "Data & Sync", systemImage: "arrow.triangle.2.circlepath")
-            
-            VStack(spacing: 12) {
-                // Premium Card
-                if purchaseManager.hasActiveSubscription {
-                    ModernSettingsCard {
-                        VStack(spacing: 16) {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                    .font(.title3)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Premium Active")
-                                        .font(.headline)
-                                    Text("All features unlocked")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                NavigationLink(destination: PremiumView()) {
-                                    Text("Manage")
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundColor(.blue)
-                                }
-                            }
-                            .padding(.vertical, 8)
-                        }
-                    }
-                } else {
-                    ModernSettingsCard {
-                        Button(action: { showingPremiumPaywall = true }) {
-                            HStack {
-                                Image(systemName: "star.fill")
-                                    .foregroundColor(.purple)
-                                    .font(.title3)
-                                
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Upgrade to Premium")
-                                        .font(.headline)
-                                        .foregroundColor(.primary)
-                                    Text("Cloud sync and advanced features")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                Spacer()
-                                
-                                Image(systemName: "chevron.right")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                            .padding(.vertical, 8)
-                        }
-                    }
-                }
-                
-                // Network Status Indicator
-                ModernSettingsCard {
+        Section(header: Text("Data & Sync")) {
+            // Premium Status
+            if purchaseManager.hasActiveSubscription {
+                NavigationLink(destination: PremiumView()) {
                     HStack {
-                        Image(systemName: networkManager.isSafeToUseData ? "wifi" : "cellularbars")
-                            .foregroundColor(networkManager.isSafeToUseData ? .green : .orange)
-                            .frame(width: 20)
-                        
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Network Status")
-                                .font(.body.weight(.medium))
-                            Text("\(networkManager.statusDescription) - \(networkManager.isSafeToUseData ? "Data operations allowed" : "Data operations blocked")")
+                            Text("Premium Active")
+                                .font(.body)
+                            Text("All features unlocked")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        
-                        Spacer()
-                        
-                        if networkManager.isOnCellular {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
-                                .font(.caption)
-                        }
                     }
-                    .padding(.vertical, 8)
                 }
-                
-                // Backup & Restore
-                ModernSettingsCard {
-                    VStack(spacing: 16) {
-                        if purchaseManager.hasActiveSubscription {
-                            VStack(spacing: 12) {
-                                Button(action: {
-                                    if networkManager.isSafeToUseData {
-                                        showingDataUsageWarning = true
-                                    } else {
-                                        backupErrorMessage = "Please connect to WiFi to backup your data. CloudKit operations are blocked on cellular networks."
-                                        showingBackupError = true
-                                    }
-                                }) {
-                                    ModernSettingsRow(
-                                        title: "Backup to iCloud",
-                                        subtitle: networkManager.isSafeToUseData ? "Save your data (WiFi only)" : "Requires WiFi connection",
-                                        systemImage: networkManager.isSafeToUseData ? "icloud.and.arrow.up" : "wifi.slash",
-                                        accentColor: networkManager.isSafeToUseData ? .blue : .orange,
-                                        isLoading: isBackingUp
-                                    )
-                                }
-                                .disabled(isBackingUp || isRestoring)
-                                
-                                Divider()
-                                
-                                Button(action: {
-                                    if networkManager.isSafeToUseData {
-                                        Task {
-                                            await loadAvailableBackups()
-                                            showingBackupSelection = true
-                                        }
-                                    } else {
-                                        restoreErrorMessage = "Please connect to WiFi to restore your data. CloudKit operations are blocked on cellular networks."
-                                        showingRestoreError = true
-                                    }
-                                }) {
-                                    ModernSettingsRow(
-                                        title: "Restore from iCloud",
-                                        subtitle: networkManager.isSafeToUseData ? "Restore your data (WiFi only)" : "Requires WiFi connection",
-                                        systemImage: networkManager.isSafeToUseData ? "icloud.and.arrow.down" : "wifi.slash",
-                                        accentColor: networkManager.isSafeToUseData ? .green : .orange,
-                                        isLoading: isRestoring
-                                    )
-                                }
-                                .disabled(isBackingUp || isRestoring)
-                                
-                                if let lastBackup = lastBackupDate {
-                                    HStack {
-                                        Image(systemName: "clock.arrow.circlepath")
-                                            .foregroundColor(.secondary)
-                                            .font(.caption)
-                                        Text("Last backup: \(lastBackup, style: .relative)")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                    }
-                                }
-                            }
-                        } else {
-                            Button(action: { showingPremiumPaywall = true }) {
-                                ModernSettingsRow(
-                                    title: "Cloud Sync",
-                                    subtitle: "Requires Premium",
-                                    systemImage: "lock.fill",
-                                    accentColor: .purple
-                                )
-                            }
+            } else {
+                Button(action: { showingPremiumPaywall = true }) {
+                    HStack {
+                        Image(systemName: "star.fill")
+                            .foregroundColor(.purple)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Upgrade to Premium")
+                                .font(.body)
+                                .foregroundColor(.primary)
+                            Text("Cloud sync and advanced features")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
+                        Spacer()
                     }
+                }
+            }
+            
+            // Network Status
+            HStack {
+                Image(systemName: networkManager.isSafeToUseData ? "wifi" : "cellularbars")
+                    .foregroundColor(networkManager.isSafeToUseData ? .green : .orange)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Network Status")
+                        .font(.body)
+                    Text("\(networkManager.statusDescription) - \(networkManager.isSafeToUseData ? "Data operations allowed" : "Data operations blocked")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                if networkManager.isOnCellular {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                        .font(.caption)
+                }
+            }
+            
+            // Backup & Restore
+            if purchaseManager.hasActiveSubscription {
+                Button(action: {
+                    if networkManager.isSafeToUseData {
+                        showingDataUsageWarning = true
+                    } else {
+                        backupErrorMessage = "Please connect to WiFi to backup your data. CloudKit operations are blocked on cellular networks."
+                        showingBackupError = true
+                    }
+                }) {
+                    HStack {
+                        if isBackingUp {
+                            ProgressView()
+                                .frame(width: 20, height: 20)
+                        } else {
+                            Image(systemName: networkManager.isSafeToUseData ? "icloud.and.arrow.up" : "wifi.slash")
+                                .foregroundColor(networkManager.isSafeToUseData ? .blue : .orange)
+                                .frame(width: 20)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Backup to iCloud")
+                                .font(.body)
+                                .foregroundColor(.primary)
+                            Text(networkManager.isSafeToUseData ? "Save your data (WiFi only)" : "Requires WiFi connection")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                }
+                .disabled(isBackingUp || isRestoring)
+                
+                Button(action: {
+                    if networkManager.isSafeToUseData {
+                        Task {
+                            await loadAvailableBackups()
+                            showingBackupSelection = true
+                        }
+                    } else {
+                        restoreErrorMessage = "Please connect to WiFi to restore your data. CloudKit operations are blocked on cellular networks."
+                        showingRestoreError = true
+                    }
+                }) {
+                    HStack {
+                        if isRestoring {
+                            ProgressView()
+                                .frame(width: 20, height: 20)
+                        } else {
+                            Image(systemName: networkManager.isSafeToUseData ? "icloud.and.arrow.down" : "wifi.slash")
+                                .foregroundColor(networkManager.isSafeToUseData ? .green : .orange)
+                                .frame(width: 20)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Restore from iCloud")
+                                .font(.body)
+                                .foregroundColor(.primary)
+                            Text(networkManager.isSafeToUseData ? "Restore your data (WiFi only)" : "Requires WiFi connection")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                }
+                .disabled(isBackingUp || isRestoring)
+                
+                if let lastBackup = lastBackupDate {
+                    HStack {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        Text("Last backup: \(lastBackup, style: .relative)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                }
+            } else {
+                Button(action: { showingPremiumPaywall = true }) {
+                    Label("Cloud Sync", systemImage: "lock.fill")
                 }
             }
         }
@@ -574,49 +462,24 @@ struct SettingsView: View {
     }
     
     private var supportSection: some View {
-        VStack(spacing: 12) {
-            SectionHeaderView(title: "Support & About", systemImage: "questionmark.circle")
+        Section(header: Text("Support & About")) {
+            HStack {
+                Label("Version", systemImage: "info.circle.fill")
+                Spacer()
+                Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")
+                    .foregroundColor(.secondary)
+            }
             
-            ModernSettingsCard {
-                VStack(spacing: 12) {
-                    HStack {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundColor(.blue)
-                            .frame(width: 20)
-                        Text("Version")
-                            .font(.body.weight(.medium))
-                        Spacer()
-                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Divider()
-                    
-                    Link(destination: URL(string: "https://github.com/yourusername/TrainState")!) {
-                        ModernSettingsRow(
-                            title: "GitHub Repository",
-                            subtitle: "View source code",
-                            systemImage: "link",
-                            accentColor: .gray
-                        )
-                    }
-                    
-                    Divider()
-                    
-                    Button(action: {
-                        if let url = URL(string: "mailto:duplessisbrett@icloud.com?subject=TrainState%20App%20Feedback&body=Hi%20Brett%2C%0A%0AI%20would%20like%20to%20share%20my%20feedback%20about%20TrainState%3A%0A%0A") {
-                            UIApplication.shared.open(url)
-                        }
-                    }) {
-                        ModernSettingsRow(
-                            title: "Send Feedback",
-                            subtitle: "Get in touch",
-                            systemImage: "envelope.fill",
-                            accentColor: .orange
-                        )
-                    }
+            Link(destination: URL(string: "https://github.com/yourusername/TrainState")!) {
+                Label("GitHub Repository", systemImage: "link")
+            }
+            
+            Button(action: {
+                if let url = URL(string: "mailto:duplessisbrett@icloud.com?subject=TrainState%20App%20Feedback&body=Hi%20Brett%2C%0A%0AI%20would%20like%20to%20share%20my%20feedback%20about%20TrainState%3A%0A%0A") {
+                    UIApplication.shared.open(url)
                 }
+            }) {
+                Label("Send Feedback", systemImage: "envelope.fill")
             }
         }
     }
@@ -1131,15 +994,13 @@ struct SettingsView: View {
     }
     
     private var developerSection: some View {
-        SettingsSection(title: "Developer Options", icon: "hammer.fill", color: .red) {
-            VStack(spacing: 16) {
-                Button(action: { showingResetConfirmation = true }) {
-                    SettingsRow(icon: "trash", title: "Reset All Data", color: .red)
-                }
-                
-                Button(action: { showingOnboardingResetConfirmation = true }) {
-                    SettingsRow(icon: "arrow.counterclockwise", title: "Reset Onboarding", color: .orange)
-                }
+        Section(header: Text("Developer Options")) {
+            Button(role: .destructive, action: { showingResetConfirmation = true }) {
+                Label("Reset All Data", systemImage: "trash")
+            }
+            
+            Button(role: .destructive, action: { showingOnboardingResetConfirmation = true }) {
+                Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
             }
         }
         .alert("Reset All Data?", isPresented: $showingResetConfirmation) {

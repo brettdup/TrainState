@@ -1,87 +1,110 @@
 import SwiftUI
 import SwiftData
 
-// MARK: - Category Item View
-private struct CategoryItemView: View {
+// MARK: - Category Row View (for DisclosureGroup)
+private struct CategoryRowView: View {
     let category: WorkoutCategory
-    let onDelete: () -> Void
-    let onAddSubcategory: () -> Void
-    @State private var isExpanded = false
-    @State private var isPressed = false
-    @Query private var allWorkouts: [Workout]
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Category Header
-            Button(action: { withAnimation(.spring(response: 0.3)) { isExpanded.toggle() }}) {
-                HStack(spacing: 16) {
-                    Circle()
-                        .fill(Color(hex: category.color) ?? .gray)
-                        .frame(width: 32, height: 32)
-                        .overlay(
-                            Image(systemName: "folder.fill")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
-                        )
-                        .shadow(color: Color(hex: category.color)?.opacity(0.3) ?? .clear, radius: 4)
+        HStack(spacing: 12) {
+            Circle()
+                .fill(Color(hex: category.color) ?? .gray)
+                .frame(width: 28, height: 28)
+                .overlay(
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                )
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(category.name)
+                    .font(.body)
+                Text("\(category.subcategories?.count ?? 0) subcategories")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Subcategory Row View
+private struct SubcategoryRowView: View {
+    let subcategory: WorkoutSubcategory
+    let allWorkouts: [Workout]
+    @State private var showingActions = false
+    @State private var showingEditSheet = false
+    @State private var showingWorkoutsSheet = false
+    @Environment(\.modelContext) private var modelContext
+    
+    private var workoutCount: Int {
+        allWorkouts.filter { workout in
+            workout.subcategories?.contains(where: { $0.id == subcategory.id }) ?? false
+        }.count
+    }
+    
+    var body: some View {
+        Button(action: { showingActions = true }) {
+            HStack(spacing: 12) {
+                Image(systemName: "tag.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .frame(width: 20, height: 20)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(subcategory.name)
+                        .font(.body)
+                        .foregroundColor(.primary)
                     
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(category.name)
-                            .font(.headline)
-                        Text("\(category.subcategories?.count ?? 0) subcategories")
+                    if workoutCount > 0 {
+                        Text("\(workoutCount) workout\(workoutCount == 1 ? "" : "s")")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
-                .padding(.vertical, 16)
-                .padding(.horizontal, 20)
-                .background(Color(.systemBackground))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(ScaleButtonStyle())
-            
-            // Subcategories List
-            if isExpanded, let subcategories = category.subcategories, !subcategories.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(subcategories) { subcategory in
-                        SubcategoryItemView(subcategory: subcategory, allWorkouts: allWorkouts)
-                    }
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            
-            // Action Buttons
-            if isExpanded {
-                HStack(spacing: 20) {
-                    Button(action: onAddSubcategory) {
-                        Label("Add Subcategory", systemImage: "plus")
-                            .font(.subheadline)
-                            .foregroundColor(.blue)
-                    }
-                    
-                    Divider()
-                    
-                    Button(action: onDelete) {
-                        Label("Delete", systemImage: "trash")
-                            .font(.subheadline)
-                            .foregroundColor(.red)
-                    }
-                }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 20)
-                .background(Color(.secondarySystemBackground))
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                
+                Spacer()
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        .confirmationDialog("Subcategory Actions", isPresented: $showingActions) {
+            Button("Edit Name") {
+                showingEditSheet = true
+            }
+            
+            Button("View Workouts") {
+                showingWorkoutsSheet = true
+            }
+            
+            Button("Delete", role: .destructive) {
+                deleteSubcategory()
+            }
+        } message: {
+            Text("Choose an action for '\(subcategory.name)'")
+        }
+        .sheet(isPresented: $showingEditSheet) {
+            EditSubcategoryView(subcategory: subcategory)
+                .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showingWorkoutsSheet) {
+            SubcategoryWorkoutsView(subcategory: subcategory)
+                .presentationDetents([.large])
+        }
+    }
+    
+    private func deleteSubcategory() {
+        // Remove subcategory from all workouts
+        let workoutsToUpdate = allWorkouts.filter {
+            $0.subcategories?.contains(where: { $0.id == subcategory.id }) ?? false
+        }
+        
+        for workout in workoutsToUpdate {
+            if var subcategories = workout.subcategories {
+                subcategories.removeAll { $0.id == subcategory.id }
+                workout.subcategories = subcategories
+            }
+        }
+        
+        // Delete the subcategory
+        modelContext.delete(subcategory)
     }
 }
 
@@ -175,99 +198,6 @@ private struct SubcategoryWorkoutsView: View {
     }
 }
 
-// MARK: - Subcategory Item View
-private struct SubcategoryItemView: View {
-    let subcategory: WorkoutSubcategory
-    let allWorkouts: [Workout]
-    @State private var isPressed = false
-    @State private var showingActions = false
-    @State private var showingEditSheet = false
-    @State private var showingWorkoutsSheet = false
-    @Environment(\.modelContext) private var modelContext
-    
-    private var workoutCount: Int {
-        allWorkouts.filter { workout in
-            workout.subcategories?.contains(where: { $0.id == subcategory.id }) ?? false
-        }.count
-    }
-    
-    var body: some View {
-        Button(action: { showingActions = true }) {
-            HStack(spacing: 16) {
-                Image(systemName: "tag.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .frame(width: 24, height: 24)
-                    .background(Color(.tertiarySystemBackground))
-                    .clipShape(Circle())
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(subcategory.name)
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
-                    
-                    if workoutCount > 0 {
-                        Text("\(workoutCount) workout\(workoutCount == 1 ? "" : "s")")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.secondary)
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 20)
-            .background(Color(.secondarySystemBackground))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(ScaleButtonStyle())
-        .confirmationDialog("Subcategory Actions", isPresented: $showingActions) {
-            Button("Edit Name") {
-                showingEditSheet = true
-            }
-            
-            Button("View Workouts") {
-                showingWorkoutsSheet = true
-            }
-            
-            Button("Delete", role: .destructive) {
-                deleteSubcategory()
-            }
-        } message: {
-            Text("Choose an action for '\(subcategory.name)'")
-        }
-        .sheet(isPresented: $showingEditSheet) {
-            EditSubcategoryView(subcategory: subcategory)
-                .presentationDetents([.medium])
-        }
-        .sheet(isPresented: $showingWorkoutsSheet) {
-            SubcategoryWorkoutsView(subcategory: subcategory)
-                .presentationDetents([.large])
-        }
-    }
-    
-    private func deleteSubcategory() {
-        // Remove subcategory from all workouts
-        let workoutsToUpdate = allWorkouts.filter {
-            $0.subcategories?.contains(where: { $0.id == subcategory.id }) ?? false
-        }
-        
-        for workout in workoutsToUpdate {
-            if var subcategories = workout.subcategories {
-                subcategories.removeAll { $0.id == subcategory.id }
-                workout.subcategories = subcategories
-            }
-        }
-        
-        // Delete the subcategory
-        modelContext.delete(subcategory)
-    }
-}
-
 // MARK: - Main View
 struct CategoriesManagementView: View {
     @Environment(\.modelContext) private var modelContext
@@ -282,7 +212,6 @@ struct CategoriesManagementView: View {
     @State private var categoryToDelete: WorkoutCategory?
     @State private var showingDeleteWarning = false
     @State private var isRefreshing = false
-    // --- Add for delete all ---
     @State private var showingDeleteAllConfirmation = false
     
     private var filteredCategories: [WorkoutCategory] {
@@ -290,50 +219,63 @@ struct CategoriesManagementView: View {
     }
     
     var body: some View {
-        ZStack {
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
-            
+        Group {
             if !purchaseManager.hasActiveSubscription {
                 // Present the full PremiumView instead of the custom paywall
                 PremiumSheet(isPresented: $showingPremiumPaywall)
             } else {
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // Workout Type Selector
+                List {
+                    // Workout Type Selector Section
+                    Section {
                         workoutTypeSelector
-                            .padding(.horizontal)
-                        
-                        // Categories List
-                        LazyVStack(spacing: 16) {
-                            ForEach(filteredCategories) { category in
-                                CategoryItemView(
-                                    category: category,
-                                    onDelete: { deleteCategory(category) },
-                                    onAddSubcategory: { selectedCategory = category }
-                                )
-                            }
-                            
-                            // Add Category Button
-                            Button(action: { showingAddCategory = true }) {
-                                HStack {
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 20))
-                                    Text("Add Category")
-                                        .font(.headline)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.accentColor)
-                                .foregroundColor(.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
-                                .shadow(color: Color.accentColor.opacity(0.3), radius: 8, y: 4)
-                            }
-                            .buttonStyle(ScaleButtonStyle())
-                        }
-                        .padding(.horizontal)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                            .listRowBackground(Color.clear)
                     }
-                    .padding(.vertical)
+                    
+                    // Categories Section
+                    Section {
+                        ForEach(filteredCategories) { category in
+                            DisclosureGroup {
+                                // Subcategories
+                                if let subcategories = category.subcategories, !subcategories.isEmpty {
+                                    ForEach(subcategories) { subcategory in
+                                        SubcategoryRowView(subcategory: subcategory, allWorkouts: workouts)
+                                    }
+                                } else {
+                                    Text("No subcategories")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .padding(.leading, 8)
+                                }
+                                
+                                // Action Buttons
+                                HStack(spacing: 0) {
+                                    Button(action: { selectedCategory = category }) {
+                                        Label("Add Subcategory", systemImage: "plus")
+                                            .frame(maxWidth: .infinity)
+                                    }
+                                    
+                                    Divider()
+                                        .frame(height: 20)
+                                    
+                                    Button(role: .destructive, action: { deleteCategory(category) }) {
+                                        Label("Delete", systemImage: "trash")
+                                            .frame(maxWidth: .infinity)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .font(.subheadline)
+                                .padding(.vertical, 8)
+                            } label: {
+                                CategoryRowView(category: category)
+                            }
+                        }
+                        
+                        // Add Category Button
+                        Button(action: { showingAddCategory = true }) {
+                            Label("Add Category", systemImage: "plus.circle.fill")
+                        }
+                    }
                 }
                 .refreshable {
                     isRefreshing = true
@@ -348,7 +290,6 @@ struct CategoriesManagementView: View {
                             Button(action: { showingResetConfirmation = true }) {
                                 Label("Reset to Default", systemImage: "arrow.counterclockwise")
                             }
-                            // --- Add Delete All Categories option ---
                             Button(role: .destructive, action: { showingDeleteAllConfirmation = true }) {
                                 Label("Delete All Categories", systemImage: "trash")
                             }
@@ -375,7 +316,6 @@ struct CategoriesManagementView: View {
                     .presentationDetents([.medium])
             }
         }
-        
         .alert("Delete Category?", isPresented: $showingDeleteWarning) {
             Button("Cancel", role: .cancel) {
                 categoryToDelete = nil
@@ -388,7 +328,6 @@ struct CategoriesManagementView: View {
                 Text("Deleting '\(category.name)' will remove it from all associated workouts. The workouts will remain but will no longer be categorized under '\(category.name)'. This action cannot be undone.")
             }
         }
-        // --- Add Delete All Categories Alert ---
         .alert("Delete All Categories?", isPresented: $showingDeleteAllConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Delete All", role: .destructive) {
@@ -422,13 +361,13 @@ struct CategoriesManagementView: View {
                             .padding(.vertical, 8)
                             .background(
                                 Capsule()
-                                    .fill(selectedWorkoutType == type ? Color.accentColor : Color.secondary.opacity(0.1))
+                                    .fill(selectedWorkoutType == type ? Color.accentColor : Color(.secondarySystemBackground))
                             )
                             .foregroundColor(selectedWorkoutType == type ? .white : .primary)
                     }
-                    .buttonStyle(ScaleButtonStyle())
                 }
             }
+            .padding(.horizontal, 16)
         }
     }
     
@@ -527,7 +466,7 @@ struct CategoriesManagementView: View {
     private func defaultCategoryTemplates(for type: WorkoutType) -> [(name: String, color: Color, subcategories: [String])] {
         switch type {
         case .strength:
-            // Use the existing CategoryManager “defaults”
+            // Use the existing CategoryManager "defaults"
             let base = CategoryManager.shared.categories
             return [
                 (name: "Push", color: .red, subcategories: base["Push"] ?? []),
@@ -637,130 +576,50 @@ struct AddSubcategoryView: View {
     @State private var name = ""
     
     var body: some View {
-        ZStack {
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
-            
-            ScrollView {
-                VStack(spacing: 28) {
-                    // Category Info Card
-                    categoryInfoCard
-                        .padding(.horizontal)
-                        .padding(.top, 12)
-                    
-                    // Input Card
-                    inputCard
-                        .padding(.horizontal)
-                        .padding(.bottom, 24)
+        NavigationStack {
+            Form {
+                Section {
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Color(hex: category.color) ?? .blue)
+                            .frame(width: 32, height: 32)
+                            .overlay(
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                            )
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Adding subcategory to")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(category.name)
+                                .font(.body.weight(.semibold))
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
-                .frame(maxWidth: 600)
-            }
-        }
-        .navigationTitle("Add Subcategory")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
-                    dismiss()
-                }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
-                    saveSubcategory()
-                }
-                .disabled(name.isEmpty)
-            }
-        }
-    }
-    
-    private var categoryInfoCard: some View {
-        VStack(spacing: 18) {
-            HStack(spacing: 16) {
-                Circle()
-                    .fill(Color(hex: category.color) ?? .blue)
-                    .frame(width: 44, height: 44)
-                    .overlay(
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(.white)
-                    )
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Adding subcategory to")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Text(category.name)
-                        .font(.title2.weight(.semibold))
-                }
-                Spacer()
-            }
-        }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .primary.opacity(0.06), radius: 16, y: 6)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.10), lineWidth: 1)
-        )
-    }
-    
-    private var inputCard: some View {
-        VStack(spacing: 24) {
-            HStack(spacing: 16) {
-                Image(systemName: "tag.fill")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(.green)
-                Text("Subcategory Details")
-                    .font(.title3.weight(.semibold))
-                Spacer()
-            }
-            
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Name")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
                 
-                TextField("Enter subcategory name", text: $name)
-                    .textFieldStyle(.plain)
-                    .font(.title3)
-                    .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: .primary.opacity(0.04), radius: 8, y: 2)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                    )
-            }
-            
-            Button(action: saveSubcategory) {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 16, weight: .bold))
-                    Text("Add Subcategory")
-                        .font(.headline)
+                Section("Subcategory Name") {
+                    TextField("Enter subcategory name", text: $name)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
             }
-            .buttonStyle(.borderedProminent)
-            .buttonStyle(ScaleButtonStyle())
-            .disabled(name.isEmpty)
+            .navigationTitle("Add Subcategory")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveSubcategory()
+                    }
+                    .disabled(name.isEmpty)
+                }
+            }
         }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .green.opacity(0.05), radius: 12, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.green.opacity(0.10), lineWidth: 1)
-        )
     }
     
     private func saveSubcategory() {
