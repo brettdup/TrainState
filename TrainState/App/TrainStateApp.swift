@@ -4,7 +4,6 @@ import SwiftData
 @main
 struct TrainStateApp: App {
     let modelContainer: ModelContainer
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     
     init() {
         // Use persistent storage with clean database setup
@@ -53,13 +52,7 @@ struct TrainStateApp: App {
     
     var body: some Scene {
         WindowGroup {
-            Group {
-                if hasCompletedOnboarding {
-                    MainTabView()
-                } else {
-                    OnboardingView()
-                }
-            }
+            AppRootView()
             .modelContainer(modelContainer)
             .onAppear {
                 print("[App] App body appeared successfully")

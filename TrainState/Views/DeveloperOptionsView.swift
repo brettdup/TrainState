@@ -1,107 +1,40 @@
-#if DEBUG
 import SwiftUI
 import SwiftData
 
 struct DeveloperOptionsView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query private var workouts: [Workout]
-    @Query private var categories: [WorkoutCategory]
-    @Query private var subcategories: [WorkoutSubcategory]
-    @State private var showingResetConfirmation = false
-    @State private var showingOnboardingResetConfirmation = false
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    
+
     var body: some View {
-        Section {
-            Button(role: .destructive, action: {
-                showingResetConfirmation = true
-            }) {
-                HStack {
-                    Label("Reset All Data", systemImage: "trash")
-                        .font(.headline)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.red)
+        List {
+            Section("Data") {
+                Button("Seed Sample Workouts") {
+                    seedSampleWorkouts()
                 }
-                .padding()
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.red.opacity(0.15), lineWidth: 1.5)
-                )
-                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
             }
-            .buttonStyle(PlainButtonStyle())
-            
-            Button(role: .destructive, action: {
-                showingOnboardingResetConfirmation = true
-            }) {
-                HStack {
-                    Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
-                        .font(.headline)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.red)
-                }
-                .padding()
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.red.opacity(0.15), lineWidth: 1.5)
-                )
-                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
-            }
-            .buttonStyle(PlainButtonStyle())
-        } header: {
-            Text("Developer Options")
-        } footer: {
-            Text("These options are for development and testing purposes")
         }
-        .alert("Reset All Data?", isPresented: $showingResetConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Reset", role: .destructive) {
-                resetAllData()
-            }
-        } message: {
-            Text("This will delete all workouts, categories, and subcategories. This action cannot be undone.")
-        }
-        .alert("Reset Onboarding?", isPresented: $showingOnboardingResetConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Reset", role: .destructive) {
-                resetOnboarding()
-            }
-        } message: {
-            Text("This will reset the onboarding process. You'll need to go through it again when you restart the app.")
-        }
+        .navigationTitle("Developer")
     }
-    
-    private func resetAllData() {
-        // Delete all workouts
-        for workout in workouts {
-            modelContext.delete(workout)
+
+    private func seedSampleWorkouts() {
+        let calendar = Calendar.current
+        let samples: [(WorkoutType, Int, Double, Double?)] = [
+            (.running, 0, 45, 6.2),
+            (.strength, 1, 50, nil),
+            (.yoga, 2, 30, nil),
+            (.cycling, 4, 60, 18.5)
+        ]
+        for sample in samples {
+            let date = calendar.date(byAdding: .day, value: -sample.1, to: Date()) ?? Date()
+            let workout = Workout(type: sample.0, startDate: date, duration: sample.2 * 60, distance: sample.3)
+            modelContext.insert(workout)
         }
-        
-        // Delete all subcategories
-        for subcategory in subcategories {
-            modelContext.delete(subcategory)
-        }
-        
-        // Delete all categories
-        for category in categories {
-            modelContext.delete(category)
-        }
-        
-        // Save changes
-        do {
-            try modelContext.save()
-            print("Successfully reset all data")
-        } catch {
-            print("Failed to reset data: \(error.localizedDescription)")
-        }
-    }
-    
-    private func resetOnboarding() {
-        hasCompletedOnboarding = false
+        try? modelContext.save()
     }
 }
-#endif
+
+#Preview {
+    NavigationStack {
+        DeveloperOptionsView()
+    }
+    .modelContainer(for: [Workout.self], inMemory: true)
+}

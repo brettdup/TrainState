@@ -41,9 +41,19 @@ class PurchaseManager: ObservableObject {
     private var updateListenerTask: Task<Void, Error>?
     
     private init() {
-        // Initialize modelContext first
-        let container = try! ModelContainer(for: Workout.self)
-        self.modelContext = container.mainContext
+        // Initialize modelContext first with CloudKit disabled to avoid no-account crashes.
+        let schema = Schema([Workout.self])
+        let config = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: true,
+            cloudKitDatabase: .none
+        )
+        do {
+            let container = try ModelContainer(for: schema, configurations: config)
+            self.modelContext = container.mainContext
+        } catch {
+            fatalError("PurchaseManager could not initialize ModelContainer: \(error)")
+        }
         
         print("PurchaseManager: Initializing...")
         debugLog += "PurchaseManager: Initializing...\n"

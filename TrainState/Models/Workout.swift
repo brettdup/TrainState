@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import CoreLocation
 import HealthKit
+import SwiftUI
 
 @Model
 final class Workout {
@@ -113,6 +114,25 @@ enum WorkoutType: String, Codable, CaseIterable, Identifiable, Sendable {
             return "heart.fill"
         case .other:
             return "square.stack.3d.up"
+        }
+    }
+
+    var tintColor: Color {
+        switch self {
+        case .running:
+            return .blue
+        case .cycling:
+            return .teal
+        case .swimming:
+            return .cyan
+        case .yoga:
+            return .green
+        case .strength:
+            return .orange
+        case .cardio:
+            return .red
+        case .other:
+            return .gray
         }
     }
 }

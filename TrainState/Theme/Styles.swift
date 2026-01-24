@@ -148,6 +148,15 @@ extension View {
     }
 }
 
+// MARK: - Global Padding Modifier
+extension View {
+    /// Applies horizontal padding to content (use this for ScrollView content, not List content)
+    /// List content should use .listStyle(.insetGrouped) which automatically aligns with navigation bars
+    func contentHorizontalPadding() -> some View {
+        self.padding(.horizontal, ViewConstants.paddingStandard)
+    }
+}
+
 // MARK: - Helper Extension
 extension View {
     @ViewBuilder
