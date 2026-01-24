@@ -1,17 +1,19 @@
 import SwiftUI
 
+/// App theme following Pocket Casts design patterns
+/// Use ThemeColor for semantic colors instead of hardcoded values
 enum AppTheme {
-    // Core brand colors
+    // MARK: - Legacy Support (deprecated - use ThemeColor instead)
     static let primary = Color("AccentColor", bundle: .main)
-    static let accentBlue = Color(red: 0.24, green: 0.51, blue: 0.98)
-    static let accentPurple = Color(red: 0.52, green: 0.33, blue: 0.95)
-    static let accentMint = Color(red: 0.33, green: 0.83, blue: 0.71)
+    static let accentBlue = ThemeColor.workoutRunning()
+    static let accentPurple = ThemeColor.workoutStrength()
+    static let accentMint = ThemeColor.support02()
     
-    // Gradients used across the app (light, native-friendly)
+    // MARK: - Gradients
     static let heroGradient = LinearGradient(
         colors: [
-            Color(.systemBackground),
-            Color(.secondarySystemBackground)
+            ThemeColor.primaryUi01(),
+            ThemeColor.primaryUi02()
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -19,8 +21,8 @@ enum AppTheme {
     
     static let backgroundGradient = LinearGradient(
         colors: [
-            Color(.systemBackground),
-            Color(.systemBackground)
+            ThemeColor.primaryUi01(),
+            ThemeColor.primaryUi01()
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -28,14 +30,15 @@ enum AppTheme {
     
     static let cardGradient = LinearGradient(
         colors: [
-            Color.white,
-            Color.white
+            ThemeColor.primaryUi01(),
+            ThemeColor.primaryUi01()
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
     
-    // Common corner radius
-    static let cornerRadius: CGFloat = 20
+    // MARK: - Corner Radius (use ViewConstants instead)
+    @available(*, deprecated, message: "Use ViewConstants.cornerRadius or ViewConstants.cardCornerRadius instead")
+    static let cornerRadius: CGFloat = ViewConstants.cardCornerRadius
 }
 

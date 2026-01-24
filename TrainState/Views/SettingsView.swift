@@ -152,7 +152,7 @@ struct SettingsView: View {
     }
     
     private func preferencesSection(settings: UserSettings) -> some View {
-        Section(header: Text("Preferences")) {
+        Section(header: listSectionHeader("Preferences")) {
             // Dark Mode Toggle
             Toggle(isOn: Binding(
                 get: { settings.darkModeEnabled },
@@ -231,7 +231,7 @@ struct SettingsView: View {
     }
     
     private var workoutManagementSection: some View {
-        Section(header: Text("Workout Management")) {
+        Section(header: listSectionHeader("Workout Management")) {
             NavigationLink(destination: CategoriesManagementView()) {
                 Label("Categories & Exercises", systemImage: "folder.fill")
             }
@@ -239,7 +239,7 @@ struct SettingsView: View {
     }
     
     private var dataSyncSection: some View {
-        Section(header: Text("Data & Sync")) {
+        Section(header: listSectionHeader("Data & Sync")) {
             // Premium Status
             if purchaseManager.hasActiveSubscription {
                 NavigationLink(destination: PremiumView()) {
@@ -462,7 +462,7 @@ struct SettingsView: View {
     }
     
     private var supportSection: some View {
-        Section(header: Text("Support & About")) {
+        Section(header: listSectionHeader("Support & About")) {
             HStack {
                 Label("Version", systemImage: "info.circle.fill")
                 Spacer()
@@ -482,6 +482,14 @@ struct SettingsView: View {
                 Label("Send Feedback", systemImage: "envelope.fill")
             }
         }
+    }
+
+    private func listSectionHeader(_ title: String) -> some View {
+        Text(title)
+            .textStyle(SecondaryText())
+            .font(style: .footnote, weight: .semibold)
+            .padding(.top, ViewConstants.spacingLarge)
+            .padding(.bottom, ViewConstants.spacingCompact)
     }
     
     // MARK: - Legacy Section Views
@@ -994,7 +1002,7 @@ struct SettingsView: View {
     }
     
     private var developerSection: some View {
-        Section(header: Text("Developer Options")) {
+        Section(header: listSectionHeader("Developer Options")) {
             Button(role: .destructive, action: { showingResetConfirmation = true }) {
                 Label("Reset All Data", systemImage: "trash")
             }
@@ -1506,4 +1514,3 @@ struct SettingsRow: View {
         return Text("Preview Error: \(error.localizedDescription)")
     }
 }
-

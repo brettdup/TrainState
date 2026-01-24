@@ -16,7 +16,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "133"
             endingLineNumber = "133"
-            landmarkName = "dateFormatter"
+            landmarkName = "filteredWorkouts"
             landmarkType = "24">
          </BreakpointContent>
       </BreakpointProxy>
@@ -60,8 +60,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "163"
             endingLineNumber = "163"
-            landmarkName = "body"
-            landmarkType = "24">
+            landmarkName = "refreshData(forceImport:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy

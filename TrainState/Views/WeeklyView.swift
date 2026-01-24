@@ -68,34 +68,13 @@ struct WeeklyView: View {
     var body: some View {
         ZStack {
             BackgroundView()
-            // Sectioned list by weekday
-            List {
-                ForEach(weekDays(for: selectedWeekStart), id: \.self) { date in
-                    let dayWorkouts = workouts(for: date)
-                    Section(
-                        header: WeekdaySectionHeader(
-                            date: date,
-                            workoutCount: dayWorkouts.count,
-                            isToday: calendar.isDateInToday(date)
-                        )
-                    ) {
-                        if dayWorkouts.isEmpty {
-                            Text("No workouts")
-                                .foregroundStyle(.secondary)
-                                .font(.subheadline)
-                        } else {
-                            ForEach(dayWorkouts, id: \.id) { workout in
-                                WeeklyWorkoutRow(
-                                    workout: workout,
-                                    onEditCategories: { showingCategorySelection = workout }
-                                )
-                            }
-                        }
-                    }
+            if #available(iOS 26.0, *) {
+                GlassEffectContainer(spacing: 12) {
+                    weeklyList
                 }
+            } else {
+                weeklyList
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -124,7 +103,9 @@ struct WeeklyView: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "calendar.badge.clock")
+                    let label = Image(systemName: "calendar.badge.clock")
+                        .padding(12)
+                    label
                 }
                 .accessibilityLabel(Text("Select week"))
             }
@@ -137,6 +118,37 @@ struct WeeklyView: View {
                 CategorySelectionSheet(workout: workout)
             }
         }
+    }
+
+    private var weeklyList: some View {
+        // Sectioned list by weekday
+        List {
+            ForEach(weekDays(for: selectedWeekStart), id: \.self) { date in
+                let dayWorkouts = workouts(for: date)
+                Section(
+                    header: WeekdaySectionHeader(
+                        date: date,
+                        workoutCount: dayWorkouts.count,
+                        isToday: calendar.isDateInToday(date)
+                    )
+                ) {
+                    if dayWorkouts.isEmpty {
+                        Text("No workouts")
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                    } else {
+                        ForEach(dayWorkouts, id: \.id) { workout in
+                            WeeklyWorkoutRow(
+                                workout: workout,
+                                onEditCategories: { showingCategorySelection = workout }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
     }
     
     // MARK: - Helper Methods
@@ -239,6 +251,8 @@ struct WeekdaySectionHeader: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 6)
     }
 }
 
@@ -277,7 +291,7 @@ struct WeeklyWorkoutRow: View {
         NavigationLink {
             WorkoutDetailView(workout: workout)
         } label: {
-            HStack(spacing: 12) {
+            let row = HStack(spacing: 12) {
                 // Icon
                 Image(systemName: workout.type.systemImage)
                     .font(.system(size: 18, weight: .semibold))
@@ -318,7 +332,20 @@ struct WeeklyWorkoutRow: View {
                 
                 Spacer()
             }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 18)
+            if #available(iOS 26.0, *) {
+                row
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+            } else {
+                row
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
         }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 12, leading: ViewConstants.paddingStandard, bottom: 12, trailing: ViewConstants.paddingStandard))
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button {
                 onEditCategories()
@@ -932,4 +959,3 @@ struct CategorySelectionSheet: View {
         try? modelContext.save()
     }
 }
-

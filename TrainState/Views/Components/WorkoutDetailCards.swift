@@ -7,7 +7,7 @@ struct WorkoutDetailHeaderCard: View {
     let workout: Workout
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let content = VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 16) {
                 ZStack {
                     Circle()
@@ -70,12 +70,19 @@ struct WorkoutDetailHeaderCard: View {
                 Spacer()
             }
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .padding(.horizontal, 12)
+        .padding(24)
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        let card = Group {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            } else {
+                content
+                    .background(.ultraThinMaterial, in: shape)
+            }
+        }
+        card
+            .padding(.horizontal, 16)
     }
 }
 
@@ -112,7 +119,7 @@ struct WorkoutDetailInfoCard: View {
     let workout: Workout
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        let content = VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 16) {
                 Image(systemName: WorkoutTypeHelper.iconForType(workout.type))
                     .font(.system(size: 28, weight: .semibold))
@@ -152,12 +159,19 @@ struct WorkoutDetailInfoCard: View {
                 Spacer()
             }
         }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .padding(.horizontal, 12)
+        .padding(28)
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        let card = Group {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            } else {
+                content
+                    .background(.ultraThinMaterial, in: shape)
+            }
+        }
+        card
+            .padding(.horizontal, 16)
     }
 }
 
@@ -167,7 +181,7 @@ struct WorkoutDetailCategoriesCard: View {
     let onEditTapped: () -> Void
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        let content = VStack(alignment: .leading, spacing: 18) {
             HStack {
                 Text("Categories")
                     .font(.headline)
@@ -188,12 +202,19 @@ struct WorkoutDetailCategoriesCard: View {
                 }
             }
         }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .padding(.horizontal, 12)
+        .padding(28)
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        let card = Group {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            } else {
+                content
+                    .background(.ultraThinMaterial, in: shape)
+            }
+        }
+        card
+            .padding(.horizontal, 16)
     }
 }
 
@@ -202,7 +223,7 @@ struct WorkoutDetailNotesCard: View {
     let notes: String
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let content = VStack(alignment: .leading, spacing: 14) {
             Text("Notes")
                 .font(.headline)
                 .foregroundStyle(.primary)
@@ -211,13 +232,20 @@ struct WorkoutDetailNotesCard: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(20)
+        .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .padding(.horizontal, 12)
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        let card = Group {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            } else {
+                content
+                    .background(.ultraThinMaterial, in: shape)
+            }
+        }
+        card
+            .padding(.horizontal, 16)
     }
 }
 
@@ -227,10 +255,13 @@ private struct EditCategoriesButton: View {
     
     var body: some View {
         Button(action: action) {
-            Label("Edit", systemImage: "pencil")
+            let label = Label("Edit", systemImage: "pencil")
                 .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            label
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(ScaleButtonStyle())
     }
 }
 
@@ -239,12 +270,14 @@ private struct AddCategoriesButton: View {
     
     var body: some View {
         Button(action: action) {
-            Label("Add Categories", systemImage: "plus.circle")
+            let label = Label("Add Categories", systemImage: "plus.circle")
                 .font(.subheadline.weight(.medium))
                 .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+            label
         }
-        .buttonStyle(.borderedProminent)
-        .tint(.blue)
+        .buttonStyle(ScaleButtonStyle())
     }
 }
 
@@ -303,7 +336,7 @@ struct RunningMapAndStatsCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let content = VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Route & Splits")
                     .font(.headline)
@@ -358,12 +391,19 @@ struct RunningMapAndStatsCard: View {
                 }
             }
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .padding(.horizontal, 12)
+        .padding(24)
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        let card = Group {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            } else {
+                content
+                    .background(.ultraThinMaterial, in: shape)
+            }
+        }
+        card
+            .padding(.horizontal, 16)
     }
 
     // Average pace as min/km
@@ -418,7 +458,7 @@ struct WorkoutDetailExercisesCard: View {
     let exercises: [WorkoutExercise]
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let content = VStack(alignment: .leading, spacing: 16) {
             Text("Exercises")
                 .font(.title3.weight(.semibold))
             
@@ -428,12 +468,19 @@ struct WorkoutDetailExercisesCard: View {
                 }
             }
         }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .padding(.horizontal, 12)
+        .padding(28)
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        let card = Group {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            } else {
+                content
+                    .background(.ultraThinMaterial, in: shape)
+            }
+        }
+        card
+            .padding(.horizontal, 16)
     }
 }
 

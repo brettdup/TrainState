@@ -63,80 +63,17 @@ struct AnalyticsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    if isLoadingData {
-                        HStack {
-                            ProgressView()
-                            Text("Loading analytics...")
-                                .foregroundStyle(.secondary)
-                                .font(.subheadline)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal)
+                if #available(iOS 26.0, *) {
+                    GlassEffectContainer(spacing: 16) {
+                        analyticsContent
                     }
-                    // Hero Card
-                    HeroStatsCard(
-                        totalWorkouts: (cachedData?.filteredWorkouts.running.count ?? 0) + (cachedData?.filteredWorkouts.strength.count ?? 0),
-                        currentStreak: cachedData?.currentStreak ?? 0
-                    )
-                    .padding(.horizontal)
-
-                    // Total Stats Card
-                    if let cachedData = cachedData {
-                        TotalStatsRow(
-                            totalDistance: cachedData.filteredWorkouts.running.compactMap { $0.distance }.reduce(0, +),
-                            totalStrengthMinutes: Int(cachedData.filteredWorkouts.strength.reduce(0) { $0 + $1.duration } / 60)
-                        )
-                        .padding(.horizontal)
-                    }
-
-                    // Time Period Picker
-                    TimePeriodPickerCard(selectedMode: $selectedWeekDisplayMode)
-                        .padding(.horizontal)
-
-                    // Activity Chart
-                    ActivityChartCard(dailySummaries: cachedData?.dailySummaries ?? [])
-                        .padding(.horizontal)
-
-                    // Workout Type Breakdown
-                    WorkoutTypeBreakdownRow(cachedData: cachedData)
-                        .padding(.horizontal)
-
-                    // Daily Breakdown
-                    DailyBreakdownCard(dailySummaries: cachedData?.dailySummaries ?? [], calendar: calendar)
-                        .padding(.horizontal)
-
-                    // Last Category Viewed (tappable card)
-                    NavigationLink {
-                        SubcategoryLastLoggedView()
-                            .navigationTitle("Last Category Viewed")
-                            .navigationBarTitleDisplayMode(.inline)
-                    } label: {
-                        HStack {
-                            Text("Last Category Viewed")
-                                .font(.title3.bold())
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.headline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding()
-                        .background(Color(.secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
-                        .padding(.horizontal)
-                    }
-
-                    // Premium Upsell
-                    if !purchaseManager.hasActiveSubscription {
-                        PremiumUpsellCard { showingPremiumPaywall = true }
-                            .padding(.horizontal)
-                    }
+                } else {
+                    analyticsContent
                 }
-                .padding(.vertical)
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            // Use the app's gradient background so liquid-glass cards
+            // can sample interesting colors instead of flat gray.
+            .background(BackgroundView().ignoresSafeArea())
             .navigationTitle("Analytics")
             .navigationBarTitleDisplayMode(.large)
             .sheet(isPresented: $showingPremiumPaywall) {
@@ -160,6 +97,88 @@ struct AnalyticsView: View {
             .onChange(of: allWorkouts) { _, _ in updateCachedDataIfNeeded() }
             .onChange(of: selectedWeekDisplayMode) { _, _ in updateCachedDataIfNeeded() }
         }
+    }
+
+    @ViewBuilder
+    private var analyticsContent: some View {
+        VStack(alignment: .leading, spacing: ViewConstants.spacingExtraLarge) {
+            if isLoadingData {
+                HStack {
+                    ProgressView()
+                    Text("Loading analytics...")
+                        .textStyle(SecondaryText())
+                        .font(style: .subheadline)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, ViewConstants.paddingStandard)
+            }
+            // Hero Card
+            HeroStatsCard(
+                totalWorkouts: (cachedData?.filteredWorkouts.running.count ?? 0) + (cachedData?.filteredWorkouts.strength.count ?? 0),
+                currentStreak: cachedData?.currentStreak ?? 0
+            )
+            .padding(.horizontal, ViewConstants.paddingStandard)
+
+            // Total Stats Card
+            if let cachedData = cachedData {
+                TotalStatsRow(
+                    totalDistance: cachedData.filteredWorkouts.running.compactMap { $0.distance }.reduce(0, +),
+                    totalStrengthMinutes: Int(cachedData.filteredWorkouts.strength.reduce(0) { $0 + $1.duration } / 60)
+                )
+                .padding(.horizontal, ViewConstants.paddingStandard)
+            }
+
+            // Time Period Picker
+            TimePeriodPickerCard(selectedMode: $selectedWeekDisplayMode)
+                .padding(.horizontal, ViewConstants.paddingStandard)
+
+            // Activity Chart
+            ActivityChartCard(dailySummaries: cachedData?.dailySummaries ?? [])
+                .padding(.horizontal, ViewConstants.paddingStandard)
+
+            // Workout Type Breakdown
+            WorkoutTypeBreakdownRow(cachedData: cachedData)
+                .padding(.horizontal, ViewConstants.paddingStandard)
+
+            // Daily Breakdown
+            DailyBreakdownCard(dailySummaries: cachedData?.dailySummaries ?? [], calendar: calendar)
+                .padding(.horizontal, ViewConstants.paddingStandard)
+
+            // Last Category Viewed (tappable card)
+            NavigationLink {
+                SubcategoryLastLoggedView()
+                    .navigationTitle("Last Category Viewed")
+                    .navigationBarTitleDisplayMode(.inline)
+            } label: {
+                HStack {
+                    Text("Last Category Viewed")
+                        .textStyle(PrimaryText())
+                        .font(style: .title3, weight: .bold)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(style: .headline)
+                        .foregroundColor(ThemeColor.primaryIcon02())
+                }
+                .padding(ViewConstants.paddingLarge)
+                .modify { view in
+                    if #available(iOS 26.0, *) {
+                        view.glassEffect(.regular.interactive(), in: .rect(cornerRadius: ViewConstants.cardCornerRadius))
+                    } else {
+                        view.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous))
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, ViewConstants.paddingStandard)
+
+            // Premium Upsell
+            if !purchaseManager.hasActiveSubscription {
+                PremiumUpsellCard { showingPremiumPaywall = true }
+                    .padding(.horizontal, ViewConstants.paddingStandard)
+            }
+        }
+        .padding(.top, ViewConstants.spacingLarge)
+        .padding(.bottom, ViewConstants.paddingStandard)
     }
 
     // MARK: - Data Processing (unchanged)
@@ -321,36 +340,41 @@ struct HeroStatsCard: View {
     let totalWorkouts: Int
     let currentStreak: Int
     var body: some View {
-        HStack(spacing: 20) {
-            VStack(spacing: 8) {
+        let content = HStack(spacing: ViewConstants.paddingLarge) {
+            VStack(spacing: ViewConstants.spacingCompact) {
                 Image(systemName: "figure.run")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(.blue)
+                    .font(.system(size: ViewConstants.iconSizeExtraLarge, weight: .bold))
+                    .foregroundColor(ThemeColor.workoutRunning())
                 Text("\(totalWorkouts)")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
+                    .textStyle(PrimaryText())
+                    .font(style: .title, weight: .bold)
                 Text("Total Workouts")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .textStyle(SecondaryText())
+                    .font(style: .caption, weight: .medium)
             }
             .frame(maxWidth: .infinity)
-            VStack(spacing: 8) {
+            VStack(spacing: ViewConstants.spacingCompact) {
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(.orange)
+                    .font(.system(size: ViewConstants.iconSizeExtraLarge, weight: .bold))
+                    .foregroundColor(ThemeColor.support06())
                 Text("\(currentStreak)")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
+                    .textStyle(PrimaryText())
+                    .font(style: .title, weight: .bold)
                 Text("Current Streak")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .textStyle(SecondaryText())
+                    .font(style: .caption, weight: .medium)
             }
             .frame(maxWidth: .infinity)
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .padding(ViewConstants.paddingLarge)
+        let shape = RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: ViewConstants.cardCornerRadius))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
     }
 }
 
@@ -358,10 +382,10 @@ struct HeroStatsCard: View {
 struct TimePeriodPickerCard: View {
     @Binding var selectedMode: WeekDisplayMode
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let content = VStack(alignment: .leading, spacing: ViewConstants.spacingStandard) {
             Text("Time Period")
-                .font(.headline)
-                .foregroundStyle(.primary)
+                .textStyle(PrimaryText())
+                .font(style: .headline)
             Picker("Week Display", selection: $selectedMode) {
                 ForEach(WeekDisplayMode.allCases) { mode in
                     Text(mode.rawValue).tag(mode)
@@ -369,10 +393,15 @@ struct TimePeriodPickerCard: View {
             }
             .pickerStyle(.segmented)
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .padding(ViewConstants.paddingLarge)
+        let shape = RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: ViewConstants.cardCornerRadius))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
     }
 }
 
@@ -380,37 +409,43 @@ struct TimePeriodPickerCard: View {
 struct ActivityChartCard: View {
     let dailySummaries: [DailyWorkoutSummary]
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let content = VStack(alignment: .leading, spacing: ViewConstants.spacingStandard) {
             Text("Activity This Week")
-                .font(.title3.bold())
+                .textStyle(PrimaryText())
+                .font(style: .title3, weight: .bold)
             Chart {
                 ForEach(dailySummaries) { summary in
                     BarMark(
                         x: .value("Date", summary.date, unit: .day),
                         y: .value("Duration", summary.totalDuration / 60)
                     )
-                    .foregroundStyle(.blue)
-                    .cornerRadius(6)
+                    .foregroundStyle(ThemeColor.workoutRunning())
+                    .cornerRadius(ViewConstants.cornerRadius)
                 }
             }
             .frame(height: 160)
             .chartXAxis {
                 AxisMarks(values: .stride(by: .day)) { value in
                     AxisValueLabel(format: .dateTime.weekday(.abbreviated))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ThemeColor.primaryText02())
                 }
             }
             .chartYAxis {
                 AxisMarks { value in
                     AxisValueLabel("\(value.index * 30)m")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ThemeColor.primaryText02())
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .padding(ViewConstants.paddingLarge)
+        let shape = RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: ViewConstants.cardCornerRadius))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
     }
 }
 
@@ -418,6 +453,19 @@ struct ActivityChartCard: View {
 struct WorkoutTypeBreakdownRow: View {
     let cachedData: AnalyticsCachedData?
     var body: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: 12) {
+                workoutTypeCards
+            }
+            .frame(maxHeight: 180)
+        } else {
+            workoutTypeCards
+                .frame(maxHeight: 180)
+        }
+    }
+
+    @ViewBuilder
+    private var workoutTypeCards: some View {
         HStack(spacing: 16) {
             let running = cachedData?.filteredWorkouts.running ?? []
             let runningDuration = running.reduce(0) { $0 + $1.duration }
@@ -425,7 +473,7 @@ struct WorkoutTypeBreakdownRow: View {
             AnalyticsWorkoutTypeCard(
                 title: "Running",
                 icon: "figure.run",
-                color: Color.blue,
+                color: ThemeColor.workoutRunning(),
                 count: running.count,
                 duration: runningDuration,
                 distance: runningDistance,
@@ -436,14 +484,13 @@ struct WorkoutTypeBreakdownRow: View {
             AnalyticsWorkoutTypeCard(
                 title: "Strength",
                 icon: "dumbbell.fill",
-                color: Color.purple,
+                color: ThemeColor.workoutStrength(),
                 count: strength.count,
                 duration: strengthDuration,
                 distance: nil,
                 calories: nil
             )
         }
-        .frame(maxHeight: 180)
     }
 }
 
@@ -458,68 +505,73 @@ struct AnalyticsWorkoutTypeCard: View {
     let calories: Double?
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let content = VStack(alignment: .leading, spacing: ViewConstants.spacingStandard) {
             HStack {
                 Image(systemName: icon)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(color)
+                    .font(style: .title3, weight: .semibold)
+                    .foregroundColor(color)
                 Text(title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .textStyle(PrimaryText())
+                    .font(style: .headline, weight: .semibold)
                 Spacer()
             }
             
-            VStack(spacing: 8) {
+            VStack(spacing: ViewConstants.spacingCompact) {
                 HStack {
                     Text("Workouts")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .textStyle(SecondaryText())
+                        .font(style: .caption, weight: .medium)
                     Spacer()
                     Text("\(count)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .textStyle(PrimaryText())
+                        .font(style: .subheadline, weight: .semibold)
                 }
                 
                 HStack {
                     Text("Duration")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .textStyle(SecondaryText())
+                        .font(style: .caption, weight: .medium)
                     Spacer()
                     Text(formatDuration(duration))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .textStyle(PrimaryText())
+                        .font(style: .subheadline, weight: .semibold)
                 }
                 
                 if let distance = distance, distance > 0 {
                     HStack {
                         Text("Distance")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
+                            .textStyle(SecondaryText())
+                            .font(style: .caption, weight: .medium)
                         Spacer()
                         Text(formatDistance(distance))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .textStyle(PrimaryText())
+                            .font(style: .subheadline, weight: .semibold)
                     }
                 }
                 
                 if let calories = calories, calories > 0 {
                     HStack {
                         Text("Calories")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
+                            .textStyle(SecondaryText())
+                            .font(style: .caption, weight: .medium)
                         Spacer()
                         Text("\(Int(calories))")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .textStyle(PrimaryText())
+                            .font(style: .subheadline, weight: .semibold)
                     }
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .padding(ViewConstants.paddingLarge)
+        let shape = RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: ViewConstants.cardCornerRadius))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
     }
 }
 
@@ -529,26 +581,31 @@ struct TotalStatsRow: View {
     let totalStrengthMinutes: Int // in minutes
     
     var body: some View {
-        HStack(spacing: 0) {
+        let content = HStack(spacing: 0) {
             statColumn(
                 icon: "figure.run",
-                iconColor: .blue,
+                iconColor: ThemeColor.workoutRunning(),
                 value: formatDistance(totalDistance),
                 label: "Total Distance"
             )
             Spacer(minLength: 0)
             statColumn(
                 icon: "dumbbell.fill",
-                iconColor: .purple,
+                iconColor: ThemeColor.workoutStrength(),
                 value: "\(totalStrengthMinutes) min",
                 label: "Strength Minutes"
             )
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 20)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .padding(.horizontal, ViewConstants.paddingExtraLarge)
+        .padding(.vertical, ViewConstants.paddingLarge)
+        let shape = RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: ViewConstants.cardCornerRadius))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
     }
     
     @ViewBuilder
@@ -559,18 +616,19 @@ struct TotalStatsRow: View {
                     .fill(iconColor.opacity(0.13))
                     .frame(width: 38, height: 38)
                 Image(systemName: icon)
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(iconColor)
+                    .font(.system(size: ViewConstants.iconSizeMedium, weight: .bold))
+                    .foregroundColor(iconColor)
             }
             .accessibilityHidden(true)
             Text(value)
-                .font(.system(size: 28, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.primary)
+                .textStyle(PrimaryText())
+                .font(style: .title2, weight: .bold)
+                .monospacedDigit()
                 .minimumScaleFactor(0.7)
                 .accessibilityLabel(Text("\(label): \(value)"))
             Text(label)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .textStyle(SecondaryText())
+                .font(style: .caption, weight: .medium)
                 .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity)
@@ -582,17 +640,23 @@ struct DailyBreakdownCard: View {
     let dailySummaries: [DailyWorkoutSummary]
     let calendar: Calendar
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let content = VStack(alignment: .leading, spacing: ViewConstants.spacingStandard) {
             Text("Daily Breakdown")
-                .font(.title3.bold())
+                .textStyle(PrimaryText())
+                .font(style: .title3, weight: .bold)
             ForEach(dailySummaries) { summary in
                 DailyBreakdownRow(summary: summary, calendar: calendar)
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .padding(ViewConstants.paddingLarge)
+        let shape = RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: ViewConstants.cardCornerRadius))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
     }
 }
 
@@ -600,29 +664,36 @@ struct DailyBreakdownCard: View {
 struct PremiumUpsellCard: View {
     let onTap: () -> Void
     var body: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 12) {
+        let content = VStack(spacing: ViewConstants.spacingStandard) {
+            HStack(spacing: ViewConstants.spacingStandard) {
                 Image(systemName: "star.fill")
-                    .font(.title2)
-                    .foregroundStyle(.yellow)
+                    .font(style: .title2)
+                    .foregroundColor(ThemeColor.support06())
                 Text("Unlock Advanced Analytics")
-                    .font(.headline)
+                    .textStyle(PrimaryText())
+                    .font(style: .headline)
             }
-            Text("Get detailed insights, streaks, and interactive charts with Premium.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                    Text("Get detailed insights, streaks, and interactive charts with Premium.")
+                .textStyle(SecondaryText())
+                .font(style: .subheadline)
             Button(action: onTap) {
                 Text("Upgrade to Premium")
-                    .font(.headline)
+                    .font(style: .headline)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, ViewConstants.paddingStandard)
+                    .padding(.horizontal, ViewConstants.paddingStandard)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.yellow)
+            .buttonStyle(RoundedButtonStyle())
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .padding(ViewConstants.paddingLarge)
+        let shape = RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: ViewConstants.cardCornerRadius))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
     }
 }
 
@@ -772,7 +843,7 @@ struct DailyBreakdownView: View {
             if dailySummaries.isEmpty {
                 Text("No workouts in this period")
                     .foregroundStyle(.secondary)
-                    .padding()
+                .padding(20)
                     .frame(maxWidth: .infinity)
             } else {
                 VStack(spacing: 16) {

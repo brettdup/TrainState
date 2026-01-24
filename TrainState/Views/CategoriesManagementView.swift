@@ -179,7 +179,7 @@ private struct SubcategoryWorkoutsView: View {
                 } else {
                     ForEach(workouts) { workout in
                         SimpleWorkoutRowView(workout: workout)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                            .listRowInsets(EdgeInsets(top: 8, leading: ViewConstants.paddingStandard, bottom: 8, trailing: ViewConstants.paddingStandard))
                             .listRowBackground(Color.clear)
                     }
                 }
@@ -228,7 +228,7 @@ struct CategoriesManagementView: View {
                     // Workout Type Selector Section
                     Section {
                         workoutTypeSelector
-                            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                            .listRowInsets(EdgeInsets(top: 8, leading: ViewConstants.paddingStandard, bottom: 8, trailing: ViewConstants.paddingStandard))
                             .listRowBackground(Color.clear)
                     }
                     

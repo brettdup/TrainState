@@ -26,10 +26,11 @@ struct AddWorkoutView: View {
     @State private var minutes = 0
     
     // UI State
-    @State private var showingCategorySelection = false
     @State private var isSaving = false
     @State private var currentStep: Int = 0
     private let totalSteps: Int = 6
+    @State private var showingTemplates = false
+    @State private var showingDuplicateWorkouts = false
     
     // MARK: - Helper Functions
     private func workoutTypeColor(for type: WorkoutType) -> Color {
@@ -63,18 +64,18 @@ struct AddWorkoutView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                Color(.systemGroupedBackground).ignoresSafeArea()
-                VStack(spacing: 0) {
+                BackgroundView()
+                    .ignoresSafeArea()
+                VStack(spacing: 12) {
                     progressHeader
                     ScrollView {
-                        VStack(spacing: 24) {
-                            stepContent
+                        if #available(iOS 26.0, *) {
+                            GlassEffectContainer(spacing: 16) {
+                                stepStack
+                            }
+                        } else {
+                            stepStack
                         }
-                        .id(currentStep)
-                        .contentTransition(.opacity)
-                        .animation(.snappy(duration: 0.25, extraBounce: 0.05), value: currentStep)
-                        .padding(20)
-                        .padding(.bottom, 20)
                     }
                 }
             }
@@ -86,9 +87,31 @@ struct AddWorkoutView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                navigationFooter
-                    .background(.ultraThinMaterial)
-                    .overlay(Divider(), alignment: .top)
+                if #available(iOS 26.0, *) {
+                    navigationFooter
+                        .frame(maxWidth: .infinity)
+                        .glassEffect(.regular, in: .rect(cornerRadius: 0))
+                        .overlay(Divider(), alignment: .top)
+                } else {
+                    navigationFooter
+                        .background(.ultraThinMaterial)
+                        .overlay(Divider(), alignment: .top)
+                }
+            }
+            .sheet(isPresented: $showingTemplates) {
+                QuickTemplatesView(
+                    workoutType: $workoutType,
+                    hours: $hours,
+                    minutes: $minutes,
+                    distance: $distance,
+                    notes: $notes
+                )
+            }
+            .sheet(isPresented: $showingDuplicateWorkouts) {
+                DuplicateWorkoutView(workouts: recentWorkouts) { workout in
+                    duplicateWorkout(workout)
+                    showingDuplicateWorkouts = false
+                }
             }
             .onChange(of: currentStep) { _, _ in
                 let generator = UISelectionFeedbackGenerator()
@@ -96,9 +119,21 @@ struct AddWorkoutView: View {
             }
         }
     }
+
+    private var stepStack: some View {
+        VStack(spacing: 24) {
+            stepContent
+        }
+        .id(currentStep)
+        .contentTransition(.opacity)
+        .animation(.snappy(duration: 0.25, extraBounce: 0.05), value: currentStep)
+        .padding(20)
+        .padding(.bottom, 20)
+    }
     // MARK: - Progress Header
+    @ViewBuilder
     private var progressHeader: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let content = VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
@@ -132,24 +167,29 @@ struct AddWorkoutView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(Color(.systemGray5), lineWidth: 1)
-                )
-        )
-        .padding(.horizontal, 12)
+        .padding(.top, 14)
+        .padding(.bottom, 14)
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: 18))
+                .padding(.horizontal, 12)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+                .padding(.horizontal, 12)
+        }
     }
 
     // MARK: - Step Content
     @ViewBuilder
     private var stepContent: some View {
         switch currentStep {
-        case 0: workoutTypeSection
+        case 0:
+            VStack(spacing: 24) {
+                quickActionsSection
+                workoutTypeSection
+            }
         case 1: dateTimeSection
         case 2: durationSection
         case 3: metricsSection
@@ -163,6 +203,31 @@ struct AddWorkoutView: View {
         }
     }
 
+    @ViewBuilder
+    private func sectionCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        let base = content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+
+        if #available(iOS 26.0, *) {
+            base
+                .glassEffect(.regular, in: .rect(cornerRadius: 20))
+        } else {
+            base
+                .background(.ultraThinMaterial, in: shape)
+        }
+    }
+
+    private var durationSummary: String {
+        let totalMinutes = max(0, hours * 60 + minutes)
+        let h = totalMinutes / 60
+        let m = totalMinutes % 60
+        if h > 0 && m > 0 { return "\(h)h \(m)m" }
+        if h > 0 { return "\(h)h" }
+        return "\(m)m"
+    }
+
     // MARK: - Navigation Footer
     private var navigationFooter: some View {
         HStack(spacing: 12) {
@@ -171,11 +236,18 @@ struct AddWorkoutView: View {
                     currentStep = max(currentStep - 1, 0)
                 }
             } label: {
-                Label("Back", systemImage: "chevron.left")
+                let label = Label("Back", systemImage: "chevron.left")
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                if #available(iOS 26.0, *) {
+                    label
+                } else {
+                    label
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
             }
-            .buttonStyle(.bordered)
             .controlSize(.large)
+            .buttonStyle(ScaleButtonStyle())
             .disabled(currentStep == 0)
 
             if currentStep < totalSteps - 1 {
@@ -184,27 +256,41 @@ struct AddWorkoutView: View {
                         currentStep = min(currentStep + 1, totalSteps - 1)
                     }
                 } label: {
-                    HStack { Text("Next"); Image(systemName: "chevron.right") }
+                    let label = HStack { Text("Next"); Image(systemName: "chevron.right") }
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                    if #available(iOS 26.0, *) {
+                        label
+                    } else {
+                        label
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
                 }
-                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(workoutTypeColor)
+                .buttonStyle(ScaleButtonStyle())
             } else {
                 Button(action: saveWorkout) {
-                    if isSaving { ProgressView().tint(.white) }
-                    else { Label("Save Workout", systemImage: "checkmark.circle.fill") }
+                    let label = Group {
+                        if isSaving { ProgressView().tint(.white) }
+                        else { Label("Save Workout", systemImage: "checkmark.circle.fill") }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    if #available(iOS 26.0, *) {
+                        label
+                    } else {
+                        label
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
                 }
-                .frame(maxWidth: .infinity)
-                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(workoutTypeColor)
+                .buttonStyle(ScaleButtonStyle())
                 .disabled(isSaving)
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 12 + 8) // breathing room above home indicator
+        .padding(.top, 16)
+        .padding(.bottom, 16 + 8) // breathing room above home indicator
     }
 
     // MARK: - Step Metadata
@@ -243,41 +329,105 @@ struct AddWorkoutView: View {
         }
     }
     
+    // MARK: - Quick Actions
+    private var quickActionsSection: some View {
+        sectionCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(workoutTypeColor)
+                    Text("Quick Start")
+                        .font(.headline)
+                    Spacer()
+                }
+                Text("Start from a template or duplicate a recent workout.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 12) {
+                    Button {
+                        showingTemplates = true
+                    } label: {
+                        let label = Label("Templates", systemImage: "wand.and.stars")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .padding(.horizontal, 14)
+                        if #available(iOS 26.0, *) {
+                            label
+                        } else {
+                            label
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+
+                    Button {
+                        showingDuplicateWorkouts = true
+                    } label: {
+                        let label = Label("Duplicate", systemImage: "doc.on.doc")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .padding(.horizontal, 14)
+                        if #available(iOS 26.0, *) {
+                            label
+                        } else {
+                            label
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                    .disabled(recentWorkouts.isEmpty)
+                }
+
+                if recentWorkouts.isEmpty {
+                    Text("No recent workouts yet.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     // MARK: - Workout Type Section
     private var workoutTypeSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Workout Type")
-                .font(.headline)
-                .foregroundStyle(.primary)
-            
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
-                ForEach(WorkoutType.allCases, id: \.self) { type in
-                    Button(action: {
-                        workoutType = type
-                        selectedCategories.removeAll()
-                        selectedSubcategories.removeAll()
-                    }) {
-                        VStack(spacing: 8) {
-                            Image(systemName: workoutTypeIcon(for: type))
-                                .font(.title2)
-                                .foregroundStyle(workoutType == type ? .white : workoutTypeColor(for: type))
-                            
-                            Text(type.rawValue)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(workoutType == type ? .white : .primary)
+        sectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Workout Type")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
+                    ForEach(WorkoutType.allCases, id: \.self) { type in
+                        let isSelected = workoutType == type
+                        Button(action: {
+                            workoutType = type
+                            selectedCategories.removeAll()
+                            selectedSubcategories.removeAll()
+                        }) {
+                            let label = VStack(spacing: 8) {
+                                Image(systemName: workoutTypeIcon(for: type))
+                                    .font(.title2)
+                                    .foregroundStyle(workoutTypeColor(for: type))
+                                
+                                Text(type.rawValue)
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.primary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            let tile = Group {
+                                if #available(iOS 26.0, *) {
+                                    label
+                                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+                                } else {
+                                    label
+                                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                }
+                            }
+                            tile
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(workoutType == type ? workoutTypeColor(for: type) : Color(.systemBackground))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .strokeBorder(workoutType == type ? Color.clear : Color(.systemGray4), lineWidth: 1)
-                                )
-                        )
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -285,23 +435,16 @@ struct AddWorkoutView: View {
     
     // MARK: - Date Section
     private var dateTimeSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Date")
-                .font(.headline)
-                .foregroundStyle(.primary)
-            
-            DatePicker("Date", selection: $startDate, displayedComponents: [.date])
-                .datePickerStyle(.compact)
-                .labelsHidden()
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(.systemBackground))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(Color(.systemGray4), lineWidth: 1)
-                        )
-                )
+        sectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Date")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                
+                DatePicker("Date", selection: $startDate, displayedComponents: [.date])
+                    .datePickerStyle(.graphical)
+                    .tint(workoutTypeColor)
+            }
         }
     }
     
@@ -309,57 +452,69 @@ struct AddWorkoutView: View {
     
     // MARK: - Duration Section
     private var durationSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Duration")
-                .font(.headline)
-                .foregroundStyle(.primary)
-            
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Hours")
-                        .font(.subheadline)
+        sectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Duration")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text(durationSummary)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    
-                    Picker("Hours", selection: $hours) {
-                        ForEach(0...5, id: \.self) { hour in
-                            Text("\(hour)").tag(hour)
-                        }
-                    }
-                    .pickerStyle(.wheel)
-                    .frame(height: 80)
                 }
                 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Minutes")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    
-                    Picker("Minutes", selection: $minutes) {
-                        ForEach(0..<60, id: \.self) { minute in
-                            Text("\(minute)").tag(minute)
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Hours")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        
+                        Picker("Hours", selection: $hours) {
+                            ForEach(0...5, id: \.self) { hour in
+                                Text("\(hour)").tag(hour)
+                            }
                         }
+                        .pickerStyle(.wheel)
+                        .frame(height: 80)
                     }
-                    .pickerStyle(.wheel)
-                    .frame(height: 80)
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Minutes")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        
+                        Picker("Minutes", selection: $minutes) {
+                            ForEach(0..<60, id: \.self) { minute in
+                                Text("\(minute)").tag(minute)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(height: 80)
+                    }
                 }
+                .onChange(of: hours) { _, _ in updateDuration() }
+                .onChange(of: minutes) { _, _ in updateDuration() }
             }
-            .onChange(of: hours) { _, _ in updateDuration() }
-            .onChange(of: minutes) { _, _ in updateDuration() }
         }
     }
     
     // MARK: - Metrics Section
     private var metricsSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Metrics (Optional)")
-                .font(.headline)
-                .foregroundStyle(.primary)
-            
-            VStack(spacing: 12) {
+        sectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Metrics (Optional)")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                
                 if [.running, .cycling, .swimming].contains(workoutType) {
                     TextField("Distance (\(distanceUnit))", text: $distance)
                         .keyboardType(.decimalPad)
                         .textFieldStyle(.roundedBorder)
+                } else {
+                    Text("Distance isn’t required for this workout type.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -367,42 +522,56 @@ struct AddWorkoutView: View {
     
     // MARK: - Exercises Section
     private var exercisesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Exercises (Optional)")
-                .font(.headline)
-                .foregroundStyle(.primary)
-            
-            Text("Log sets, reps, and weight for the moves you did. Leave blank if this workout doesn’t use exercises.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            
-            VStack(spacing: 12) {
-                if exercises.isEmpty {
-                    Button(action: addExerciseDraft) {
-                        Label("Add your first exercise", systemImage: "plus.circle.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
+        sectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Exercises (Optional)")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                
+                Text("Log sets, reps, and weight for the moves you did. Leave blank if this workout doesn’t use exercises.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                
+                VStack(spacing: 12) {
+                    if exercises.isEmpty {
+                        Button(action: addExerciseDraft) {
+                            let label = Label("Add your first exercise", systemImage: "plus.circle.fill")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .padding(.horizontal, 14)
+                            if #available(iOS 26.0, *) {
+                                label
+                            } else {
+                                label
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            }
+                        }
+                        .buttonStyle(ScaleButtonStyle())
+                    } else {
+                        ForEach($exercises) { $exercise in
+                            ExerciseInputCard(
+                                exercise: $exercise,
+                                accentColor: workoutTypeColor,
+                                onDelete: { removeExerciseDraft(id: exercise.id) }
+                            )
+                        }
+                        
+                        Button(action: addExerciseDraft) {
+                            let label = Label("Add Exercise", systemImage: "plus")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .padding(.horizontal, 14)
+                            if #available(iOS 26.0, *) {
+                                label
+                            } else {
+                                label
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            }
+                        }
+                        .buttonStyle(ScaleButtonStyle())
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(workoutTypeColor)
-                } else {
-                    ForEach($exercises) { $exercise in
-                        ExerciseInputCard(
-                            exercise: $exercise,
-                            accentColor: workoutTypeColor,
-                            onDelete: { removeExerciseDraft(id: exercise.id) }
-                        )
-                    }
-                    
-                    Button(action: addExerciseDraft) {
-                        Label("Add Exercise", systemImage: "plus")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(workoutTypeColor)
                 }
             }
         }
@@ -410,84 +579,88 @@ struct AddWorkoutView: View {
     
     // MARK: - Categories Section
     private var categoriesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Categories & Exercises")
-                .font(.headline)
-                .foregroundStyle(.primary)
+        sectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Categories & Exercises")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
 
-            // Performance-optimized category selection
-            LazyVStack(spacing: 12) {
-                ForEach(filteredCategories, id: \.id) { category in
-                    OptimizedCategoryRow(
-                        category: category,
-                        isSelected: selectedCategories.contains(where: { $0.id == category.id }),
-                        selectedSubcategoryIds: Set(selectedSubcategories.map { $0.id }),
-                        onToggleCategory: { toggleCategory(category) },
-                        onToggleSubcategory: { sub in toggleSubcategory(sub) }
-                    )
-                }
-            }
-
-            // Selected summary chips moved to bottom
-            if !selectedCategories.isEmpty || !selectedSubcategories.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Selected")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    if !selectedCategories.isEmpty {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2), spacing: 8) {
-                            ForEach(selectedCategories, id: \.id) { category in
-                                Button(action: { toggleCategory(category) }) {
-                                    CategoryChip(category: category)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    if !selectedSubcategories.isEmpty {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2), spacing: 8) {
-                            ForEach(selectedSubcategories, id: \.id) { subcategory in
-                                Button(action: { toggleSubcategory(subcategory) }) {
-                                    SubcategoryChip(subcategory: subcategory)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    Button(role: .destructive) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedCategories.removeAll()
-                            selectedSubcategories.removeAll()
-                        }
-                    } label: {
-                        Label("Clear Selections", systemImage: "xmark.circle")
-                            .font(.footnote)
-                    }
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(.systemBackground))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(Color(.systemGray4), lineWidth: 1)
+                // Performance-optimized category selection
+                LazyVStack(spacing: 12) {
+                    ForEach(filteredCategories, id: \.id) { category in
+                        OptimizedCategoryRow(
+                            category: category,
+                            isSelected: selectedCategories.contains(where: { $0.id == category.id }),
+                            selectedSubcategoryIds: Set(selectedSubcategories.map { $0.id }),
+                            onToggleCategory: { toggleCategory(category) },
+                            onToggleSubcategory: { sub in toggleSubcategory(sub) }
                         )
-                )
+                    }
+                }
+
+                // Selected summary chips moved to bottom
+                if !selectedCategories.isEmpty || !selectedSubcategories.isEmpty {
+                    let content = VStack(alignment: .leading, spacing: 10) {
+                        Text("Selected")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        if !selectedCategories.isEmpty {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2), spacing: 8) {
+                                ForEach(selectedCategories, id: \.id) { category in
+                                    Button(action: { toggleCategory(category) }) {
+                                        CategoryChip(category: category)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        if !selectedSubcategories.isEmpty {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2), spacing: 8) {
+                                ForEach(selectedSubcategories, id: \.id) { subcategory in
+                                    Button(action: { toggleSubcategory(subcategory) }) {
+                                        SubcategoryChip(subcategory: subcategory)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        Button(role: .destructive) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedCategories.removeAll()
+                                selectedSubcategories.removeAll()
+                            }
+                        } label: {
+                            Label("Clear Selections", systemImage: "xmark.circle")
+                                .font(.footnote)
+                        }
+                    }
+                    .padding(12)
+                    let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    if #available(iOS 26.0, *) {
+                        content
+                            .glassEffect(.regular, in: .rect(cornerRadius: 14))
+                    } else {
+                        content
+                            .background(.ultraThinMaterial, in: shape)
+                    }
+                }
             }
         }
     }
     
     // MARK: - Notes Section
     private var notesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Notes (Optional)")
-                .font(.headline)
-                .foregroundStyle(.primary)
-            
-            TextField("Add notes about your workout...", text: $notes, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(3...6)
+        sectionCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Notes (Optional)")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                
+                TextField("Add notes about your workout...", text: $notes, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(3...6)
+            }
         }
     }
     
@@ -798,8 +971,9 @@ private struct OptimizedCategoryRow: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
     
+    @ViewBuilder
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
+        let content = DisclosureGroup(isExpanded: $expanded) {
             if !sortedSubcategories.isEmpty {
                 ForEach(sortedSubcategories, id: \.id) { subcategory in
                     let isSelected = selectedSubcategoryIds.contains(subcategory.id)
@@ -835,6 +1009,15 @@ private struct OptimizedCategoryRow: View {
             .contentShape(Rectangle())
             .onTapGesture { onToggleCategory() }
         }
+        .padding(12)
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
     }
 }
 
@@ -853,8 +1036,9 @@ private struct ExerciseInputCard: View {
     let accentColor: Color
     let onDelete: () -> Void
     
+    @ViewBuilder
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let content = VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
@@ -890,7 +1074,16 @@ private struct ExerciseInputCard: View {
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(2...4)
         }
-        .appCard()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: 20))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+        }
     }
 }
 
@@ -919,14 +1112,22 @@ struct QuickTemplatesView: View {
                     .ignoresSafeArea()
                 
                 ScrollView {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 2), spacing: 16) {
+                    let grid = LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 2), spacing: 16) {
                         ForEach(templates, id: \.name) { template in
                             TemplateCard(template: template) {
                                 applyTemplate(template)
                             }
                         }
                     }
-                    .padding(20)
+                    if #available(iOS 26.0, *) {
+                        GlassEffectContainer(spacing: 16) {
+                            grid
+                        }
+                        .padding(20)
+                    } else {
+                        grid
+                            .padding(20)
+                    }
                 }
             }
             .navigationTitle("Quick Templates")
@@ -990,7 +1191,7 @@ struct TemplateCard: View {
     
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 12) {
+            let label = VStack(spacing: 12) {
                 Image(systemName: typeIcon)
                     .font(.system(size: 32, weight: .semibold))
                     .foregroundStyle(typeColor)
@@ -1009,17 +1210,15 @@ struct TemplateCard: View {
             .frame(maxWidth: .infinity)
             .frame(height: 140)
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .primary.opacity(0.06), radius: 12, y: 6)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(typeColor.opacity(0.2), lineWidth: 1.5)
-            )
+            if #available(iOS 26.0, *) {
+                label
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24))
+            } else {
+                label
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            }
         }
-        .buttonStyle(ScaleButtonStyle())
+        .buttonStyle(.plain)
     }
 }
 
@@ -1052,14 +1251,22 @@ struct DuplicateWorkoutView: View {
                     }
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 12) {
+                        let list = LazyVStack(spacing: 12) {
                             ForEach(workouts.prefix(10), id: \.id) { workout in
                                 DuplicateWorkoutRow(workout: workout) {
                                     onSelect(workout)
                                 }
                             }
                         }
-                        .padding(20)
+                        if #available(iOS 26.0, *) {
+                            GlassEffectContainer(spacing: 12) {
+                                list
+                            }
+                            .padding(20)
+                        } else {
+                            list
+                                .padding(20)
+                        }
                     }
                 }
             }
@@ -1106,7 +1313,7 @@ struct DuplicateWorkoutRow: View {
     
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 16) {
+            let label = HStack(spacing: 16) {
                 Image(systemName: workoutTypeIcon)
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(workoutTypeColor)
@@ -1139,11 +1346,13 @@ struct DuplicateWorkoutRow: View {
                     .foregroundStyle(.blue)
             }
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .primary.opacity(0.06), radius: 8, y: 4)
-            )
+            if #available(iOS 26.0, *) {
+                label
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+            } else {
+                label
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
         }
         .buttonStyle(.plain)
     }
@@ -1165,4 +1374,3 @@ struct DuplicateWorkoutRow: View {
     }
     .modelContainer(container)
 } 
-

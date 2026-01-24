@@ -25,4 +25,3 @@ extension View {
         modifier(AppCardStyle(padding: padding))
     }
 }
-
