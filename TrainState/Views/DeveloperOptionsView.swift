@@ -3,13 +3,43 @@ import SwiftData
 
 struct DeveloperOptionsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        List {
-            Section("Data") {
-                Button("Seed Sample Workouts") {
-                    seedSampleWorkouts()
+        ZStack {
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
+                    Color(.systemBackground)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Data")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        seedSampleWorkouts()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "square.and.arrow.down")
+                            Text("Seed Sample Workouts")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
                 }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glassCard(cornerRadius: 32)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 24)
             }
         }
         .navigationTitle("Developer")

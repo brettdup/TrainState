@@ -191,11 +191,9 @@ private extension CloudKitManager {
 
         var subcategoryMap: [UUID: WorkoutSubcategory] = [:]
         for export in payload.subcategories {
-            let subcategory = WorkoutSubcategory(name: export.name)
+            guard let categoryId = export.categoryId, let category = categoryMap[categoryId] else { continue }
+            let subcategory = WorkoutSubcategory(name: export.name, category: category)
             subcategory.id = export.id
-            if let categoryId = export.categoryId, let category = categoryMap[categoryId] {
-                subcategory.category = category
-            }
             context.insert(subcategory)
             subcategoryMap[export.id] = subcategory
         }

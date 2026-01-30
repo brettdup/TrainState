@@ -4,6 +4,7 @@ import SwiftData
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var isBackingUp = false
@@ -19,106 +20,35 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("iCloud Backup") {
-                    if let statusMessage {
-                        Text(statusMessage)
-                            .foregroundStyle(.secondary)
+            ZStack {
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
+                        Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
+                        Color(.systemBackground)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+
+                ScrollView {
+                    LazyVStack(spacing: 20) {
+                        iCloudBackupCard
+                        accountCard
+                        preferencesCard
+                        dataCard
+                        premiumCard
+                        developerCard
+                        legalCard
                     }
-                    Button {
-                        Task { await createBackup() }
-                    } label: {
-                        if isBackingUp {
-                            HStack {
-                                ProgressView()
-                                Text("Creating Backup...")
-                            }
-                        } else {
-                            Text("Backup to iCloud")
-                        }
-                    }
-                    .disabled(isBackingUp)
-
-                    Button {
-                        Task { await loadBackups() }
-                    } label: {
-                        if isLoadingBackups {
-                            HStack {
-                                ProgressView()
-                                Text("Loading Backups...")
-                            }
-                        } else {
-                            Text("Refresh Backups")
-                        }
-                    }
-                    .disabled(isLoadingBackups)
-
-                    if !backups.isEmpty {
-                        ForEach(backups) { backup in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(backup.name)
-                                Text("\(backup.workoutCount) workouts • \(backup.formattedDate)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .swipeActions {
-                                Button(role: .destructive) {
-                                    Task { await deleteBackup(backup) }
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                                Button {
-                                    Task { await restoreBackup(backup) }
-                                } label: {
-                                    Label("Restore", systemImage: "arrow.clockwise")
-                                }
-                                .tint(.blue)
-                            }
-                        }
-                    } else {
-                        Text("No backups found.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("Account") {
-                    Text(cloudStatusText)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Preferences") {
-                    Toggle("Show Onboarding", isOn: $hasCompletedOnboarding.inverse)
-                }
-
-                Section("Data") {
-                    NavigationLink("Manage Categories", destination: CategoriesManagementView())
-                    NavigationLink("Subcategory Activity", destination: SubcategoryLastLoggedView())
-                    Button("Reset All Workouts", role: .destructive) {
-                        Task { await resetWorkouts() }
-                    }
-                    .disabled(isResettingWorkouts)
-                }
-
-                Section("Premium") {
-                    Button("Premium") {
-                        Task {
-                            await purchaseManager.loadProducts()
-                            await purchaseManager.updatePurchasedProducts()
-                            showPaywall = true
-                        }
-                    }
-                    NavigationLink("Subscription Info", destination: SubscriptionInfoView())
-                }
-
-                Section("Developer") {
-                    NavigationLink("Developer Options", destination: DeveloperOptionsView())
-                }
-
-                Section("Legal") {
-                    NavigationLink("Terms of Use", destination: TermsOfUseView())
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 24)
+                    .padding(.bottom, 40)
                 }
             }
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.large)
             .onAppear {
                 Task {
                     await loadBackups()
@@ -145,6 +75,208 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var iCloudBackupCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("iCloud Backup")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                Task { await createBackup() }
+            } label: {
+                HStack {
+                    if isBackingUp {
+                        ProgressView()
+                        Text("Creating Backup...")
+                    } else {
+                        Image(systemName: "icloud.and.arrow.up")
+                        Text("Backup to iCloud")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+            .disabled(isBackingUp)
+
+            Button {
+                Task { await loadBackups() }
+            } label: {
+                HStack {
+                    if isLoadingBackups {
+                        ProgressView()
+                        Text("Loading Backups...")
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Refresh Backups")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoadingBackups)
+
+            if !backups.isEmpty {
+                ForEach(backups) { backup in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(backup.name)
+                                .font(.body.weight(.medium))
+                            Text("\(backup.workoutCount) workouts • \(backup.formattedDate)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        HStack(spacing: 12) {
+                            Button {
+                                Task { await restoreBackup(backup) }
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isRestoring)
+                            Button(role: .destructive) {
+                                Task { await deleteBackup(backup) }
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+            } else {
+                Text("No backups found.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var accountCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Account")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(cloudStatusText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var preferencesCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Preferences")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Toggle("Show Onboarding", isOn: $hasCompletedOnboarding.inverse)
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var dataCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Data")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            NavigationLink {
+                CategoriesManagementView()
+            } label: {
+                SettingsRow(icon: "tag", title: "Manage Categories")
+            }
+
+            NavigationLink {
+                SubcategoryLastLoggedView()
+            } label: {
+                SettingsRow(icon: "list.bullet", title: "Subcategory Activity")
+            }
+
+            Button(role: .destructive) {
+                Task { await resetWorkouts() }
+            } label: {
+                HStack {
+                    Image(systemName: "trash")
+                    Text("Reset All Workouts")
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isResettingWorkouts)
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var premiumCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Premium")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Button {
+                Task {
+                    await purchaseManager.loadProducts()
+                    await purchaseManager.updatePurchasedProducts()
+                    showPaywall = true
+                }
+            } label: {
+                SettingsRow(icon: "crown", title: "Premium")
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink {
+                SubscriptionInfoView()
+            } label: {
+                SettingsRow(icon: "info.circle", title: "Subscription Info")
+            }
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var developerCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Developer")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            NavigationLink {
+                DeveloperOptionsView()
+            } label: {
+                SettingsRow(icon: "wrench.and.screwdriver", title: "Developer Options")
+            }
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var legalCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Legal")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            NavigationLink {
+                TermsOfUseView()
+            } label: {
+                SettingsRow(icon: "doc.text", title: "Terms of Use")
+            }
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
     }
 
     @MainActor
@@ -244,6 +376,30 @@ struct SettingsView: View {
         } catch {
             cloudStatusText = "iCloud: Error"
         }
+    }
+}
+
+// MARK: - Settings Row
+private struct SettingsRow: View {
+    let icon: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, alignment: .center)
+            Text(title)
+                .font(.body)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 }
 

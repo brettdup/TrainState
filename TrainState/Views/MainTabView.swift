@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct MainTabView: View {
+    @StateObject private var purchaseManager = PurchaseManager.shared
+
     var body: some View {
         TabView {
             WorkoutListView()
@@ -13,10 +15,12 @@ struct MainTabView: View {
                     Label("Calendar", systemImage: "calendar")
                 }
 
-            AnalyticsView()
-                .tabItem {
-                    Label("Analytics", systemImage: "chart.bar")
-                }
+            if purchaseManager.hasActiveSubscription {
+                AnalyticsView()
+                    .tabItem {
+                        Label("Analytics", systemImage: "chart.bar")
+                    }
+            }
 
             SettingsView()
                 .tabItem {

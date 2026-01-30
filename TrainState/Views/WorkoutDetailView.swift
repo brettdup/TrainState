@@ -4,26 +4,40 @@ import SwiftData
 struct WorkoutDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
     @Bindable var workout: Workout
     @State private var showingCategoryPicker = false
     @State private var selectedCategories: [WorkoutCategory] = []
     @State private var selectedSubcategories: [WorkoutSubcategory] = []
+    @State private var showingDeleteConfirmation = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                headerView
-                statsCard
-                categoriesCard
-                if !selectedSubcategories.isEmpty {
-                    subcategoriesCard
+        ZStack {
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
+                    Color(.systemBackground)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 24) {
+                    headerCard
+                    if workout.duration > 0 || workout.distance ?? 0 > 0 || (workout.calories ?? 0) > 0 {
+                        statsCard
+                    }
+                    categoriesCard
+                    if let notes = workout.notes, !notes.isEmpty {
+                        notesCard(notes)
+                    }
                 }
-                if let notes = workout.notes, !notes.isEmpty {
-                    notesCard(notes)
-                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 24)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
         }
         .navigationTitle("Workout")
         .navigationBarTitleDisplayMode(.inline)
@@ -31,6 +45,25 @@ struct WorkoutDetailView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { dismiss() }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete Workout", systemImage: "trash")
+                    }
+                } label: {
+                    Label("Actions", systemImage: "ellipsis.circle")
+                }
+            }
+        }
+        .confirmationDialog("Delete Workout", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                deleteWorkout()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This workout will be permanently deleted. This action cannot be undone.")
         }
         .sheet(isPresented: $showingCategoryPicker, onDismiss: applyCategorySelection) {
             CategoryAndSubcategorySelectionView(
@@ -45,24 +78,100 @@ struct WorkoutDetailView: View {
         }
     }
 
-    private var headerView: some View {
-        HStack(alignment: .center, spacing: 12) {
+    private var headerCard: some View {
+        HStack(spacing: 16) {
             Image(systemName: workout.type.systemImage)
-                .font(.title2)
+                .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(workout.type.tintColor)
-                .frame(width: 32, height: 32)
-                .background(workout.type.tintColor.opacity(0.12), in: Circle())
+                .frame(width: 56, height: 56)
+                .background(
+                    RoundedRectangle(cornerRadius: 32)
+                        .fill(workout.type.tintColor.opacity(0.15))
+                )
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(workout.type.rawValue)
-                    .font(.title3.weight(.semibold))
+                    .font(.system(size: 22, weight: .semibold))
                 Text(workout.startDate.formatted(date: .abbreviated, time: .shortened))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             Spacer()
         }
-        .padding(16)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var statsCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Stats")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 0) {
+                if workout.duration > 0 {
+                    StatTile(title: "Duration", value: formattedDuration(workout.duration))
+                }
+                if let distance = workout.distance, distance > 0 {
+                    StatTile(title: "Distance", value: String(format: "%.1f km", distance))
+                }
+                if let calories = workout.calories, calories > 0 {
+                    StatTile(title: "Calories", value: "\(Int(calories)) kcal")
+                }
+            }
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var categoriesCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Categories")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Button {
+                showingCategoryPicker = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "tag.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(workout.type.tintColor)
+                    Text(categoriesSummary)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private func notesCard(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Notes")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.body)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var categoriesSummary: String {
+        let catNames = selectedCategories.map(\.name)
+        let subNames = selectedSubcategories.map(\.name)
+        let parts = catNames + subNames
+        return parts.isEmpty ? "Select Categories" : parts.joined(separator: ", ")
     }
 
     private func formattedDuration(_ duration: TimeInterval) -> String {
@@ -78,75 +187,10 @@ struct WorkoutDetailView: View {
         try? modelContext.save()
     }
 
-    private var statsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Stats")
-                .font(.headline)
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                if workout.duration > 0 {
-                    StatTile(title: "Duration", value: formattedDuration(workout.duration))
-                }
-                if let distance = workout.distance, distance > 0 {
-                    StatTile(title: "Distance", value: String(format: "%.1f km", distance))
-                }
-                if let calories = workout.calories, calories > 0 {
-                    StatTile(title: "Calories", value: "\(Int(calories)) kcal")
-                }
-            }
-        }
-        .padding(16)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private var categoriesCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Categories")
-                    .font(.headline)
-                Spacer()
-                Button("Edit") {
-                    showingCategoryPicker = true
-                }
-                .font(.caption)
-            }
-            if selectedCategories.isEmpty {
-                Text("None")
-                    .foregroundStyle(.secondary)
-            } else {
-                FlowLayout(spacing: 6) {
-                    ForEach(selectedCategories) { category in
-                        CategoryChipView(title: category.name)
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private var subcategoriesCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Subcategories")
-                .font(.headline)
-            FlowLayout(spacing: 6) {
-                ForEach(selectedSubcategories) { subcategory in
-                    CategoryChipView(title: subcategory.name)
-                }
-            }
-        }
-        .padding(16)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func notesCard(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Notes")
-                .font(.headline)
-            Text(text)
-                .foregroundStyle(.secondary)
-        }
-        .padding(16)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+    private func deleteWorkout() {
+        modelContext.delete(workout)
+        try? modelContext.save()
+        dismiss()
     }
 }
 
@@ -155,80 +199,30 @@ private struct StatTile: View {
     let value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.headline)
+                .font(.title3.weight(.semibold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-private struct CategoryChipView: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.caption)
-            .padding(.vertical, 4)
-            .padding(.horizontal, 8)
-            .background(Color.secondary.opacity(0.12))
-            .clipShape(Capsule())
-    }
-}
-
-private struct FlowLayout: Layout {
-    let spacing: CGFloat
-
-    init(spacing: CGFloat) {
-        self.spacing = spacing
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? .infinity
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x + size.width > maxWidth {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-        return CGSize(width: maxWidth, height: y + rowHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: size.width, height: size.height))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
     }
 }
 
 #Preview {
     let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-    let container = try! ModelContainer(for: Workout.self, configurations: config)
-    let workout = Workout(type: .running, startDate: .now, duration: 2700, distance: 5.2)
-    container.mainContext.insert(workout)
+    let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, configurations: config)
+    let context = container.mainContext
+
+    let endurance = WorkoutCategory(name: "Endurance", color: "#FFEAA7", workoutType: .running)
+    context.insert(endurance)
+    let tempo = WorkoutSubcategory(name: "Tempo", category: endurance)
+    context.insert(tempo)
+
+    let workout = Workout(type: .running, startDate: .now, duration: 2700, distance: 5.2, categories: [endurance], subcategories: [tempo])
+    context.insert(workout)
+
     return NavigationStack {
         WorkoutDetailView(workout: workout)
     }

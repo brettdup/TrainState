@@ -2,28 +2,65 @@ import SwiftUI
 import SwiftData
 
 struct AnalyticsView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("This Week") {
-                    Text("Workouts: \(weeklySummary.count)")
-                    Text("Duration: \(weeklySummary.duration)")
-                    if weeklySummary.distance > 0 {
-                        Text("Distance: \(weeklySummary.distance, format: .number.precision(.fractionLength(1))) km")
-                    }
-                }
+        ZStack {
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
+                    Color(.systemBackground)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-                Section("All Time") {
-                    Text("Workouts: \(allTimeSummary.count)")
-                    Text("Duration: \(allTimeSummary.duration)")
-                    if allTimeSummary.distance > 0 {
-                        Text("Distance: \(allTimeSummary.distance, format: .number.precision(.fractionLength(1))) km")
-                    }
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    summaryCard(title: "This Week", summary: weeklySummary)
+                    summaryCard(title: "All Time", summary: allTimeSummary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
+            }
+        }
+        .navigationTitle("Analytics")
+        .navigationBarTitleDisplayMode(.large)
+        }
+    }
+
+    private func summaryCard(title: String, summary: (count: Int, duration: String, distance: Double)) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 12) {
+                statRow(label: "Workouts", value: "\(summary.count)")
+                statRow(label: "Duration", value: summary.duration)
+                if summary.distance > 0 {
+                    statRow(label: "Distance", value: String(format: "%.1f km", summary.distance))
                 }
             }
-            .navigationTitle("Analytics")
+            .padding(20)
+            .glassCard(cornerRadius: 32)
+        }
+    }
+
+    private func statRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.body)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.primary)
         }
     }
 
@@ -53,6 +90,8 @@ struct AnalyticsView: View {
 }
 
 #Preview {
-    AnalyticsView()
-        .modelContainer(for: [Workout.self], inMemory: true)
+    NavigationStack {
+        AnalyticsView()
+    }
+    .modelContainer(for: [Workout.self], inMemory: true)
 }
