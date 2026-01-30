@@ -6,6 +6,18 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
+    @AppStorage("themeMode") private var themeModeRaw = AppThemeMode.system.rawValue
+    @AppStorage("accentColor") private var accentColorRaw = AppAccentColor.blue.rawValue
+
+    private var themeMode: AppThemeMode {
+        get { AppThemeMode(rawValue: themeModeRaw) ?? .system }
+        set { themeModeRaw = newValue.rawValue }
+    }
+
+    private var accentColor: AppAccentColor {
+        get { AppAccentColor(rawValue: accentColorRaw) ?? .blue }
+        set { accentColorRaw = newValue.rawValue }
+    }
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var isBackingUp = false
     @State private var isRestoring = false
@@ -183,10 +195,94 @@ struct SettingsView: View {
             Text("Preferences")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
+
+            appearanceSection
+
             Toggle("Show Onboarding", isOn: $hasCompletedOnboarding.inverse)
         }
         .padding(20)
         .glassCard(cornerRadius: 32)
+    }
+
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Appearance")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                themeModePicker
+                accentColorPicker
+            }
+        }
+    }
+
+    private var themeModePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Theme", systemImage: "paintbrush.fill")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+            Picker("Theme", selection: $themeModeRaw) {
+                ForEach(AppThemeMode.allCases, id: \.rawValue) { mode in
+                    Text(mode.rawValue).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+
+    private var accentColorPicker: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Accent Color", systemImage: "paintpalette.fill")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 80))], spacing: 12) {
+                ForEach(AppAccentColor.allCases) { option in
+                    accentColorOption(option)
+                }
+            }
+        }
+    }
+
+    private func accentColorOption(_ option: AppAccentColor) -> some View {
+        let isSelected = accentColor == option
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                accentColorRaw = option.rawValue
+            }
+        } label: {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(option.color)
+                        .frame(width: 48, height: 48)
+
+                    if isSelected {
+                        Circle()
+                            .strokeBorder(Color.primary, lineWidth: 3)
+                            .frame(width: 48, height: 48)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.3), radius: 1)
+                    }
+                }
+
+                Text(option.rawValue)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(isSelected ? option.color.opacity(0.15) : Color.primary.opacity(0.04))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var dataCard: some View {
