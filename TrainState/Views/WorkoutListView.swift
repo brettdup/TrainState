@@ -2,14 +2,9 @@ import SwiftUI
 import SwiftData
 
 struct WorkoutListView: View {
-    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
     @State private var showingAddWorkout = false
     @State private var selectedFilter: WorkoutFilter = .all
-    @State private var isRefreshing = false
-    @State private var lastRefreshTime: Date?
-    private let refreshCooldownInterval: TimeInterval = 30
-    @State private var didRequestHealthAuth = false
 
     var body: some View {
         NavigationStack {
@@ -17,18 +12,6 @@ struct WorkoutListView: View {
             .navigationTitle("Workouts")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        Task { await refreshData() }
-                    } label: {
-                        if isRefreshing {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                    }
-                    .disabled(isRefreshing)
-                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingAddWorkout = true
@@ -39,14 +22,6 @@ struct WorkoutListView: View {
             }
             .sheet(isPresented: $showingAddWorkout) {
                 AddWorkoutView()
-            }
-            .refreshable {
-                await refreshData()
-            }
-            .task {
-                guard !didRequestHealthAuth else { return }
-                didRequestHealthAuth = true
-                do { try await HealthKitManager.shared.requestAuthorizationIfNeeded() } catch { }
             }
         }
     }
@@ -174,19 +149,6 @@ struct WorkoutListView: View {
         return formatter.string(from: duration) ?? "0m"
     }
 
-    private func refreshData() async {
-        guard !isRefreshing else { return }
-        if let last = lastRefreshTime, Date().timeIntervalSince(last) < refreshCooldownInterval { return }
-
-        isRefreshing = true
-        defer {
-            isRefreshing = false
-            lastRefreshTime = Date()
-        }
-
-        do { try await HealthKitManager.shared.requestAuthorizationIfNeeded() } catch { }
-        do { _ = try await HealthKitManager.shared.importNewWorkouts(context: modelContext) } catch { }
-    }
 }
 
 private struct WorkoutRowBasicView: View {
@@ -203,6 +165,13 @@ private struct WorkoutRowBasicView: View {
                 Text(workout.startDate.formatted(date: .abbreviated, time: .shortened))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                if let categories = workout.categories, !categories.isEmpty {
+                    FlowLayout(spacing: 6) {
+                        ForEach(categories) { category in
+                            CategoryChipView(title: category.name)
+                        }
+                    }
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
@@ -225,6 +194,62 @@ private struct WorkoutRowBasicView: View {
         formatter.allowedUnits = [.hour, .minute]
         formatter.unitsStyle = .short
         return formatter.string(from: duration) ?? "0m"
+    }
+}
+
+private struct CategoryChipView: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.caption)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(Color.secondary.opacity(0.12))
+            .clipShape(Capsule())
+    }
+}
+
+private struct FlowLayout: Layout {
+    let spacing: CGFloat
+
+    init(spacing: CGFloat) {
+        self.spacing = spacing
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: maxWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: size.width, height: size.height))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }
 

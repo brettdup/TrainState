@@ -1,7 +1,6 @@
 import Foundation
 import SwiftData
 import CoreLocation
-import HealthKit
 import SwiftUI
 
 @Model
@@ -19,6 +18,7 @@ final class Workout {
     var distance: Double?
     var notes: String?
     var hkActivityTypeRaw: Int?
+    var hkUUID: String?
     
     // SwiftData relationships - CloudKit compatible
     @Relationship(inverse: \WorkoutCategory.workouts)
@@ -55,11 +55,6 @@ final class Workout {
         self.hkActivityTypeRaw = hkActivityTypeRaw
     }
     
-    var hkActivityTypeName: String? {
-        guard let raw = hkActivityTypeRaw,
-              let hkType = HKWorkoutActivityType(rawValue: UInt(raw)) else { return nil }
-        return hkType.readableName
-    }
     
     // Helper methods to maintain relationship integrity
     // Note: Only modify one side of the relationship - SwiftData handles the inverse automatically
@@ -177,92 +172,6 @@ enum WorkoutFilter: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - HealthKit Helpers
-private extension HKWorkoutActivityType {
-    var readableName: String {
-        switch self {
-        case .americanFootball: return "American Football"
-        case .archery: return "Archery"
-        case .australianFootball: return "Australian Football"
-        case .badminton: return "Badminton"
-        case .barre: return "Barre"
-        case .baseball: return "Baseball"
-        case .basketball: return "Basketball"
-        case .bowling: return "Bowling"
-        case .boxing: return "Boxing"
-        case .climbing: return "Climbing"
-        case .cooldown: return "Cooldown"
-        case .coreTraining: return "Core Training"
-        case .cricket: return "Cricket"
-        case .crossCountrySkiing: return "Cross-Country Skiing"
-        case .crossTraining: return "Cross Training"
-        case .curling: return "Curling"
-        case .cycling: return "Cycling"
-        case .dance: return "Dance"
-        case .danceInspiredTraining: return "Dance-Inspired Training"
-        case .downhillSkiing: return "Downhill Skiing"
-        case .elliptical: return "Elliptical"
-        case .equestrianSports: return "Equestrian Sports"
-        case .fencing: return "Fencing"
-        case .fishing: return "Fishing"
-        case .flexibility: return "Flexibility"
-        case .functionalStrengthTraining: return "Functional Strength Training"
-        case .golf: return "Golf"
-        case .gymnastics: return "Gymnastics"
-        case .handCycling: return "Hand Cycling"
-        case .handball: return "Handball"
-        case .hiking: return "Hiking"
-        case .hockey: return "Hockey"
-        case .hunting: return "Hunting"
-        case .jumpRope: return "Jump Rope"
-        case .kickboxing: return "Kickboxing"
-        case .lacrosse: return "Lacrosse"
-        case .martialArts: return "Martial Arts"
-        case .mindAndBody: return "Mind & Body"
-        case .mixedCardio: return "Mixed Cardio"
-        case .mixedMetabolicCardioTraining: return "Mixed Metabolic Cardio"
-        case .other: return "Other"
-        case .paddleSports: return "Paddle Sports"
-        case .pilates: return "Pilates"
-        case .play: return "Play"
-        case .preparationAndRecovery: return "Preparation & Recovery"
-        case .racquetball: return "Racquetball"
-        case .rowing: return "Rowing"
-        case .rugby: return "Rugby"
-        case .running: return "Running"
-        case .sailing: return "Sailing"
-        case .skatingSports: return "Skating Sports"
-        case .snowSports: return "Snow Sports"
-        case .soccer: return "Soccer"
-        case .softball: return "Softball"
-        case .squash: return "Squash"
-        case .stairClimbing: return "Stair Climbing"
-        case .stairs: return "Stairs"
-        case .stepTraining: return "Step Training"
-        case .surfingSports: return "Surfing Sports"
-        case .swimming: return "Swimming"
-        case .tableTennis: return "Table Tennis"
-        case .taiChi: return "Tai Chi"
-        case .tennis: return "Tennis"
-        case .trackAndField: return "Track & Field"
-        case .traditionalStrengthTraining: return "Traditional Strength Training"
-        case .volleyball: return "Volleyball"
-        case .walking: return "Walking"
-        case .waterFitness: return "Water Fitness"
-        case .waterPolo: return "Water Polo"
-        case .waterSports: return "Water Sports"
-        case .wrestling: return "Wrestling"
-        case .yoga: return "Yoga"
-        case .highIntensityIntervalTraining: return "High Intensity Interval Training"
-        case .cardioDance: return "Cardio Dance"
-        case .socialDance: return "Social Dance"
-        case .pickleball: return "Pickleball"
-        case .fitnessGaming: return "Fitness Gaming"
-        @unknown default:
-            return "Workout"
-        }
-    }
-}
 
 // MARK: - Codable Extensions for Export/Import
 // These are separate from the @Model classes to avoid SwiftData conflicts
@@ -275,6 +184,8 @@ struct WorkoutExport: Codable {
     let calories: Double?
     let distance: Double?
     let notes: String?
+    let hkActivityTypeRaw: Int?
+    let hkUUID: String?
     let categoryIds: [UUID]?
     let subcategoryIds: [UUID]?
     
@@ -286,6 +197,8 @@ struct WorkoutExport: Codable {
         self.calories = workout.calories
         self.distance = workout.distance
         self.notes = workout.notes
+        self.hkActivityTypeRaw = workout.hkActivityTypeRaw
+        self.hkUUID = workout.hkUUID
         
         // Safely access relationships with nil checks to avoid SwiftData crashes
         if let categories = workout.categories {
@@ -319,9 +232,11 @@ struct WorkoutCategoryExport: Codable {
 struct WorkoutSubcategoryExport: Codable {
     let id: UUID
     let name: String
+    let categoryId: UUID?
     
     init(subcategory: WorkoutSubcategory) {
         self.id = subcategory.id
         self.name = subcategory.name
+        self.categoryId = subcategory.category?.id
     }
 } 

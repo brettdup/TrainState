@@ -12,6 +12,9 @@ struct AddWorkoutView: View {
     @State private var selectedCategories: [WorkoutCategory] = []
     @State private var selectedSubcategories: [WorkoutSubcategory] = []
     @State private var showingCategoryPicker = false
+    @State private var showingDuplicateAlert = false
+    @State private var isSaving = false
+    @State private var pendingWorkout: Workout?
 
     var body: some View {
         NavigationStack {
@@ -52,6 +55,8 @@ struct AddWorkoutView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button("Save") {
+                        guard !isSaving else { return }
+                        isSaving = true
                         let workout = Workout(
                             type: type,
                             startDate: date,
@@ -61,12 +66,30 @@ struct AddWorkoutView: View {
                             categories: selectedCategories,
                             subcategories: selectedSubcategories
                         )
-                        modelContext.insert(workout)
-                        try? modelContext.save()
-                        dismiss()
+                        if isDuplicate(workout) {
+                            pendingWorkout = workout
+                            showingDuplicateAlert = true
+                            isSaving = false
+                            return
+                        }
+                        saveWorkout(workout)
                     }
+                    .disabled(isSaving)
                 }
             }
+        }
+        .alert("Duplicate Workout", isPresented: $showingDuplicateAlert) {
+            Button("Save Anyway") {
+                if let workout = pendingWorkout {
+                    saveWorkout(workout)
+                }
+                pendingWorkout = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingWorkout = nil
+            }
+        } message: {
+            Text("A similar workout already exists for this time.")
         }
         .sheet(isPresented: $showingCategoryPicker) {
             CategoryAndSubcategorySelectionView(
@@ -78,6 +101,50 @@ struct AddWorkoutView: View {
         .onChange(of: type) { _, _ in
             selectedCategories.removeAll()
             selectedSubcategories.removeAll()
+        }
+    }
+
+    private func isDuplicate(_ workout: Workout) -> Bool {
+        var countDescriptor = FetchDescriptor<Workout>()
+        countDescriptor.fetchLimit = 2
+        let existingCount = (try? modelContext.fetch(countDescriptor).count) ?? 0
+        if existingCount < 2 { return false }
+        let startOfDay = Calendar.current.startOfDay(for: workout.startDate)
+        let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
+        let descriptor = FetchDescriptor<Workout>(
+            predicate: #Predicate { existing in
+                existing.startDate >= startOfDay && existing.startDate < endOfDay
+            }
+        )
+        let sameDayWorkouts = (try? modelContext.fetch(descriptor)) ?? []
+        if sameDayWorkouts.isEmpty { return false }
+        return sameDayWorkouts.contains { existing in
+            guard existing.type == workout.type else { return false }
+            if abs(existing.startDate.timeIntervalSince(workout.startDate)) > 60 { return false }
+            if abs(existing.duration - workout.duration) > 60 { return false }
+            if let existingDistance = existing.distance, let newDistance = workout.distance {
+                if abs(existingDistance - newDistance) > 0.1 { return false }
+            } else if (existing.distance != nil) || (workout.distance != nil) {
+                return false
+            }
+            if (existing.notes ?? "") != (workout.notes ?? "") { return false }
+            let existingCategoryIDs = Set((existing.categories ?? []).map(\.id))
+            let newCategoryIDs = Set((workout.categories ?? []).map(\.id))
+            if existingCategoryIDs != newCategoryIDs { return false }
+            let existingSubcategoryIDs = Set((existing.subcategories ?? []).map(\.id))
+            let newSubcategoryIDs = Set((workout.subcategories ?? []).map(\.id))
+            if existingSubcategoryIDs != newSubcategoryIDs { return false }
+            return true
+        }
+    }
+
+    private func saveWorkout(_ workout: Workout) {
+        modelContext.insert(workout)
+        do {
+            try modelContext.save()
+            dismiss()
+        } catch {
+            isSaving = false
         }
     }
 }

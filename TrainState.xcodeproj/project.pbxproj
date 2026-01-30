@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9E4572802F2CA20200A77E4F /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 9E45727F2F2CA20200A77E4F /* RevenueCat */; };
+		9E4572822F2CA20200A77E4F /* RevenueCatUI in Frameworks */ = {isa = PBXBuildFile; productRef = 9E4572812F2CA20200A77E4F /* RevenueCatUI */; };
 		9EA946AD2E0149810079B5BC /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EA946AC2E0149810079B5BC /* StoreKit.framework */; };
 /* End PBXBuildFile section */
 
@@ -70,7 +72,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9E4572802F2CA20200A77E4F /* RevenueCat in Frameworks */,
 				9EA946AD2E0149810079B5BC /* StoreKit.framework in Frameworks */,
+				9E4572822F2CA20200A77E4F /* RevenueCatUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -140,6 +144,8 @@
 			);
 			name = TrainState;
 			packageProductDependencies = (
+				9E45727F2F2CA20200A77E4F /* RevenueCat */,
+				9E4572812F2CA20200A77E4F /* RevenueCatUI */,
 			);
 			productName = TrainState;
 			productReference = 9E77B6F72DD1C6A0009B5253 /* TrainState.app */;
@@ -223,6 +229,9 @@
 			);
 			mainGroup = 9E77B6EE2DD1C6A0009B5253;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9E45727E2F2CA20200A77E4F /* XCRemoteSwiftPackageReference "purchases-ios" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9E77B6F82DD1C6A0009B5253 /* Products */;
 			projectDirPath = "";
@@ -610,6 +619,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		9E45727E2F2CA20200A77E4F /* XCRemoteSwiftPackageReference "purchases-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/RevenueCat/purchases-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.56.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9E45727F2F2CA20200A77E4F /* RevenueCat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9E45727E2F2CA20200A77E4F /* XCRemoteSwiftPackageReference "purchases-ios" */;
+			productName = RevenueCat;
+		};
+		9E4572812F2CA20200A77E4F /* RevenueCatUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9E45727E2F2CA20200A77E4F /* XCRemoteSwiftPackageReference "purchases-ios" */;
+			productName = RevenueCatUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 9E77B6EF2DD1C6A0009B5253 /* Project object */;
 }

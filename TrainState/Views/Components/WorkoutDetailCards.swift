@@ -23,15 +23,9 @@ struct WorkoutDetailHeaderCard: View {
                         .font(.title2.weight(.bold))
                         .foregroundStyle(.primary)
                     
-                    if let hkName = workout.hkActivityTypeName {
-                        Text(hkName)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(DateFormatHelper.friendlyDateTime(workout.startDate))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(DateFormatHelper.friendlyDateTime(workout.startDate))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
                 
                 Spacer()

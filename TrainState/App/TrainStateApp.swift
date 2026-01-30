@@ -1,3 +1,4 @@
+import RevenueCat
 import SwiftUI
 import SwiftData
 
@@ -6,6 +7,11 @@ struct TrainStateApp: App {
     let modelContainer: ModelContainer
     
     init() {
+        #if DEBUG
+        Purchases.logLevel = .debug
+        #endif
+        Purchases.configure(withAPIKey: "appl_xnTHZbPZoGFCkflYbEVudRpmSUo")
+        
         // Use persistent storage with clean database setup
         do {
             print("[App] Initializing with persistent storage")
@@ -24,7 +30,8 @@ struct TrainStateApp: App {
             let config = ModelConfiguration(
                 schema: schema,
                 url: storeURL,
-                allowsSave: true
+                allowsSave: true,
+                cloudKitDatabase: .none
             )
             modelContainer = try ModelContainer(for: schema, configurations: config)
             print("[App] Successfully initialized persistent ModelContainer")

@@ -6,7 +6,5 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
-	<key>NSHealthShareUsageDescription</key>
-	<string>TrainState needs access to your workout data to import and analyze your fitness activities. This data stays on your device and is not shared with any third parties.</string>
 </dict>
 </plist>

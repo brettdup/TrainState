@@ -1,8 +1,7 @@
 import Foundation
 import CloudKit
 import SwiftData
-import UniformTypeIdentifiers
-import Compression
+import UIKit
 
 class CloudKitManager {
     static let shared = CloudKitManager()
@@ -28,8 +27,6 @@ class CloudKitManager {
         }
         
         privateDatabase = container.privateCloudDatabase
-        
-        print("[DISABLED] CloudKit operations completely disabled to prevent data usage")
     }
     
     // MARK: - State Management
@@ -47,81 +44,196 @@ class CloudKitManager {
         }
     }
     
-    // MARK: - Disabled Operations
-    
+    // MARK: - Backup/Restore
+
     func backupToCloud(context: ModelContext) async throws {
-        print("[DISABLED] CloudKit backup completely disabled to prevent data usage")
+        setSyncState(true)
+        defer { setSyncState(false) }
 
-        await NetworkManager.shared.refreshNetworkStatus()
-
-        // Additional network protection check
-        if !NetworkManager.shared.isSafeToUseData {
-            let networkStatus = NetworkManager.shared.statusDescription
-            print("[CloudKit] Blocking operation - not on WiFi (current: \(networkStatus))")
-            throw NetworkProtectionError.cellularDataBlocked
+        let status = try await container.accountStatus()
+        guard status == .available else {
+            throw NSError(domain: "CloudKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "iCloud account is not available."])
         }
-        
-        throw NSError(domain: "CloudKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "CloudKit disabled to prevent data usage"])
+
+        updateDebug("Preparing backup...")
+        let payload = try exportPayload(context: context)
+        let data = try JSONEncoder.iso8601.encode(payload)
+
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("TrainState-Backup-\(UUID().uuidString).json")
+        try data.write(to: tempURL, options: [.atomic])
+        let asset = CKAsset(fileURL: tempURL)
+
+        let record = CKRecord(recordType: "Backup")
+        record["name"] = "Backup \(Date().formatted(date: .abbreviated, time: .shortened))" as CKRecordValue
+        record["timestamp"] = Date() as CKRecordValue
+        record["deviceName"] = UIDevice.current.name as CKRecordValue
+        record["workoutCount"] = payload.workouts.count as CKRecordValue
+        record["categoryCount"] = payload.categories.count as CKRecordValue
+        record["subcategoryCount"] = payload.subcategories.count as CKRecordValue
+        record["assignedSubcategoryCount"] = payload.subcategories.filter { $0.categoryId != nil }.count as CKRecordValue
+        record["archive"] = asset
+
+        updateDebug("Uploading to iCloud...")
+        _ = try await privateDatabase.save(record)
+
+        try? FileManager.default.removeItem(at: tempURL)
+        updateDebug("Backup complete.")
     }
     
     func fetchAvailableBackups() async throws -> [BackupInfo] {
-        print("[DISABLED] CloudKit fetch completely disabled to prevent data usage")
-
-        await NetworkManager.shared.refreshNetworkStatus()
-
-        // Additional network protection check
-        if !NetworkManager.shared.isSafeToUseData {
-            let networkStatus = NetworkManager.shared.statusDescription
-            print("[CloudKit] Blocking operation - not on WiFi (current: \(networkStatus))")
-            throw NetworkProtectionError.cellularDataBlocked
+        let status = try await container.accountStatus()
+        guard status == .available else {
+            throw NSError(domain: "CloudKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "iCloud account is not available."])
         }
-        
-        return []
+
+        let query = CKQuery(recordType: "Backup", predicate: NSPredicate(value: true))
+        query.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
+
+        let result = try await privateDatabase.records(matching: query)
+        let records = result.matchResults.compactMap { try? $0.1.get() }
+
+        return records.compactMap { record in
+            guard
+                let name = record["name"] as? String,
+                let date = record["timestamp"] as? Date,
+                let workoutCount = record["workoutCount"] as? Int,
+                let categoryCount = record["categoryCount"] as? Int,
+                let subcategoryCount = record["subcategoryCount"] as? Int
+            else { return nil }
+
+            let deviceName = (record["deviceName"] as? String) ?? "Device"
+            let assignedSubcategoryCount = (record["assignedSubcategoryCount"] as? Int) ?? 0
+
+            return BackupInfo(
+                id: record.recordID.recordName,
+                name: name,
+                date: date,
+                workoutCount: workoutCount,
+                categoryCount: categoryCount,
+                subcategoryCount: subcategoryCount,
+                recordName: record.recordID.recordName,
+                deviceName: deviceName,
+                timestamp: date,
+                assignedSubcategoryCount: assignedSubcategoryCount
+            )
+        }
     }
     
     func restoreFromCloud(backupInfo: BackupInfo, context: ModelContext) async throws {
-        print("[DISABLED] CloudKit restore completely disabled to prevent data usage")
+        setSyncState(true)
+        defer { setSyncState(false) }
 
-        await NetworkManager.shared.refreshNetworkStatus()
-
-        // Additional network protection check
-        if !NetworkManager.shared.isSafeToUseData {
-            let networkStatus = NetworkManager.shared.statusDescription
-            print("[CloudKit] Blocking operation - not on WiFi (current: \(networkStatus))")
-            throw NetworkProtectionError.cellularDataBlocked
+        let status = try await container.accountStatus()
+        guard status == .available else {
+            throw NSError(domain: "CloudKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "iCloud account is not available."])
         }
-        
-        throw NSError(domain: "CloudKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "CloudKit disabled to prevent data usage"])
+
+        updateDebug("Fetching backup...")
+        let recordID = CKRecord.ID(recordName: backupInfo.recordName)
+        let record = try await privateDatabase.record(for: recordID)
+        guard let asset = record["archive"] as? CKAsset, let fileURL = asset.fileURL else {
+            throw NSError(domain: "CloudKit", code: 2, userInfo: [NSLocalizedDescriptionKey: "Backup data missing."])
+        }
+
+        updateDebug("Restoring data...")
+        let data = try Data(contentsOf: fileURL)
+        let payload = try JSONDecoder.iso8601.decode(BackupPayload.self, from: data)
+        try restorePayload(payload, context: context)
+        updateDebug("Restore complete.")
     }
     
     func checkCloudStatus() async throws -> CKAccountStatus {
-        print("[DISABLED] CloudKit status check disabled")
-
-        await NetworkManager.shared.refreshNetworkStatus()
-
-        // Additional network protection check
-        if !NetworkManager.shared.isSafeToUseData {
-            let networkStatus = NetworkManager.shared.statusDescription
-            print("[CloudKit] Blocking operation - not on WiFi (current: \(networkStatus))")
-            throw NetworkProtectionError.cellularDataBlocked
-        }
-        
-        return .noAccount
+        return try await container.accountStatus()
     }
     
     func deleteBackups(_ backups: [BackupInfo]) async throws -> [BackupInfo] {
-        print("[DISABLED] CloudKit delete disabled")
+        let recordIDs = backups.map { CKRecord.ID(recordName: $0.recordName) }
+        _ = try await privateDatabase.modifyRecords(saving: [], deleting: recordIDs)
+        return backups
+    }
+}
 
-        await NetworkManager.shared.refreshNetworkStatus()
+private struct BackupPayload: Codable {
+    let workouts: [WorkoutExport]
+    let categories: [WorkoutCategoryExport]
+    let subcategories: [WorkoutSubcategoryExport]
+}
 
-        // Additional network protection check
-        if !NetworkManager.shared.isSafeToUseData {
-            let networkStatus = NetworkManager.shared.statusDescription
-            print("[CloudKit] Blocking operation - not on WiFi (current: \(networkStatus))")
-            throw NetworkProtectionError.cellularDataBlocked
+private extension CloudKitManager {
+    func exportPayload(context: ModelContext) throws -> BackupPayload {
+        let workouts = try context.fetch(FetchDescriptor<Workout>())
+        let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
+        let subcategories = try context.fetch(FetchDescriptor<WorkoutSubcategory>())
+        return BackupPayload(
+            workouts: workouts.map(WorkoutExport.init),
+            categories: categories.map(WorkoutCategoryExport.init),
+            subcategories: subcategories.map(WorkoutSubcategoryExport.init)
+        )
+    }
+
+    func restorePayload(_ payload: BackupPayload, context: ModelContext) throws {
+        let workouts = try context.fetch(FetchDescriptor<Workout>())
+        let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
+        let subcategories = try context.fetch(FetchDescriptor<WorkoutSubcategory>())
+
+        workouts.forEach { context.delete($0) }
+        categories.forEach { context.delete($0) }
+        subcategories.forEach { context.delete($0) }
+        try context.save()
+
+        var categoryMap: [UUID: WorkoutCategory] = [:]
+        for export in payload.categories {
+            let category = WorkoutCategory(name: export.name, color: export.color, workoutType: export.workoutType)
+            category.id = export.id
+            context.insert(category)
+            categoryMap[export.id] = category
         }
-        
-        return []
+
+        var subcategoryMap: [UUID: WorkoutSubcategory] = [:]
+        for export in payload.subcategories {
+            let subcategory = WorkoutSubcategory(name: export.name)
+            subcategory.id = export.id
+            if let categoryId = export.categoryId, let category = categoryMap[categoryId] {
+                subcategory.category = category
+            }
+            context.insert(subcategory)
+            subcategoryMap[export.id] = subcategory
+        }
+
+        for export in payload.workouts {
+            let workout = Workout(
+                type: export.type,
+                startDate: export.startDate,
+                duration: export.duration,
+                calories: export.calories,
+                distance: export.distance,
+                notes: export.notes,
+                categories: export.categoryIds?.compactMap { categoryMap[$0] },
+                subcategories: export.subcategoryIds?.compactMap { subcategoryMap[$0] },
+                hkActivityTypeRaw: export.hkActivityTypeRaw
+            )
+            workout.id = export.id
+            workout.hkUUID = export.hkUUID
+            context.insert(workout)
+        }
+
+        try context.save()
+    }
+}
+
+private extension JSONEncoder {
+    static var iso8601: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+}
+
+private extension JSONDecoder {
+    static var iso8601: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }
 }
 

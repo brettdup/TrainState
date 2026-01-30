@@ -3,12 +3,15 @@ import SwiftData
 
 struct CategoryAndSubcategorySelectionView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Binding var selectedCategories: [WorkoutCategory]
     @Binding var selectedSubcategories: [WorkoutSubcategory]
     let workoutType: WorkoutType
 
     @Query private var allWorkoutCategories: [WorkoutCategory]
     @Query private var allSubcategories: [WorkoutSubcategory]
+    @State private var showingAddCategory = false
+    @State private var newCategoryName = ""
 
     var body: some View {
         NavigationStack {
@@ -49,8 +52,37 @@ struct CategoryAndSubcategorySelectionView: View {
             }
             .navigationTitle("Categories")
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingAddCategory = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $showingAddCategory) {
+                NavigationStack {
+                    Form {
+                        TextField("Category name", text: $newCategoryName)
+                    }
+                    .navigationTitle("New Category")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                newCategoryName = ""
+                                showingAddCategory = false
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Add") {
+                                addCategory()
+                            }
+                            .disabled(newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
                 }
             }
         }
@@ -83,6 +115,17 @@ struct CategoryAndSubcategorySelectionView: View {
         } else {
             selectedSubcategories.append(subcategory)
         }
+    }
+
+    private func addCategory() {
+        let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let category = WorkoutCategory(name: name, workoutType: workoutType)
+        modelContext.insert(category)
+        try? modelContext.save()
+        selectedCategories.append(category)
+        newCategoryName = ""
+        showingAddCategory = false
     }
 }
 
