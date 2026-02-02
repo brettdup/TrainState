@@ -34,6 +34,17 @@ struct DeveloperOptionsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
+
+                    NavigationLink {
+                        AppIconGenerator()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "square.grid.3x3.fill")
+                            Text("Generate App Icon")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -54,6 +54,7 @@ struct TrainStateApp: App {
             }
         }
         
+        DataInitializationManager.shared.initializeAppData(context: modelContainer.mainContext)
         print("[App] App initialization completed")
     }
     

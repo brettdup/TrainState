@@ -4,6 +4,11 @@ struct SubscriptionInfoView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var purchaseManager = PurchaseManager.shared
 
+    private var statusText: String {
+        guard purchaseManager.hasCompletedInitialPremiumCheck else { return "Checking…" }
+        return purchaseManager.hasActiveSubscription ? "Active" : "No active subscription"
+    }
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -23,7 +28,7 @@ struct SubscriptionInfoView: View {
                         Text("Status")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
-                        Text(purchaseManager.hasActiveSubscription ? "Active" : "No active subscription")
+                        Text(statusText)
                             .font(.body)
                     }
                     .padding(20)

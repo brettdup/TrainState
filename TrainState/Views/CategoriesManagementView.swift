@@ -15,7 +15,8 @@ struct CategoriesManagementView: View {
     @State private var showingPaywall = false
 
     private func canAddSubcategory(to category: WorkoutCategory) -> Bool {
-        purchaseManager.hasActiveSubscription || subcategoriesFor(category).count < PremiumLimits.freeSubcategoryPerCategoryLimit
+        guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
+        return purchaseManager.hasActiveSubscription || subcategoriesFor(category).count < PremiumLimits.freeSubcategoryPerCategoryLimit
     }
 
     var body: some View {

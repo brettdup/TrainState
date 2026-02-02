@@ -23,7 +23,8 @@ struct AddWorkoutView: View {
 
     private let quickDurations: [Double] = [15, 30, 45, 60, 90, 120]
     private var canAddWorkout: Bool {
-        purchaseManager.hasActiveSubscription || workouts.count < PremiumLimits.freeWorkoutLimit
+        guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
+        return purchaseManager.hasActiveSubscription || workouts.count < PremiumLimits.freeWorkoutLimit
     }
     private var showsDistance: Bool {
         [.running, .cycling, .swimming].contains(type)

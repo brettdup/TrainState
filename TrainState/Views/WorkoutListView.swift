@@ -12,11 +12,12 @@ struct WorkoutListView: View {
     @State private var selectedFilter: WorkoutFilter = .all
 
     private var canAddWorkout: Bool {
-        purchaseManager.hasActiveSubscription || workouts.count < PremiumLimits.freeWorkoutLimit
+        guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
+        return purchaseManager.hasActiveSubscription || workouts.count < PremiumLimits.freeWorkoutLimit
     }
 
     private var showLimitsCard: Bool {
-        !purchaseManager.hasActiveSubscription
+        purchaseManager.hasCompletedInitialPremiumCheck && !purchaseManager.hasActiveSubscription
     }
 
     var body: some View {

@@ -15,7 +15,7 @@ struct MainTabView: View {
                     Label("Calendar", systemImage: "calendar")
                 }
 
-            if purchaseManager.hasActiveSubscription {
+            if !purchaseManager.hasCompletedInitialPremiumCheck || purchaseManager.hasActiveSubscription {
                 AnalyticsView()
                     .tabItem {
                         Label("Analytics", systemImage: "chart.bar")

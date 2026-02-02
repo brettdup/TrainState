@@ -17,6 +17,8 @@ class PurchaseManager: ObservableObject {
     @Published private(set) var isLoadingProducts = false
     @Published private(set) var productLoadError: Error?
     @Published private(set) var debugLog: String = ""
+    /// True once the initial customer info fetch has completed. Use to avoid flashing "not premium" before status is known.
+    @Published private(set) var hasCompletedInitialPremiumCheck = false
     
     var hasActiveSubscription: Bool {
         #if DEBUG
@@ -52,6 +54,7 @@ class PurchaseManager: ObservableObject {
             await self.loadProducts()
             print("PurchaseManager: Updating purchased products...")
             await self.updatePurchasedProducts()
+            self.hasCompletedInitialPremiumCheck = true
         }
     }
     

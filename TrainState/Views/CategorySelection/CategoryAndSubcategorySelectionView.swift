@@ -21,11 +21,13 @@ struct CategoryAndSubcategorySelectionView: View {
     @State private var showingPaywall = false
 
     private var canAddCategory: Bool {
-        purchaseManager.hasActiveSubscription || allWorkoutCategories.count < PremiumLimits.freeCategoryLimit
+        guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
+        return purchaseManager.hasActiveSubscription || allWorkoutCategories.count < PremiumLimits.freeCategoryLimit
     }
 
     private func canAddSubcategory(to category: WorkoutCategory) -> Bool {
-        purchaseManager.hasActiveSubscription || subcategoriesFor(category).count < PremiumLimits.freeSubcategoryPerCategoryLimit
+        guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
+        return purchaseManager.hasActiveSubscription || subcategoriesFor(category).count < PremiumLimits.freeSubcategoryPerCategoryLimit
     }
 
     var body: some View {

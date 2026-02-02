@@ -7,9 +7,63 @@ class DataInitializationManager {
     
     private init() {}
     
-    /// No longer initializes default categories - users create their own
+    private struct DefaultCategorySeed {
+        let name: String
+        let color: String
+        let workoutType: WorkoutType
+        let subcategories: [String]
+    }
+
+    private let defaultCategorySeeds: [DefaultCategorySeed] = [
+        DefaultCategorySeed(
+            name: "Push",
+            color: "#FF6B6B",
+            workoutType: .strength,
+            subcategories: ["Chest", "Shoulders"]
+        ),
+        DefaultCategorySeed(
+            name: "Pull",
+            color: "#4ECDC4",
+            workoutType: .strength,
+            subcategories: ["Back", "Biceps"]
+        ),
+        DefaultCategorySeed(
+            name: "Endurance",
+            color: "#45B7D1",
+            workoutType: .running,
+            subcategories: ["Easy Run", "Tempo"]
+        )
+    ]
+
+    /// Initializes starter categories/subcategories for new installs so users can test quickly.
     func initializeDefaultDataIfNeeded(context: ModelContext) {
-        print("Default category initialization disabled - users will create their own categories")
+        let descriptor = FetchDescriptor<WorkoutCategory>()
+
+        do {
+            let existingCategories = try context.fetch(descriptor)
+            guard existingCategories.isEmpty else {
+                return
+            }
+
+            for seed in defaultCategorySeeds {
+                let category = WorkoutCategory(
+                    name: seed.name,
+                    color: seed.color,
+                    workoutType: seed.workoutType
+                )
+                context.insert(category)
+
+                for subcategoryName in seed.subcategories {
+                    let subcategory = WorkoutSubcategory(name: subcategoryName, category: category)
+                    context.insert(subcategory)
+                }
+            }
+
+            try context.save()
+            print("Initialized default categories for first launch")
+        } catch {
+            print("Error initializing default categories: \(error)")
+        }
     }
     
 
