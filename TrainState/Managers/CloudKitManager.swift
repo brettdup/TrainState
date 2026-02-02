@@ -5,6 +5,9 @@ import UIKit
 
 class CloudKitManager {
     static let shared = CloudKitManager()
+
+    /// Maximum number of iCloud backups to retain. Oldest backups are deleted when exceeded.
+    static let maxBackupCount = 3
     
     // Debug properties
     @Published var isLoading = false
@@ -77,6 +80,14 @@ class CloudKitManager {
         _ = try await privateDatabase.save(record)
 
         try? FileManager.default.removeItem(at: tempURL)
+
+        // Enforce max backup limit: delete oldest when exceeding limit
+        let allBackups = try await fetchAvailableBackups()
+        if allBackups.count > Self.maxBackupCount {
+            let toDelete = Array(allBackups.dropFirst(Self.maxBackupCount))
+            _ = try await deleteBackups(toDelete)
+        }
+
         updateDebug("Backup complete.")
     }
     
@@ -92,7 +103,7 @@ class CloudKitManager {
         let result = try await privateDatabase.records(matching: query)
         let records = result.matchResults.compactMap { try? $0.1.get() }
 
-        return records.compactMap { record in
+        var backups = records.compactMap { record -> BackupInfo? in
             guard
                 let name = record["name"] as? String,
                 let date = record["timestamp"] as? Date,
@@ -117,6 +128,15 @@ class CloudKitManager {
                 assignedSubcategoryCount: assignedSubcategoryCount
             )
         }
+
+        // Enforce max backup limit: delete oldest when exceeding limit
+        if backups.count > Self.maxBackupCount {
+            let toDelete = Array(backups.dropFirst(Self.maxBackupCount))
+            _ = try await deleteBackups(toDelete)
+            backups = Array(backups.prefix(Self.maxBackupCount))
+        }
+
+        return backups
     }
     
     func restoreFromCloud(backupInfo: BackupInfo, context: ModelContext) async throws {

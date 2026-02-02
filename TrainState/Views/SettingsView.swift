@@ -29,6 +29,8 @@ struct SettingsView: View {
     @State private var cloudStatusText = "Checking iCloud..."
     @State private var showPaywall = false
     @State private var isResettingWorkouts = false
+    @State private var backupToRestore: BackupInfo?
+    @State private var backupToDelete: BackupInfo?
 
     var body: some View {
         NavigationStack {
@@ -71,6 +73,42 @@ struct SettingsView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(errorMessage)
+            }
+            .alert("Restore Backup", isPresented: Binding(
+                get: { backupToRestore != nil },
+                set: { if !$0 { backupToRestore = nil } }
+            )) {
+                Button("Restore") {
+                    if let backup = backupToRestore {
+                        backupToRestore = nil
+                        Task { await restoreBackup(backup) }
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    backupToRestore = nil
+                }
+            } message: {
+                if let backup = backupToRestore {
+                    Text("This will replace all current workouts, categories, and subcategories with \"\(backup.name)\" (\(backup.workoutCount) workouts). This cannot be undone.")
+                }
+            }
+            .alert("Delete Backup", isPresented: Binding(
+                get: { backupToDelete != nil },
+                set: { if !$0 { backupToDelete = nil } }
+            )) {
+                Button("Delete", role: .destructive) {
+                    if let backup = backupToDelete {
+                        backupToDelete = nil
+                        Task { await deleteBackup(backup) }
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    backupToDelete = nil
+                }
+            } message: {
+                if let backup = backupToDelete {
+                    Text("Are you sure you want to delete \"\(backup.name)\"? This backup cannot be recovered.")
+                }
             }
             .sheet(isPresented: $showPaywall) {
                 if let offering = purchaseManager.offerings?.current {
@@ -148,21 +186,23 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        HStack(spacing: 12) {
+                        Menu {
                             Button {
-                                Task { await restoreBackup(backup) }
+                                backupToRestore = backup
                             } label: {
-                                Image(systemName: "arrow.clockwise")
+                                Label("Restore", systemImage: "arrow.clockwise")
                             }
-                            .buttonStyle(.plain)
                             .disabled(isRestoring)
                             Button(role: .destructive) {
-                                Task { await deleteBackup(backup) }
+                                backupToDelete = backup
                             } label: {
-                                Image(systemName: "trash")
+                                Label("Delete", systemImage: "trash")
                             }
-                            .buttonStyle(.plain)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
                         }
+                        .buttonStyle(.plain)
                     }
                     .padding(.vertical, 8)
                 }
@@ -300,7 +340,7 @@ struct SettingsView: View {
             NavigationLink {
                 SubcategoryLastLoggedView()
             } label: {
-                SettingsRow(icon: "list.bullet", title: "Subcategory Activity")
+                SettingsRow(icon: "calendar.badge.clock", title: "Last Trained")
             }
 
             Button(role: .destructive) {

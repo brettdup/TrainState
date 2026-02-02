@@ -23,7 +23,7 @@ struct WorkoutTypeHelper {
         case .running: .blue
         case .cycling: .green
         case .swimming: .cyan
-        case .other: .orange
+        case .other: .purple
         }
     }
 }

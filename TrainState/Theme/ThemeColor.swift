@@ -98,6 +98,6 @@ struct ThemeColor {
     }
     
     static func workoutOther() -> Color {
-        Color.gray
+        Color.purple
     }
 }

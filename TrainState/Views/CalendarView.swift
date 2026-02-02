@@ -21,10 +21,11 @@ struct CalendarView: View {
             .ignoresSafeArea()
 
             ScrollView {
-                LazyVStack(spacing: 16) {
-                    weekNavigatorCard
-                    weekSummaryCard
-                    ForEach(weekDays, id: \.self) { day in
+                GlassEffectContainerWrapper(spacing: 16) {
+                    LazyVStack(spacing: 16) {
+                        weekNavigatorCard
+                        weekSummaryCard
+                        ForEach(weekDays, id: \.self) { day in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(sectionHeaderTitle(for: day))
                                 .font(.headline)
@@ -57,6 +58,7 @@ struct CalendarView: View {
                             }
                         }
                     }
+                }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 16)

@@ -127,7 +127,7 @@ enum WorkoutType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .cardio:
             return .red
         case .other:
-            return .gray
+            return .purple
         }
     }
 }

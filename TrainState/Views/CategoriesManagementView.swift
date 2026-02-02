@@ -14,6 +14,20 @@ struct CategoriesManagementView: View {
     @State private var subcategoryParentCategory: WorkoutCategory?
     @State private var showingPaywall = false
 
+    private var groupedCategories: [(id: String, title: String, categories: [WorkoutCategory])] {
+        let grouped = Dictionary(grouping: categories) { $0.workoutType }
+        var sections: [(id: String, title: String, categories: [WorkoutCategory])] = WorkoutType.allCases.compactMap { type in
+            guard let items = grouped[type], !items.isEmpty else { return nil }
+            return (id: type.rawValue, title: type.rawValue, categories: items.sorted { $0.name < $1.name })
+        }
+
+        if let uncategorized = grouped[nil], !uncategorized.isEmpty {
+            sections.append((id: "unspecified", title: "Unspecified", categories: uncategorized.sorted { $0.name < $1.name }))
+        }
+
+        return sections
+    }
+
     private func canAddSubcategory(to category: WorkoutCategory) -> Bool {
         guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
         return purchaseManager.hasActiveSubscription || subcategoriesFor(category).count < PremiumLimits.freeSubcategoryPerCategoryLimit
@@ -38,49 +52,58 @@ struct CategoriesManagementView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    ForEach(categories) { category in
-                        DisclosureGroup(isExpanded: Binding(
-                            get: { expandedCategoryId == category.id },
-                            set: { expandedCategoryId = $0 ? category.id : nil }
-                        )) {
-                            ForEach(subcategoriesFor(category)) { sub in
-                                HStack(spacing: 8) {
-                                    Image(systemName: "arrow.turn.down.right")
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                    Text(sub.name)
-                                        .font(.subheadline)
-                                }
-                                .padding(.vertical, 4)
-                            }
-                            Button {
-                                if canAddSubcategory(to: category) {
-                                    subcategoryParentCategory = category
-                                    newSubcategoryName = ""
-                                    showingAddSubcategory = true
-                                } else {
-                                    Task {
-                                        await purchaseManager.loadProducts()
-                                        await purchaseManager.updatePurchasedProducts()
-                                        showingPaywall = true
+                    ForEach(groupedCategories, id: \.id) { section in
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(section.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 4)
+
+                            ForEach(section.categories) { category in
+                                DisclosureGroup(isExpanded: Binding(
+                                    get: { expandedCategoryId == category.id },
+                                    set: { expandedCategoryId = $0 ? category.id : nil }
+                                )) {
+                                    ForEach(subcategoriesFor(category)) { sub in
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "arrow.turn.down.right")
+                                                .font(.caption2)
+                                                .foregroundStyle(.tertiary)
+                                            Text(sub.name)
+                                                .font(.subheadline)
+                                        }
+                                        .padding(.vertical, 4)
+                                    }
+                                    Button {
+                                        if canAddSubcategory(to: category) {
+                                            subcategoryParentCategory = category
+                                            newSubcategoryName = ""
+                                            showingAddSubcategory = true
+                                        } else {
+                                            Task {
+                                                await purchaseManager.loadProducts()
+                                                await purchaseManager.updatePurchasedProducts()
+                                                showingPaywall = true
+                                            }
+                                        }
+                                    } label: {
+                                        Label("Add Subcategory", systemImage: "plus.circle")
+                                            .font(.subheadline)
+                                    }
+                                    .buttonStyle(.plain)
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Circle()
+                                            .fill(Color(hex: category.color) ?? .gray)
+                                            .frame(width: 10, height: 10)
+                                        Text(category.name)
+                                            .font(.headline)
                                     }
                                 }
-                            } label: {
-                                Label("Add Subcategory", systemImage: "plus.circle")
-                                    .font(.subheadline)
-                            }
-                            .buttonStyle(.plain)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(Color(hex: category.color) ?? .gray)
-                                    .frame(width: 10, height: 10)
-                                Text(category.name)
-                                    .font(.headline)
+                                .padding(20)
+                                .glassCard(cornerRadius: 32)
                             }
                         }
-                        .padding(20)
-                        .glassCard(cornerRadius: 32)
                     }
                 }
                 .padding(.horizontal, 20)

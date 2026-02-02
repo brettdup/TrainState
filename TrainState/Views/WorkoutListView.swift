@@ -6,6 +6,7 @@ struct WorkoutListView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
     @Query private var categories: [WorkoutCategory]
+    @Query private var subcategories: [WorkoutSubcategory]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var showingAddWorkout = false
     @State private var showingPaywall = false
@@ -36,16 +37,26 @@ struct WorkoutListView: View {
 
                 if groupedVisibleWorkouts.isEmpty {
                     ScrollView {
-                        VStack(spacing: 24) {
-                            ContentUnavailableView {
-                                Label("No Workouts", systemImage: "figure.run")
-                            } description: {
-                                Text("Tap + to log your first workout.")
-                            }
-                            .padding(.top, 40)
+                        GlassEffectContainerWrapper(spacing: 24) {
+                            VStack(spacing: 24) {
+                                ContentUnavailableView {
+                                    Label("No Workouts", systemImage: "figure.run")
+                                } description: {
+                                    Text("Tap + to log your first workout.")
+                                }
+                                .padding(.top, 40)
 
-                            if showLimitsCard {
-                                limitsCard
+                                if !subcategories.isEmpty {
+                                    NavigationLink {
+                                        SubcategoryLastLoggedView()
+                                    } label: {
+                                        lastTrainedCard
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                if showLimitsCard {
+                                    limitsCard
+                                }
                             }
                         }
                         .padding(.horizontal, 16)
@@ -53,26 +64,36 @@ struct WorkoutListView: View {
                     }
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 16) {
-                            if showLimitsCard {
-                                limitsCard
-                            }
-                            summaryCard
-                            ForEach(groupedVisibleWorkouts, id: \.date) { entry in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(sectionHeaderTitle(for: entry.date))
-                                        .font(.headline)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.horizontal, 4)
+                        GlassEffectContainerWrapper(spacing: 16) {
+                            LazyVStack(spacing: 16) {
+                                if showLimitsCard {
+                                    limitsCard
+                                }
+                                summaryCard
+                                if !subcategories.isEmpty {
+                                    NavigationLink {
+                                        SubcategoryLastLoggedView()
+                                    } label: {
+                                        lastTrainedCard
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                ForEach(groupedVisibleWorkouts, id: \.date) { entry in
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(sectionHeaderTitle(for: entry.date))
+                                            .font(.headline)
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 4)
 
-                                    ForEach(entry.items, id: \.id) { workout in
-                                        NavigationLink {
-                                            WorkoutDetailView(workout: workout)
-                                        } label: {
-                                            WorkoutRowView(workout: workout)
-                                                .contentShape(Rectangle())
+                                        ForEach(entry.items, id: \.id) { workout in
+                                            NavigationLink {
+                                                WorkoutDetailView(workout: workout)
+                                            } label: {
+                                                WorkoutRowView(workout: workout)
+                                                    .contentShape(Rectangle())
+                                            }
+                                            .buttonStyle(.plain)
                                         }
-                                        .buttonStyle(.plain)
                                     }
                                 }
                             }
@@ -206,6 +227,27 @@ struct WorkoutListView: View {
                     .font(.headline)
             }
             Spacer()
+        }
+        .padding(16)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var lastTrainedCard: some View {
+        HStack {
+            Image(systemName: "calendar.badge.clock")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Last Trained")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text("When you last trained legs, push, pull…")
+                    .font(.headline)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
         .padding(16)
         .glassCard(cornerRadius: 32)
