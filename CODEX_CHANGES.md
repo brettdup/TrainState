@@ -14,3 +14,8 @@
 - Goal: improve consistency/performance of Liquid Glass rendering and reduce staggered card load behavior.
 - Rule update: confirm the changes log exists; create it if missing.
 - Made Liquid Glass cards interactive by default in `TrainState/Views/Components/LiquidGlass.swift` so card surfaces feel more reactive.
+- Added weekly iCloud backup reminder flow in `TrainState/Views/MainTabView.swift`:
+  - checks when app becomes active,
+  - prompts only if last backup is older than 7 days (or no backup exists),
+  - rate-limits prompts to at most once per week.
+- Updated `TrainState/Views/SettingsView.swift` to persist the timestamp of a successful backup for reminder fallback logic.
