@@ -130,3 +130,23 @@ extension View {
         self.background(shape.fill(style))
     }
 }
+
+#Preview {
+    StaticGradientBackground(colors: [.blue.opacity(0.25), .mint.opacity(0.2)])
+        .overlay {
+            VStack(spacing: 16) {
+                OptimizedText("Performance Components", font: .headline)
+                PerformantCardView {
+                    HStack(spacing: 10) {
+                        OptimizedIcon("bolt.fill", color: .yellow)
+                        Text("Sample card content")
+                        OptimizedSpacer()
+                    }
+                    .padding(16)
+                }
+                Button("Tap me") {}
+                    .buttonStyle(LightweightButtonStyle())
+            }
+            .padding()
+        }
+}

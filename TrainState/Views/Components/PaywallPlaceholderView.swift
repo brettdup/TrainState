@@ -40,3 +40,7 @@ struct PaywallPlaceholderView: View {
         }
     }
 }
+
+#Preview {
+    PaywallPlaceholderView(onDismiss: {})
+}

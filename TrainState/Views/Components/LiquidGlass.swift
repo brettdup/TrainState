@@ -28,21 +28,26 @@ struct GlassEffectContainerWrapper<Content: View>: View {
 struct GlassCardModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     var cornerRadius: CGFloat
+    var isInteractive: Bool
 
-    init(cornerRadius: CGFloat = 32) {
+    init(cornerRadius: CGFloat = 32, isInteractive: Bool = true) {
         self.cornerRadius = cornerRadius
+        self.isInteractive = isInteractive
     }
 
     func body(content: Content) -> some View {
         Group {
             if #available(iOS 26, *) {
+                let glassStyle = isInteractive
+                    ? Glass.regular.tint(.white.opacity(0.22)).interactive()
+                    : Glass.regular.tint(.white.opacity(0.22))
                 content
-                    .glassEffect(.regular.tint(.white.opacity(0.22)), in: .rect(cornerRadius: cornerRadius))
+                    .glassEffect(glassStyle, in: .rect(cornerRadius: cornerRadius))
             } else {
                 content
                     .background(
                         RoundedRectangle(cornerRadius: cornerRadius)
-                            .fill(colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground))
+                            .fill(.ultraThinMaterial)
                             .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.06), radius: 10, x: 0, y: 3)
                     )
             }
@@ -52,8 +57,8 @@ struct GlassCardModifier: ViewModifier {
 
 extension View {
     /// Applies Liquid Glass styling on iOS 26+, material fallback on earlier versions.
-    func glassCard(cornerRadius: CGFloat = 32) -> some View {
-        modifier(GlassCardModifier(cornerRadius: cornerRadius))
+    func glassCard(cornerRadius: CGFloat = 32, isInteractive: Bool = true) -> some View {
+        modifier(GlassCardModifier(cornerRadius: cornerRadius, isInteractive: isInteractive))
     }
 
     /// Wraps content in GlassEffectContainer on iOS 26+ to improve glass rendering performance
@@ -62,4 +67,21 @@ extension View {
         GlassEffectContainerWrapper(spacing: spacing) { self }
     }
 
+}
+
+#Preview {
+    VStack(spacing: 16) {
+        Text("Glass Preview")
+            .font(.headline)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .glassCard(cornerRadius: 24)
+
+        Text("Secondary card")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .glassCard(cornerRadius: 24, isInteractive: false)
+    }
+    .padding()
+    .glassEffectContainer(spacing: 16)
 }

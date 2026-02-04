@@ -138,6 +138,28 @@ class CloudKitManager {
 
         return backups
     }
+
+    func fetchBackupPreview(backupInfo: BackupInfo) async throws -> BackupPreview {
+        let status = try await container.accountStatus()
+        guard status == .available else {
+            throw NSError(domain: "CloudKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "iCloud account is not available."])
+        }
+
+        let recordID = CKRecord.ID(recordName: backupInfo.recordName)
+        let record = try await privateDatabase.record(for: recordID)
+        guard let asset = record["archive"] as? CKAsset, let fileURL = asset.fileURL else {
+            throw NSError(domain: "CloudKit", code: 2, userInfo: [NSLocalizedDescriptionKey: "Backup data missing."])
+        }
+
+        let data = try Data(contentsOf: fileURL)
+        let payload = try JSONDecoder.iso8601.decode(BackupPayload.self, from: data)
+        return BackupPreview(
+            info: backupInfo,
+            workouts: payload.workouts,
+            categories: payload.categories,
+            subcategories: payload.subcategories
+        )
+    }
     
     func restoreFromCloud(backupInfo: BackupInfo, context: ModelContext) async throws {
         setSyncState(true)
@@ -177,17 +199,26 @@ private struct BackupPayload: Codable {
     let workouts: [WorkoutExport]
     let categories: [WorkoutCategoryExport]
     let subcategories: [WorkoutSubcategoryExport]
+    let exerciseTemplates: [SubcategoryExerciseExport]
 }
 
 private extension CloudKitManager {
     func exportPayload(context: ModelContext) throws -> BackupPayload {
+        // Ensure newly created/edited categories and subcategories are persisted
+        // before reading a backup snapshot.
+        if context.hasChanges {
+            try context.save()
+        }
+
         let workouts = try context.fetch(FetchDescriptor<Workout>())
         let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
         let subcategories = try context.fetch(FetchDescriptor<WorkoutSubcategory>())
+        let templates = try context.fetch(FetchDescriptor<SubcategoryExercise>())
         return BackupPayload(
             workouts: workouts.map(WorkoutExport.init),
             categories: categories.map(WorkoutCategoryExport.init),
-            subcategories: subcategories.map(WorkoutSubcategoryExport.init)
+            subcategories: subcategories.map(WorkoutSubcategoryExport.init),
+            exerciseTemplates: templates.map(SubcategoryExerciseExport.init)
         )
     }
 
@@ -195,10 +226,12 @@ private extension CloudKitManager {
         let workouts = try context.fetch(FetchDescriptor<Workout>())
         let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
         let subcategories = try context.fetch(FetchDescriptor<WorkoutSubcategory>())
+        let templates = try context.fetch(FetchDescriptor<SubcategoryExercise>())
 
         workouts.forEach { context.delete($0) }
         categories.forEach { context.delete($0) }
         subcategories.forEach { context.delete($0) }
+        templates.forEach { context.delete($0) }
         try context.save()
 
         var categoryMap: [UUID: WorkoutCategory] = [:]
@@ -216,6 +249,13 @@ private extension CloudKitManager {
             subcategory.id = export.id
             context.insert(subcategory)
             subcategoryMap[export.id] = subcategory
+        }
+
+        for export in payload.exerciseTemplates {
+            guard let subcategoryId = export.subcategoryId, let subcategory = subcategoryMap[subcategoryId] else { continue }
+            let template = SubcategoryExercise(name: export.name, subcategory: subcategory, orderIndex: export.orderIndex)
+            template.id = export.id
+            context.insert(template)
         }
 
         for export in payload.workouts {
@@ -273,6 +313,14 @@ struct BackupInfo: Identifiable, Codable {
     var formattedDate: String {
         date.formatted(date: .abbreviated, time: .shortened)
     }
+}
+
+struct BackupPreview: Identifiable {
+    var id: String { info.id }
+    let info: BackupInfo
+    let workouts: [WorkoutExport]
+    let categories: [WorkoutCategoryExport]
+    let subcategories: [WorkoutSubcategoryExport]
 }
 
 // Note: WorkoutExport, WorkoutCategoryExport, and WorkoutSubcategoryExport 

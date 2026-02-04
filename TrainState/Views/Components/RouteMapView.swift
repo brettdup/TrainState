@@ -83,4 +83,18 @@ struct IdentifiableLocation: Identifiable {
     let id = UUID()
     let coordinate: CLLocationCoordinate2D
     let isStart: Bool
-} 
+}
+
+#Preview {
+    let route = [
+        CLLocation(latitude: 37.7749, longitude: -122.4194),
+        CLLocation(latitude: 37.7760, longitude: -122.4172),
+        CLLocation(latitude: 37.7772, longitude: -122.4148),
+        CLLocation(latitude: 37.7785, longitude: -122.4127)
+    ]
+
+    return RouteMapView(route: route)
+        .frame(height: 260)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding()
+}

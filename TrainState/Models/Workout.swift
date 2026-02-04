@@ -239,4 +239,18 @@ struct WorkoutSubcategoryExport: Codable {
         self.name = subcategory.name
         self.categoryId = subcategory.category?.id
     }
-} 
+}
+
+struct SubcategoryExerciseExport: Codable {
+    let id: UUID
+    let name: String
+    let orderIndex: Int
+    let subcategoryId: UUID?
+
+    init(template: SubcategoryExercise) {
+        self.id = template.id
+        self.name = template.name
+        self.orderIndex = template.orderIndex
+        self.subcategoryId = template.subcategory?.id
+    }
+}

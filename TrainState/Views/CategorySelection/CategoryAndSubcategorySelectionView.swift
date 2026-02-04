@@ -259,6 +259,7 @@ struct CategoryAndSubcategorySelectionView: View {
         let sub = WorkoutSubcategory(name: name, category: category)
         modelContext.insert(sub)
         try? modelContext.save()
+        DataInitializationManager.shared.initializeDefaultExerciseTemplatesIfNeeded(context: modelContext)
         selectedSubcategories.append(sub)
         newSubcategoryName = ""
         showingAddSubcategory = false

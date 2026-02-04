@@ -46,14 +46,16 @@ struct CalendarView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .glassCard(cornerRadius: 32)
                             } else {
-                                ForEach(dayWorkouts, id: \.id) { workout in
-                                    NavigationLink {
-                                        WorkoutDetailView(workout: workout)
-                                    } label: {
-                                        CalendarWorkoutRow(workout: workout)
-                                            .contentShape(Rectangle())
+                                VStack(spacing: 12) {
+                                    ForEach(dayWorkouts, id: \.id) { workout in
+                                        NavigationLink {
+                                            WorkoutDetailView(workout: workout)
+                                        } label: {
+                                            CalendarWorkoutRow(workout: workout)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
                         }

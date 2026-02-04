@@ -5,6 +5,23 @@
 - If this file is missing, recreate it before completing work.
 
 ## 2026-02-04
+- Removed `ExerciseEntryCardView` entirely and migrated `LiveStrengthSessionView` to the same sheet-based `ExerciseEditorSheetView` flow used in add/edit screens.
+- Switched `AddWorkoutView` to use `ExerciseEditorSheetView` for editing/adding exercises (sheet-based flow with row tap + add-and-open behavior), aligning it with `EditWorkoutView`.
+- Added missing SwiftUI previews across all view files under `TrainState/Views`, including key screens/components such as `EditWorkoutView`, `LiveStrengthSessionView`, `ExerciseEntryCardView`, `WorkoutDetailCards`, and supporting component/layout files.
+- Adjusted Slide Pad launcher layout in `ExerciseEditorSheetView` from grid to a vertical card list, keeping the card styling while improving scan/read flow.
+- Refined Slide Pad launch UI in `ExerciseEditorSheetView` by replacing list-like metric rows with tappable metric cards (grid layout) for a cleaner, less list-heavy opening interaction.
+- Simplified exercise metrics UX to Slide Pad only and added haptic feedback on metric open/adjust/clear actions in `TrainState/Views/Components/ExerciseEditorSheetView.swift`; removed input-style toggles from `TrainState/Views/SettingsView.swift` and `TrainState/Models/UserSettings.swift`.
+- Added a new `Slide Pad` metric input mode with a slide-up bottom sheet (+/- controls and clear) for Sets/Reps/Weight in `TrainState/Views/Components/ExerciseEditorSheetView.swift`, and exposed it in input-style options (`TrainState/Models/UserSettings.swift`).
+- Added toggleable Sets/Reps/Weight input modes (Keyboard, Stepper, Quick Picks) with in-editor and Settings controls, backed by `@AppStorage("exerciseInputStyle")`, in `TrainState/Views/Components/ExerciseEditorSheetView.swift`, `TrainState/Views/SettingsView.swift`, and `TrainState/Models/UserSettings.swift`.
+- Updated `ExerciseEditorSheetView` to a dropdown-first exercise flow: users now pick from previous options first and explicitly choose `New Exercise...` to type a custom name.
+- Added default exercise template seeding so every subcategory has at least 5 exercises (idempotent, no duplicate names), implemented in `TrainState/Managers/DataInitializationManager.swift` and triggered on app init plus new subcategory creation in `TrainState/Views/CategoriesManagementView.swift` and `TrainState/Views/CategorySelection/CategoryAndSubcategorySelectionView.swift`.
+- Added SwiftUI previews for `ExerciseEditorSheetView` (empty and filled states) with local sample subcategories/options in `TrainState/Views/Components/ExerciseEditorSheetView.swift`.
+- Fixed `ExerciseEditorSheetView` section initializer compatibility by switching the Details block to explicit `Section { ... } header: { ... } footer: { ... }` syntax.
+- Simplified `ExerciseEditorSheetView` to native SwiftUI form patterns (`Form`, `Section`, `Picker`, `LabeledContent`) and removed remaining custom card wrappers for a cleaner, less janky editor experience.
+- Smoothed `ExerciseEditorSheetView` interactions by removing the extra glass container wrapper and simplifying the delete action to a standard bordered destructive button in `TrainState/Views/Components/ExerciseEditorSheetView.swift`.
+- Redesigned `ExerciseEditorSheetView` in `TrainState/Views/Components/ExerciseEditorSheetView.swift` into a modern card-based editor with a clearer hierarchy (header status, exercise setup, template chips, responsive metric inputs), while keeping existing save/delete behavior and numeric bindings intact.
+- Fixed stacked workout card collisions in `TrainState/Views/WorkoutListView.swift` by adding explicit vertical spacing (`VStack(spacing: 12)`) between workouts inside each day section so multiple same-day cards no longer touch/glitch.
+- Applied the same stacked-card spacing fix in `TrainState/Views/CalendarView.swift` (`VStack(spacing: 12)` inside each day with workouts) to prevent same-day workout cards from touching/glitching there as well.
 - Fixed Liquid Glass card styling in `TrainState/Views/Components/LiquidGlass.swift` by adding optional interactive glass support and switching the pre-iOS-26 fallback to `ultraThinMaterial`.
 - Wrapped multi-card scroll stacks with `GlassEffectContainer` via `.glassEffectContainer(...)` in:
   - `TrainState/Views/AddWorkoutView.swift`
@@ -19,3 +36,96 @@
   - prompts only if last backup is older than 7 days (or no backup exists),
   - rate-limits prompts to at most once per week.
 - Updated `TrainState/Views/SettingsView.swift` to persist the timestamp of a successful backup for reminder fallback logic.
+- Added a `View Details` action for each backup in `TrainState/Views/SettingsView.swift`, with a details alert (name/date/device/counts) so backups can be inspected before restore/delete.
+- Replaced backup details alert with actual backup data viewing:
+  - added `CloudKitManager.fetchBackupPreview(backupInfo:)` and `BackupPreview` model in `TrainState/Managers/CloudKitManager.swift`,
+  - added `View Backup Data` action in `TrainState/Views/SettingsView.swift`,
+  - added a `BackupPreviewSheet` that shows real categories, subcategories, and per-workout data from the backup archive JSON.
+- Fixed workout type chip label overflow for “Strength Training” by allowing two-line centered labels in:
+  - `TrainState/Views/AddWorkoutView.swift`
+  - `TrainState/Views/EditWorkoutView.swift`
+- Added extra inner horizontal padding to workout type chips so labels sit further from chip edges in:
+  - `TrainState/Views/AddWorkoutView.swift`
+  - `TrainState/Views/EditWorkoutView.swift`
+- Added structured exercise logging for workouts (sets/reps/weight) to support lifts like Bench Press:
+  - new `ExerciseLogEntry` model struct in `TrainState/Models/ExerciseLogEntry.swift`,
+  - new Exercises sections in `TrainState/Views/AddWorkoutView.swift` and `TrainState/Views/EditWorkoutView.swift`,
+  - saved exercises into `WorkoutExercise` records when creating/editing workouts.
+- Added exercise display to workout details in `TrainState/Views/WorkoutDetailView.swift`.
+- Rebuilt `TrainState/Views/AnalyticsView.swift` with:
+  - weekly goals (editable workout + minutes targets),
+  - streaks (current/best daily and weekly goal streak),
+  - personal best tracking (top set + estimated 1RM by exercise),
+  - smart PR opportunities (near-PR lifts),
+  - adaptive plan recommendations (undertrained subcategories over the last 14 days).
+- Linked exercises to subcategories end-to-end:
+  - added `WorkoutExercise.subcategory` relation in `TrainState/Models/WorkoutExercise.swift`,
+  - added inverse `WorkoutSubcategory.exercises` relation in `TrainState/Models/WorkoutSubcategory.swift`,
+  - added `subcategoryID` in `TrainState/Models/ExerciseLogEntry.swift`.
+- Made exercise entry UX smarter in add/edit workout flows:
+  - `Linked Subcategory` picker per exercise row,
+  - quick-add chips sourced from selected workout subcategories,
+  - auto-fill exercise name from linked subcategory when empty.
+- Added linked subcategory display in workout details for retroactive verification.
+- Added live strength session flow in `TrainState/Views/AddWorkoutView.swift`:
+  - `Start Strength Session` button starts a timed workout session,
+  - users can add exercises while session is active,
+  - `Finish & Save Workout` saves with auto-calculated session duration,
+  - includes a `Cancel Session` action to discard active timing.
+- Added a dedicated full-screen live strength session view so sessions are harder to close accidentally:
+  - new `TrainState/Views/LiveStrengthSessionView.swift` with `.interactiveDismissDisabled(true)`,
+  - launched from `TrainState/Views/AddWorkoutView.swift` via `fullScreenCover`,
+  - supports in-session exercise logging, quick-add, subcategory linking, finish+save, and explicit discard.
+- Added strength logging mode choice in `TrainState/Views/AddWorkoutView.swift`:
+  - `Manual` mode (classic fill-and-save),
+  - `Live` mode (dedicated full-screen session).
+- Enforced subcategory-linked exercise logging:
+  - exercise rows are added through subcategory-based add menus,
+  - save/finish is blocked if any logged exercise lacks a subcategory link,
+  - removed the explicit “No Link” picker option in add/edit/live exercise editors.
+- Improved “Add Exercise” UX:
+  - replaced blank add with `Add Exercise` menu sourced from available subcategories,
+  - clearer prompts when no subcategories are available yet.
+- Refined add-exercise UI to feel more modern in:
+  - `TrainState/Views/AddWorkoutView.swift`
+  - `TrainState/Views/EditWorkoutView.swift`
+  - `TrainState/Views/LiveStrengthSessionView.swift`
+  - replaced old menu-style add control with a prominent `Custom` capsule action,
+  - upgraded quick-add subcategory chips with icon + glassy chip styling,
+  - improved empty-state helper copy for quick-add availability.
+- Added exercise management in category viewer:
+  - new `SubcategoryExercise` model in `TrainState/Models/SubcategoryExercise.swift`,
+  - `CategoriesManagementView` now lets users expand subcategories and add/delete managed exercises,
+  - add-exercise sheets now attach exercises to a specific subcategory.
+- Wired managed exercises into logging:
+  - quick-add chips in add/edit/live workout flows now pull from subcategory exercise templates (with fallback to subcategory name).
+- Updated persistence/backup coverage:
+  - added `SubcategoryExercise` to app schema in `TrainState/App/TrainStateApp.swift`,
+  - added backup export/restore for exercise templates in `TrainState/Managers/CloudKitManager.swift` and `TrainState/Models/Workout.swift`.
+- Updated exercise entry UX to list-first selection with explicit set/rep/weight prompts:
+  - added reusable `ExerciseOptionPickerView` in `TrainState/Views/Components/ExerciseOptionPickerView.swift`,
+  - add/edit/live workout flows now add exercises from a selectable list (not freeform-first),
+  - exercise rows now clearly label inputs: `Sets`, `Reps`, and `Weight (kg)`,
+  - row exercise name is now selected from list menus to keep linking consistent.
+- Adjusted exercise flow to match category -> subcategory -> exercise hierarchy:
+  - exercise rows now choose `Subcategory` first, then `Exercise` list filtered by that subcategory,
+  - add-exercise now seeds from currently selected subcategory templates instead of generic list pickers,
+  - modernized per-row layout while keeping explicit numeric prompts (`Sets`, `Reps`, `Weight (kg)`).
+- Refined again per feedback:
+  - removed modal list-first add flow from add/edit/live,
+  - kept hierarchy inline in each exercise row (`Subcategory` then `Exercise`),
+  - add button now inserts a pre-seeded row based on the selected category/subcategory context.
+- UX follow-up fixes:
+  - enabled direct typing/renaming of exercise names in add/edit exercise rows,
+  - removed horizontal scrolling quick-duration chips in add/edit by switching to wrapped grids.
+- Additional fixes:
+  - constrained exercise row layouts to avoid accidental horizontal panning in add/edit/live views,
+  - new/renamed workout exercises now persist as subcategory exercise templates on save (for reuse in future workouts).
+- UI polish updates:
+  - moved exercise name input to its own full-width line in add/edit/live exercise editors,
+  - added bottom `Edit Workout` action button in `TrainState/Views/WorkoutDetailView.swift`.
+- Compatibility fix:
+  - gated `.buttonStyle(.glassProminent)` behind iOS 26 availability in `TrainState/Views/WorkoutDetailView.swift` with a styled fallback button for earlier iOS versions.
+- Completed the modern exercise-entry refresh in the live session flow:
+  - replaced the old `LiveExerciseEntryEditor` with shared `ExerciseEntryCardView` in `TrainState/Views/LiveStrengthSessionView.swift`,
+  - removed the legacy local live editor implementation so add/edit/live now use one consistent modern card UI.

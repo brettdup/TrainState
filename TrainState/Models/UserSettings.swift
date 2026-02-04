@@ -34,4 +34,4 @@ final class UserSettings {
 enum MeasurementSystem: String, Codable {
     case metric
     case imperial
-} 
+}

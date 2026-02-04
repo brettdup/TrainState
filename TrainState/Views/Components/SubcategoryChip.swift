@@ -51,3 +51,10 @@ struct SubcategoryChip: View {
         .shadow(color: color.opacity(0.1), radius: 4, y: 2)
     }
 }
+
+#Preview {
+    let strength = WorkoutCategory(name: "Strength", color: "#34C759", workoutType: .strength)
+    let chest = WorkoutSubcategory(name: "Chest", category: strength)
+    return SubcategoryChip(subcategory: chest)
+        .padding()
+}

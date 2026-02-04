@@ -85,14 +85,16 @@ struct WorkoutListView: View {
                                             .foregroundStyle(.secondary)
                                             .padding(.horizontal, 4)
 
-                                        ForEach(entry.items, id: \.id) { workout in
-                                            NavigationLink {
-                                                WorkoutDetailView(workout: workout)
-                                            } label: {
-                                                WorkoutRowView(workout: workout)
-                                                    .contentShape(Rectangle())
+                                        VStack(spacing: 12) {
+                                            ForEach(entry.items, id: \.id) { workout in
+                                                NavigationLink {
+                                                    WorkoutDetailView(workout: workout)
+                                                } label: {
+                                                    WorkoutRowView(workout: workout)
+                                                        .contentShape(Rectangle())
+                                                }
+                                                .buttonStyle(.plain)
                                             }
-                                            .buttonStyle(.plain)
                                         }
                                     }
                                 }

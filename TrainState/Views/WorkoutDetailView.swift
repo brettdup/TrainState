@@ -31,10 +31,15 @@ struct WorkoutDetailView: View {
                         statsCard
                     }
                     categoriesCard
+                    if let exercises = workout.exercises, !exercises.isEmpty {
+                        exercisesCard(exercises)
+                    }
                     if let notes = workout.notes, !notes.isEmpty {
                         notesCard(notes)
                     }
+                    editWorkoutButton
                 }
+                .glassEffectContainer(spacing: 24)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
             }
@@ -47,6 +52,12 @@ struct WorkoutDetailView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
+                    NavigationLink {
+                        EditWorkoutView(workout: workout)
+                    } label: {
+                        Label("Edit Workout", systemImage: "pencil")
+                    }
+
                     Button(role: .destructive) {
                         showingDeleteConfirmation = true
                     } label: {
@@ -167,6 +178,85 @@ struct WorkoutDetailView: View {
         .glassCard(cornerRadius: 32)
     }
 
+    @ViewBuilder
+    private var editWorkoutButton: some View {
+        if #available(iOS 26, *) {
+            NavigationLink {
+                EditWorkoutView(workout: workout)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "pencil")
+                    Text("Edit Workout")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+            }
+            .buttonStyle(.glassProminent)
+        } else {
+            NavigationLink {
+                EditWorkoutView(workout: workout)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "pencil")
+                    Text("Edit Workout")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Color.accentColor)
+                )
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func exercisesCard(_ exercises: [WorkoutExercise]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Exercises")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 10) {
+                ForEach(exercises.sorted(by: { $0.orderIndex < $1.orderIndex }), id: \.id) { exercise in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(exercise.name)
+                            .font(.body.weight(.semibold))
+                        Spacer()
+                        Text(exerciseStatLine(for: exercise))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let subcategory = exercise.subcategory {
+                        Text("Linked: \(subcategory.name)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private func exerciseStatLine(for exercise: WorkoutExercise) -> String {
+        var parts: [String] = []
+        if let sets = exercise.sets, sets > 0 {
+            parts.append("\(sets) sets")
+        }
+        if let reps = exercise.reps, reps > 0 {
+            parts.append("\(reps) reps")
+        }
+        if let weight = exercise.weight, weight > 0 {
+            parts.append(String(format: "%.1f kg", weight))
+        }
+        return parts.isEmpty ? "Logged" : parts.joined(separator: " • ")
+    }
+
     private var categoriesSummary: String {
         let catNames = selectedCategories.map(\.name)
         let subNames = selectedSubcategories.map(\.name)
@@ -212,7 +302,7 @@ private struct StatTile: View {
 
 #Preview {
     let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-    let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, configurations: config)
+    let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, configurations: config)
     let context = container.mainContext
 
     let endurance = WorkoutCategory(name: "Endurance", color: "#FFEAA7", workoutType: .running)

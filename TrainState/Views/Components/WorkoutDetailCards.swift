@@ -520,3 +520,36 @@ private struct ExerciseRow: View {
         )
     }
 }
+
+#Preview("Workout Detail Cards") {
+    let strength = WorkoutCategory(name: "Strength", color: "#34C759", workoutType: .strength)
+    let chest = WorkoutSubcategory(name: "Chest", category: strength)
+    let workout = Workout(
+        type: .strength,
+        startDate: .now,
+        duration: 3600,
+        distance: nil,
+        categories: [strength],
+        subcategories: [chest]
+    )
+    let exercise = WorkoutExercise(
+        name: "Bench Press",
+        sets: 4,
+        reps: 8,
+        weight: 80,
+        orderIndex: 0,
+        subcategory: chest
+    )
+    workout.exercises = [exercise]
+    workout.notes = "Felt strong today."
+
+    return ScrollView {
+        VStack(spacing: 16) {
+            WorkoutDetailHeaderCard(workout: workout)
+            WorkoutDetailCategoriesCard(workout: workout, onEditTapped: {})
+            WorkoutDetailExercisesCard(exercises: workout.exercises ?? [])
+            WorkoutDetailNotesCard(notes: workout.notes ?? "")
+        }
+        .padding(.vertical, 16)
+    }
+}

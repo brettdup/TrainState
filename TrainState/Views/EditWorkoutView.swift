@@ -1,28 +1,25 @@
 import SwiftUI
 import SwiftData
-import RevenueCatUI
 
-struct AddWorkoutView: View {
+struct EditWorkoutView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
-    @Query private var workouts: [Workout]
     @Query(sort: \WorkoutSubcategory.name) private var allSubcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
-    @StateObject private var purchaseManager = PurchaseManager.shared
-    @State private var type: WorkoutType = .other
-    @State private var date = Date()
-    @State private var durationMinutes = 30.0
-    @State private var distanceKilometers = 0.0
-    @State private var notes = ""
-    @State private var selectedCategories: [WorkoutCategory] = []
-    @State private var selectedSubcategories: [WorkoutSubcategory] = []
-    @State private var exerciseEntries: [ExerciseLogEntry] = []
-    @State private var strengthEntryMode: StrengthEntryMode = .manual
-    @State private var showingLiveStrengthSession = false
+    @Bindable var workout: Workout
+
+    @State private var type: WorkoutType
+    @State private var date: Date
+    @State private var durationMinutes: Double
+    @State private var distanceKilometers: Double
+    @State private var notes: String
+    @State private var selectedCategories: [WorkoutCategory]
+    @State private var selectedSubcategories: [WorkoutSubcategory]
+    @State private var exerciseEntries: [ExerciseLogEntry]
     @State private var showingCategoryPicker = false
+    @State private var showingExercisePicker = false
     @State private var activeExerciseSelection: ExerciseEditorSelection?
-    @State private var showingPaywall = false
     @State private var isSaving = false
     @State private var showingExerciseLinkAlert = false
 
@@ -39,15 +36,8 @@ struct AddWorkoutView: View {
             set: { distanceKilometers = min(max($0, 0), 200) }
         )
     }
-    private var canAddWorkout: Bool {
-        guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
-        return purchaseManager.hasActiveSubscription || workouts.count < PremiumLimits.freeWorkoutLimit
-    }
     private var showsDistance: Bool {
         [.running, .cycling, .swimming].contains(type)
-    }
-    private var isStrengthSessionType: Bool {
-        type == .strength
     }
     private var availableExerciseSubcategories: [WorkoutSubcategory] {
         if !selectedSubcategories.isEmpty { return selectedSubcategories }
@@ -70,53 +60,64 @@ struct AddWorkoutView: View {
         return options
     }
 
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+    init(workout: Workout) {
+        self.workout = workout
+        _type = State(initialValue: workout.type)
+        _date = State(initialValue: workout.startDate)
+        _durationMinutes = State(initialValue: workout.duration / 60)
+        _distanceKilometers = State(initialValue: workout.distance ?? 0)
+        _notes = State(initialValue: workout.notes ?? "")
+        _selectedCategories = State(initialValue: workout.categories ?? [])
+        _selectedSubcategories = State(initialValue: workout.subcategories ?? [])
+        _exerciseEntries = State(initialValue: (workout.exercises ?? [])
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map {
+                ExerciseLogEntry(
+                    name: $0.name,
+                    sets: $0.sets,
+                    reps: $0.reps,
+                    weight: $0.weight,
+                    subcategoryID: $0.subcategory?.id
                 )
-                .ignoresSafeArea()
+            })
+    }
 
-                ScrollView {
-                    VStack(spacing: 20) {
-                        typeCard
-                        dateCard
-                        if isStrengthSessionType {
-                            strengthModeCard
-                        }
-                        if !isStrengthSessionType || strengthEntryMode == .manual {
-                            durationCard
-                        }
-                        if showsDistance { distanceCard }
-                        categoriesCard
-                        if !isStrengthSessionType || strengthEntryMode == .manual {
-                            exercisesCard
-                        } else {
-                            liveSessionInfoCard
-                        }
-                        notesCard
-                        saveButton
-                    }
-                    .glassEffectContainer(spacing: 20)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
-                    .padding(.bottom, 40)
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
+                    Color(.systemBackground)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 20) {
+                    typeCard
+                    dateCard
+                    durationCard
+                    if showsDistance { distanceCard }
+                    categoriesCard
+                    exercisesCard
+                    notesCard
+                    saveButton
                 }
+                .glassEffectContainer(spacing: 20)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 24)
+                .padding(.bottom, 40)
             }
-            .navigationTitle("New Workout")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+        }
+        .navigationTitle("Edit Workout")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
             }
         }
         .sheet(isPresented: $showingCategoryPicker) {
@@ -126,11 +127,12 @@ struct AddWorkoutView: View {
                 workoutType: type
             )
         }
-        .sheet(isPresented: $showingPaywall) {
-            if let offering = purchaseManager.offerings?.current {
-                PaywallView(offering: offering)
-            } else {
-                PaywallPlaceholderView(onDismiss: { showingPaywall = false })
+        .sheet(isPresented: $showingExercisePicker) {
+            ExerciseOptionPickerView(
+                options: quickAddOptions,
+                subcategories: availableExerciseSubcategories
+            ) { option in
+                addExercise(from: option)
             }
         }
         .sheet(item: $activeExerciseSelection) { selection in
@@ -140,7 +142,7 @@ struct AddWorkoutView: View {
                     availableSubcategories: availableExerciseSubcategories,
                     availableOptions: quickAddOptions,
                     onDelete: {
-                        exerciseEntries.removeAll { $0.id == selection.id }
+                        exerciseEntries.remove(at: index)
                     }
                 )
             } else {
@@ -151,21 +153,6 @@ struct AddWorkoutView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("Each exercise must be linked to a subcategory before saving.")
-        }
-        .fullScreenCover(isPresented: $showingLiveStrengthSession) {
-            LiveStrengthSessionView(
-                typeTintColor: type.tintColor,
-                availableSubcategories: availableExerciseSubcategories,
-                quickAddOptions: quickAddOptions,
-                initialEntries: exerciseEntries
-            ) { completedEntries, startedAt, duration in
-                exerciseEntries = completedEntries
-                date = startedAt
-                durationMinutes = duration / 60.0
-                saveStrengthWorkout(startDate: startedAt, duration: duration, entries: completedEntries)
-            } onCancel: { draftEntries in
-                exerciseEntries = draftEntries
-            }
         }
         .onChange(of: type) { _, _ in
             selectedCategories.removeAll()
@@ -181,16 +168,9 @@ struct AddWorkoutView: View {
             if type == .strength && exerciseEntries.isEmpty {
                 exerciseEntries = [defaultExerciseEntry()]
             }
-            if type != .strength {
-                strengthEntryMode = .manual
-            }
-        }
-        .onAppear {
-            if type == .strength && exerciseEntries.isEmpty {
-                exerciseEntries = [defaultExerciseEntry()]
-            }
         }
         .onChange(of: activeExerciseSelection) { _, newValue in
+            // When leaving the editor page, clean up any fully empty exercises
             if newValue == nil {
                 exerciseEntries.removeAll { $0.isEmpty }
             }
@@ -205,7 +185,7 @@ struct AddWorkoutView: View {
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(WorkoutType.allCases) { workoutType in
-                    TypeOptionButton(
+                    EditTypeOptionButton(
                         type: workoutType,
                         isSelected: type == workoutType
                     ) {
@@ -274,38 +254,6 @@ struct AddWorkoutView: View {
 
                 Spacer()
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassCard(cornerRadius: 32)
-    }
-
-    private var strengthModeCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Strength Mode")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Picker("Strength Mode", selection: $strengthEntryMode) {
-                ForEach(StrengthEntryMode.allCases, id: \.self) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassCard(cornerRadius: 32)
-    }
-
-    private var liveSessionInfoCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Live Strength Session")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Text("Use a dedicated live screen so the session can't be dismissed by accident. You can leave and return to the app while it runs.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
@@ -391,10 +339,66 @@ struct AddWorkoutView: View {
                 .buttonStyle(.plain)
             }
 
+            if !quickAddOptions.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Quick add from your templates")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(quickAddOptions) { option in
+                                Button {
+                                    addExercise(from: option)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "bolt.fill")
+                                            .font(.caption2)
+                                        Text(option.name)
+                                            .font(.caption.weight(.semibold))
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        Capsule()
+                                            .fill(type.tintColor.opacity(0.18))
+                                    )
+                                    .foregroundStyle(type.tintColor)
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            Button {
+                                showingExercisePicker = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "line.3.horizontal.decrease.circle")
+                                        .font(.caption2)
+                                    Text("Browse all")
+                                        .font(.caption.weight(.semibold))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule()
+                                        .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
             if exerciseEntries.isEmpty {
-                Text("Add sets/reps/weight to track lifts like Bench Press and calculate personal bests.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No exercises yet")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Use quick-add chips above or add a custom exercise to start tracking sets, reps, and weight.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 VStack(spacing: 12) {
                     ForEach(exerciseEntries) { entry in
@@ -436,10 +440,36 @@ struct AddWorkoutView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Button {
+                addAndEditNewExercise()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Add custom exercise")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.04))
+                        )
+                )
+            }
+            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .background(
+            RoundedRectangle(cornerRadius: 32)
+                .fill(Color(.systemBackground).opacity(colorScheme == .dark ? 0.9 : 0.96))
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08), radius: 12, x: 0, y: 6)
+        )
     }
 
     private var notesCard: some View {
@@ -460,49 +490,42 @@ struct AddWorkoutView: View {
     private var saveButton: some View {
         Button {
             guard !isSaving else { return }
-            guard canAddWorkout else {
-                Task {
-                    await purchaseManager.loadProducts()
-                    await purchaseManager.updatePurchasedProducts()
-                    showingPaywall = true
-                }
-                return
-            }
-            if isStrengthSessionType && strengthEntryMode == .live {
-                showingLiveStrengthSession = true
-                return
-            }
             guard !hasUnlinkedExercises(exerciseEntries) else {
                 showingExerciseLinkAlert = true
                 return
             }
             isSaving = true
             persistExerciseTemplates(from: exerciseEntries)
-            let workout = Workout(
-                type: type,
-                startDate: date,
-                duration: durationMinutes * 60,
-                distance: showsDistance && distanceKilometers > 0 ? distanceKilometers : nil,
-                notes: notes.isEmpty ? nil : notes,
-                categories: selectedCategories,
-                subcategories: selectedSubcategories,
-                exercises: exerciseEntries
-                    .enumerated()
-                    .compactMap { index, entry in
-                        let name = entry.trimmedName
-                        guard !name.isEmpty else { return nil }
-                        let linkedSubcategory = allSubcategories.first { $0.id == entry.subcategoryID }
-                        return WorkoutExercise(
-                            name: name,
-                            sets: entry.sets,
-                            reps: entry.reps,
-                            weight: entry.weight,
-                            orderIndex: index,
-                            subcategory: linkedSubcategory
-                        )
-                    }
-            )
-            saveWorkout(workout)
+
+            workout.type = type
+            workout.startDate = date
+            workout.duration = durationMinutes * 60
+            workout.distance = showsDistance && distanceKilometers > 0 ? distanceKilometers : nil
+            let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+            workout.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+            workout.categories = selectedCategories
+            workout.subcategories = selectedSubcategories
+            (workout.exercises ?? []).forEach { modelContext.delete($0) }
+            workout.exercises = exerciseEntries.enumerated().compactMap { index, entry in
+                let name = entry.trimmedName
+                guard !name.isEmpty else { return nil }
+                let linkedSubcategory = allSubcategories.first { $0.id == entry.subcategoryID }
+                return WorkoutExercise(
+                    name: name,
+                    sets: entry.sets,
+                    reps: entry.reps,
+                    weight: entry.weight,
+                    orderIndex: index,
+                    subcategory: linkedSubcategory
+                )
+            }
+
+            do {
+                try modelContext.save()
+                dismiss()
+            } catch {
+                isSaving = false
+            }
         } label: {
             HStack(spacing: 12) {
                 if isSaving {
@@ -512,7 +535,7 @@ struct AddWorkoutView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 20))
                 }
-                Text(saveButtonTitle)
+                Text(isSaving ? "Saving..." : "Save Changes")
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
@@ -527,15 +550,6 @@ struct AddWorkoutView: View {
         .disabled(isSaving)
     }
 
-    private var saveButtonTitle: String {
-        if isSaving { return "Saving..." }
-        if !canAddWorkout { return "Upgrade to Add More" }
-        if isStrengthSessionType {
-            return strengthEntryMode == .live ? "Start Live Session" : "Save Workout"
-        }
-        return "Save Workout"
-    }
-
     private var categoriesSummary: String {
         var parts: [String] = []
         if !selectedCategories.isEmpty {
@@ -547,49 +561,6 @@ struct AddWorkoutView: View {
         return parts.isEmpty ? "Select Categories" : parts.joined(separator: " · ")
     }
 
-    private func saveWorkout(_ workout: Workout) {
-        modelContext.insert(workout)
-        do {
-            try modelContext.save()
-            dismiss()
-        } catch {
-            isSaving = false
-        }
-    }
-
-    private func saveStrengthWorkout(startDate: Date, duration: TimeInterval, entries: [ExerciseLogEntry]) {
-        guard !hasUnlinkedExercises(entries) else {
-            showingExerciseLinkAlert = true
-            return
-        }
-        guard !isSaving else { return }
-        isSaving = true
-        persistExerciseTemplates(from: entries)
-        let workout = Workout(
-            type: .strength,
-            startDate: startDate,
-            duration: duration,
-            distance: nil,
-            notes: notes.isEmpty ? nil : notes,
-            categories: selectedCategories,
-            subcategories: selectedSubcategories,
-            exercises: entries.enumerated().compactMap { index, entry in
-                let name = entry.trimmedName
-                guard !name.isEmpty else { return nil }
-                let linkedSubcategory = allSubcategories.first { $0.id == entry.subcategoryID }
-                return WorkoutExercise(
-                    name: name,
-                    sets: entry.sets,
-                    reps: entry.reps,
-                    weight: entry.weight,
-                    orderIndex: index,
-                    subcategory: linkedSubcategory
-                )
-            }
-        )
-        saveWorkout(workout)
-    }
-
     private func hasUnlinkedExercises(_ entries: [ExerciseLogEntry]) -> Bool {
         entries.contains { !$0.trimmedName.isEmpty && $0.subcategoryID == nil }
     }
@@ -598,6 +569,26 @@ struct AddWorkoutView: View {
         let newEntry = defaultExerciseEntry()
         exerciseEntries.append(newEntry)
         activeExerciseSelection = ExerciseEditorSelection(id: newEntry.id)
+    }
+
+    private func addExercise(from option: ExerciseQuickAddOption) {
+        let newEntry = ExerciseLogEntry(
+            name: option.name,
+            sets: nil,
+            reps: nil,
+            weight: nil,
+            subcategoryID: option.subcategoryID
+        )
+        exerciseEntries.append(newEntry)
+    }
+
+    private func defaultExerciseEntry() -> ExerciseLogEntry {
+        guard let firstSubcategory = availableExerciseSubcategories.first else { return ExerciseLogEntry() }
+        let templates = quickAddOptions.filter { $0.subcategoryID == firstSubcategory.id }.map(\.name)
+        return ExerciseLogEntry(
+            name: templates.first ?? "",
+            subcategoryID: firstSubcategory.id
+        )
     }
 
     private func exerciseSummary(for entry: ExerciseLogEntry) -> String? {
@@ -644,31 +635,9 @@ struct AddWorkoutView: View {
             try? modelContext.save()
         }
     }
-
-    private func defaultExerciseEntry() -> ExerciseLogEntry {
-        guard let firstSubcategory = availableExerciseSubcategories.first else { return ExerciseLogEntry() }
-        let templates = quickAddOptions.filter { $0.subcategoryID == firstSubcategory.id }.map(\.name)
-        return ExerciseLogEntry(
-            name: templates.first ?? "",
-            subcategoryID: firstSubcategory.id
-        )
-    }
 }
 
-private enum StrengthEntryMode: String, CaseIterable {
-    case manual
-    case live
-
-    var title: String {
-        switch self {
-        case .manual: return "Manual"
-        case .live: return "Live"
-        }
-    }
-}
-
-// MARK: - Type Option Button
-private struct TypeOptionButton: View {
+private struct EditTypeOptionButton: View {
     let type: WorkoutType
     let isSelected: Bool
     let action: () -> Void
@@ -701,6 +670,44 @@ private struct TypeOptionButton: View {
 }
 
 #Preview {
-    AddWorkoutView()
-        .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, SubcategoryExercise.self], inMemory: true)
+    let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+    let container = try! ModelContainer(
+        for: Workout.self,
+        WorkoutCategory.self,
+        WorkoutSubcategory.self,
+        WorkoutExercise.self,
+        SubcategoryExercise.self,
+        configurations: config
+    )
+    let context = container.mainContext
+
+    let strength = WorkoutCategory(name: "Strength", color: "#34C759", workoutType: .strength)
+    context.insert(strength)
+    let chest = WorkoutSubcategory(name: "Chest", category: strength)
+    context.insert(chest)
+    let back = WorkoutSubcategory(name: "Back", category: strength)
+    context.insert(back)
+
+    context.insert(SubcategoryExercise(name: "Bench Press", subcategory: chest, orderIndex: 0))
+    context.insert(SubcategoryExercise(name: "Incline Press", subcategory: chest, orderIndex: 1))
+    context.insert(SubcategoryExercise(name: "Barbell Row", subcategory: back, orderIndex: 0))
+
+    let workout = Workout(
+        type: .strength,
+        startDate: .now,
+        duration: 3600,
+        distance: nil,
+        categories: [strength],
+        subcategories: [chest]
+    )
+    workout.notes = "Focus on controlled reps."
+    workout.exercises = [
+        WorkoutExercise(name: "Bench Press", sets: 4, reps: 8, weight: 80, orderIndex: 0, subcategory: chest)
+    ]
+    context.insert(workout)
+
+    return NavigationStack {
+        EditWorkoutView(workout: workout)
+    }
+    .modelContainer(container)
 }

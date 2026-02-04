@@ -14,6 +14,7 @@ final class WorkoutExercise {
     
     @Relationship(inverse: \Workout.exercises)
     var workout: Workout?
+    var subcategory: WorkoutSubcategory?
     
     init(
         name: String,
@@ -22,7 +23,8 @@ final class WorkoutExercise {
         weight: Double? = nil,
         notes: String? = nil,
         orderIndex: Int = 0,
-        workout: Workout? = nil
+        workout: Workout? = nil,
+        subcategory: WorkoutSubcategory? = nil
     ) {
         self.id = UUID()
         self.name = name
@@ -32,6 +34,6 @@ final class WorkoutExercise {
         self.notes = notes
         self.orderIndex = orderIndex
         self.workout = workout
+        self.subcategory = subcategory
     }
 }
-

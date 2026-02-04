@@ -40,3 +40,14 @@ struct WorkoutListView_Simple: View {
         }
     }
 }
+
+#Preview {
+    let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+    let container = try! ModelContainer(for: Workout.self, configurations: config)
+    let context = container.mainContext
+    context.insert(Workout(type: .running, startDate: .now, duration: 2400, distance: 5200))
+    context.insert(Workout(type: .strength, startDate: .now.addingTimeInterval(-86400), duration: 3600, distance: nil))
+
+    return WorkoutListView_Simple()
+        .modelContainer(container)
+}

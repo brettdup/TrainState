@@ -81,9 +81,6 @@
             isEnabled = "YES">
          </AdditionalOption>
       </AdditionalOptions>
-      <StoreKitConfigurationFileReference
-         identifier = "../../TrainState/TrainState.storekit">
-      </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

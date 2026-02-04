@@ -92,4 +92,20 @@ struct WrappingHStackLayout: Layout {
             currentY += rowHeight
         }
     }
-} 
+}
+
+#Preview {
+    WrappingHStackLayout(horizontalSpacing: 8, verticalSpacing: 8) {
+        ForEach(["Push", "Pull", "Legs", "Tempo Run", "Mobility", "Intervals"], id: \.self) { item in
+            Text(item)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color.primary.opacity(0.08))
+                )
+        }
+    }
+    .padding()
+}

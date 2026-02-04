@@ -9,6 +9,10 @@ final class WorkoutSubcategory {
     // SwiftData relationships - CloudKit compatible. Subcategory MUST be linked to a category.
     var category: WorkoutCategory?
     var workouts: [Workout]? = []
+    @Relationship(inverse: \WorkoutExercise.subcategory)
+    var exercises: [WorkoutExercise]? = []
+    @Relationship(deleteRule: .cascade, inverse: \SubcategoryExercise.subcategory)
+    var exerciseTemplates: [SubcategoryExercise]? = []
 
     /// Creates a subcategory linked to its parent category. A subcategory must always belong to a category.
     init(name: String, category: WorkoutCategory) {

@@ -21,7 +21,8 @@ struct TrainStateApp: App {
                 WorkoutSubcategory.self,
                 UserSettings.self,
                 WorkoutRoute.self,
-                WorkoutExercise.self
+                WorkoutExercise.self,
+                SubcategoryExercise.self
             ])
             
             // Use persistent database that preserves all data
@@ -44,7 +45,8 @@ struct TrainStateApp: App {
                     WorkoutSubcategory.self,
                     UserSettings.self,
                     WorkoutRoute.self,
-                    WorkoutExercise.self
+                    WorkoutExercise.self,
+                    SubcategoryExercise.self
                 ])
                 let config = ModelConfiguration(isStoredInMemoryOnly: true)
                 modelContainer = try ModelContainer(for: schema, configurations: config)

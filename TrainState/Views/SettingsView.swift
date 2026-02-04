@@ -31,6 +31,8 @@ struct SettingsView: View {
     @State private var isResettingWorkouts = false
     @State private var backupToRestore: BackupInfo?
     @State private var backupToDelete: BackupInfo?
+    @State private var backupPreview: BackupPreview?
+    @State private var isLoadingBackupPreview = false
 
     var body: some View {
         NavigationStack {
@@ -56,6 +58,7 @@ struct SettingsView: View {
                         developerCard
                         legalCard
                     }
+                    .glassEffectContainer(spacing: 20)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 24)
                     .padding(.bottom, 40)
@@ -124,6 +127,9 @@ struct SettingsView: View {
                     .padding()
                 }
             }
+            .sheet(item: $backupPreview) { preview in
+                BackupPreviewSheet(preview: preview)
+            }
         }
     }
 
@@ -181,12 +187,18 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(backup.name)
                                 .font(.body.weight(.medium))
-                            Text("\(backup.workoutCount) workouts • \(backup.formattedDate)")
+                            Text("\(backup.workoutCount) workouts • \(backup.categoryCount) categories • \(backup.subcategoryCount) subcategories • \(backup.formattedDate)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Menu {
+                            Button {
+                                Task { await viewBackupData(backup) }
+                            } label: {
+                                Label("View Backup Data", systemImage: "eye")
+                            }
+                            .disabled(isLoadingBackupPreview)
                             Button {
                                 backupToRestore = backup
                             } label: {
@@ -447,6 +459,7 @@ struct SettingsView: View {
         statusMessage = "Starting backup..."
         do {
             try await CloudKitManager.shared.backupToCloud(context: modelContext)
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastSuccessfulBackupTimeInterval")
             statusMessage = "Backup complete."
             await loadBackups()
         } catch {
@@ -464,6 +477,19 @@ struct SettingsView: View {
             handleError(error)
         }
         isLoadingBackups = false
+    }
+
+    private func viewBackupData(_ backup: BackupInfo) async {
+        guard !isLoadingBackupPreview else { return }
+        isLoadingBackupPreview = true
+        statusMessage = "Loading backup data..."
+        do {
+            backupPreview = try await CloudKitManager.shared.fetchBackupPreview(backupInfo: backup)
+            statusMessage = nil
+        } catch {
+            handleError(error)
+        }
+        isLoadingBackupPreview = false
     }
 
     private func restoreBackup(_ backup: BackupInfo) async {
@@ -536,6 +562,118 @@ private struct SettingsRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+    }
+}
+
+private struct BackupPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let preview: BackupPreview
+
+    private var categoryByID: [UUID: WorkoutCategoryExport] {
+        Dictionary(uniqueKeysWithValues: preview.categories.map { ($0.id, $0) })
+    }
+
+    private var subcategoryByID: [UUID: WorkoutSubcategoryExport] {
+        Dictionary(uniqueKeysWithValues: preview.subcategories.map { ($0.id, $0) })
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Backup") {
+                    LabeledContent("Name", value: preview.info.name)
+                    LabeledContent("Date", value: preview.info.formattedDate)
+                    LabeledContent("Device", value: preview.info.deviceName)
+                    LabeledContent("Workouts", value: "\(preview.workouts.count)")
+                    LabeledContent("Categories", value: "\(preview.categories.count)")
+                    LabeledContent("Subcategories", value: "\(preview.subcategories.count)")
+                }
+
+                Section("Categories") {
+                    if preview.categories.isEmpty {
+                        Text("No categories")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(preview.categories, id: \.id) { category in
+                            Text(category.name)
+                        }
+                    }
+                }
+
+                Section("Subcategories") {
+                    if preview.subcategories.isEmpty {
+                        Text("No subcategories")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(preview.subcategories, id: \.id) { subcategory in
+                            HStack {
+                                Text(subcategory.name)
+                                Spacer()
+                                if let categoryId = subcategory.categoryId, let category = categoryByID[categoryId] {
+                                    Text(category.name)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Section("Workouts") {
+                    if preview.workouts.isEmpty {
+                        Text("No workouts")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(preview.workouts, id: \.id) { workout in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(workout.type.rawValue)
+                                    .font(.headline)
+                                Text(workout.startDate.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Text("Duration: \(formattedDuration(workout.duration))")
+                                    .font(.caption)
+                                if let distance = workout.distance {
+                                    Text(String(format: "Distance: %.2f km", distance))
+                                        .font(.caption)
+                                }
+                                let categoryNames = (workout.categoryIds ?? []).compactMap { categoryByID[$0]?.name }
+                                if !categoryNames.isEmpty {
+                                    Text("Categories: \(categoryNames.joined(separator: ", "))")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                let subcategoryNames = (workout.subcategoryIds ?? []).compactMap { subcategoryByID[$0]?.name }
+                                if !subcategoryNames.isEmpty {
+                                    Text("Subcategories: \(subcategoryNames.joined(separator: ", "))")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let notes = workout.notes, !notes.isEmpty {
+                                    Text("Notes: \(notes)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Backup Data")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func formattedDuration(_ duration: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .short
+        return formatter.string(from: duration) ?? "0m"
     }
 }
 

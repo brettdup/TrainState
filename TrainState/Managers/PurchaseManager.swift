@@ -81,6 +81,7 @@ class PurchaseManager: ObservableObject {
                     self.availablePackages = packages
                     print("PurchaseManager: Loaded \(packages.count) packages")
                     self.debugLog += "Loaded \(packages.count) packages\n"
+                    self.logLoadedPackageDetails(packages)
                 }
                 self.isLoadingProducts = false
                 continuation.resume()
@@ -179,6 +180,26 @@ class PurchaseManager: ObservableObject {
         purchasedProductIDs = info.activeSubscriptions
         debugLog += "Active subscriptions: \(info.activeSubscriptions)\n"
         debugLog += "Active entitlements: \(info.entitlements.active.keys)\n"
+    }
+
+    private func logLoadedPackageDetails(_ packages: [Package]) {
+        let expectedProductIDs = ["Premium1Month", "premium1year", "premiumlifetime"]
+        let loadedProductIDs = Set(packages.map { $0.storeProduct.productIdentifier })
+        let missing = expectedProductIDs.filter { !loadedProductIDs.contains($0) }
+
+        for package in packages {
+            let detail = "Package \(package.identifier) -> \(package.storeProduct.productIdentifier)"
+            print("PurchaseManager: \(detail)")
+            debugLog += "\(detail)\n"
+        }
+
+        if missing.isEmpty {
+            debugLog += "All expected product IDs are present.\n"
+        } else {
+            let message = "Missing expected product IDs: \(missing.joined(separator: ", "))"
+            print("PurchaseManager: \(message)")
+            debugLog += "\(message)\n"
+        }
     }
 }
 
