@@ -25,6 +25,8 @@
   - `TrainState/Views/WorkoutDetailView.swift` now shows a `Route` card with `RouteMapView` when a workout has imported route coordinates.
 - Added a dedicated route map sheet in workout details:
   - `TrainState/Views/WorkoutDetailView.swift` now supports opening a larger map in a modal sheet (`RouteMapSheetView`) from the route card (`Open Map` button or map tap).
+- Updated HealthKit menu refresh interaction in `TrainState/Views/WorkoutListView.swift`:
+  - tapping `Refresh Recent Workouts` now uses `.menuActionDismissBehavior(.disabled)` so the menu stays open while refreshing.
 - Fixed random Delete Backup alert presentation in `TrainState/Views/SettingsView.swift`:
   - replaced optional-derived alert binding (`backupToDelete != nil`) with an explicit `showDeleteBackupAlert` state,
   - now the delete modal is presented only from the backup row Delete action.

@@ -138,6 +138,7 @@ struct WorkoutListView: View {
                             } label: {
                                 Label("Refresh Recent Workouts", systemImage: "arrow.clockwise")
                             }
+                            .menuActionDismissBehavior(.disabled)
                         }
 
                         if isLoadingRecentHealthKitWorkouts {
