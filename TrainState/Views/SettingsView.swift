@@ -31,6 +31,7 @@ struct SettingsView: View {
     @State private var isResettingWorkouts = false
     @State private var backupToRestore: BackupInfo?
     @State private var backupToDelete: BackupInfo?
+    @State private var showDeleteBackupAlert = false
     @State private var backupPreview: BackupPreview?
     @State private var isLoadingBackupPreview = false
 
@@ -95,17 +96,16 @@ struct SettingsView: View {
                     Text("This will replace all current workouts, categories, and subcategories with \"\(backup.name)\" (\(backup.workoutCount) workouts). This cannot be undone.")
                 }
             }
-            .alert("Delete Backup", isPresented: Binding(
-                get: { backupToDelete != nil },
-                set: { if !$0 { backupToDelete = nil } }
-            )) {
+            .alert("Delete Backup", isPresented: $showDeleteBackupAlert) {
                 Button("Delete", role: .destructive) {
                     if let backup = backupToDelete {
+                        showDeleteBackupAlert = false
                         backupToDelete = nil
                         Task { await deleteBackup(backup) }
                     }
                 }
                 Button("Cancel", role: .cancel) {
+                    showDeleteBackupAlert = false
                     backupToDelete = nil
                 }
             } message: {
@@ -207,6 +207,7 @@ struct SettingsView: View {
                             .disabled(isRestoring)
                             Button(role: .destructive) {
                                 backupToDelete = backup
+                                showDeleteBackupAlert = true
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }

@@ -6,24 +6,30 @@ struct SubcategoryLastLoggedView: View {
     @Query(sort: \WorkoutSubcategory.name) private var subcategories: [WorkoutSubcategory]
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
 
+    @State private var searchText = ""
+
+    private var strengthWorkouts: [Workout] {
+        workouts.filter { $0.type == .strength }
+    }
+
     private var strengthSubcategories: [WorkoutSubcategory] {
         subcategories.filter { $0.category?.workoutType == .strength }
     }
 
-    /// Subcategories with their last logged date.
     private var subcategoriesWithLastLogged: [(subcategory: WorkoutSubcategory, lastLogged: Date?)] {
         strengthSubcategories.map { subcategory in
-            let lastLogged = workouts
-                .filter { workout in
-                    workout.subcategories?.contains(where: { $0.id == subcategory.id }) == true
+            let lastLogged = strengthWorkouts
+                .compactMap { workout -> Date? in
+                    let linkedInWorkout = workout.subcategories?.contains(where: { $0.id == subcategory.id }) == true
+                    let linkedInExercises = workout.exercises?.contains(where: { $0.subcategory?.id == subcategory.id }) == true
+                    return (linkedInWorkout || linkedInExercises) ? workout.startDate : nil
                 }
-                .map(\.startDate)
                 .max()
             return (subcategory, lastLogged)
         }
         .sorted { lhs, rhs in
             switch (lhs.lastLogged, rhs.lastLogged) {
-            case (nil, nil): return lhs.subcategory.name < rhs.subcategory.name
+            case (nil, nil): return lhs.subcategory.name.localizedCaseInsensitiveCompare(rhs.subcategory.name) == .orderedAscending
             case (nil, _): return false
             case (_, nil): return true
             case let (a?, b?): return a > b
@@ -31,13 +37,78 @@ struct SubcategoryLastLoggedView: View {
         }
     }
 
-    /// Subcategories grouped by category name for display.
-    private var groupedByCategory: [(categoryName: String, items: [(subcategory: WorkoutSubcategory, lastLogged: Date?)])] {
-        let grouped = Dictionary(grouping: subcategoriesWithLastLogged) { item in
-            item.subcategory.category?.name ?? "Uncategorized"
+    private var allStrengthExercises: [StrengthExerciseLastLogged] {
+        var nameByNormalized: [String: String] = [:]
+        var subcategoriesByName: [String: Set<String>] = [:]
+
+        for subcategory in strengthSubcategories {
+            for template in subcategory.exerciseTemplates ?? [] {
+                let displayName = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !displayName.isEmpty else { continue }
+                let normalized = normalizedName(displayName)
+                nameByNormalized[normalized] = nameByNormalized[normalized] ?? displayName
+                subcategoriesByName[normalized, default: []].insert(subcategory.name)
+            }
         }
-        return grouped.keys.sorted().map { name in
-            (name, grouped[name] ?? [])
+
+        for workout in strengthWorkouts {
+            for exercise in workout.exercises ?? [] {
+                let displayName = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !displayName.isEmpty else { continue }
+                let normalized = normalizedName(displayName)
+                nameByNormalized[normalized] = nameByNormalized[normalized] ?? displayName
+                if let subcategoryName = exercise.subcategory?.name {
+                    subcategoriesByName[normalized, default: []].insert(subcategoryName)
+                }
+            }
+        }
+
+        return nameByNormalized.map { normalized, displayName in
+            let lastLogged = strengthWorkouts
+                .compactMap { workout -> Date? in
+                    let wasTrained = (workout.exercises ?? []).contains {
+                        normalizedName($0.name) == normalized
+                    }
+                    return wasTrained ? workout.startDate : nil
+                }
+                .max()
+
+            let linkedSubcategories = Array(subcategoriesByName[normalized] ?? [])
+                .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+
+            return StrengthExerciseLastLogged(
+                id: normalized,
+                name: displayName,
+                linkedSubcategories: linkedSubcategories,
+                lastLogged: lastLogged
+            )
+        }
+        .sorted { lhs, rhs in
+            switch (lhs.lastLogged, rhs.lastLogged) {
+            case (nil, nil): return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            case (nil, _): return false
+            case (_, nil): return true
+            case let (a?, b?): return a > b
+            }
+        }
+    }
+
+    private var filteredSubcategories: [(subcategory: WorkoutSubcategory, lastLogged: Date?)] {
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return subcategoriesWithLastLogged
+        }
+        return subcategoriesWithLastLogged.filter {
+            $0.subcategory.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    private var filteredExercises: [StrengthExerciseLastLogged] {
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return allStrengthExercises
+        }
+        return allStrengthExercises.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText) ||
+            $0.linkedSubcategories.joined(separator: " ").localizedCaseInsensitiveContains(searchText)
         }
     }
 
@@ -56,39 +127,51 @@ struct SubcategoryLastLoggedView: View {
 
             ScrollView {
                 LazyVStack(spacing: 16) {
+                    summaryCard
+
                     if strengthSubcategories.isEmpty {
-                        Text("No subcategories yet.")
+                        Text("No strength subcategories found.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .padding(24)
                             .glassCard(cornerRadius: 32)
                     } else {
-                        ForEach(groupedByCategory, id: \.categoryName) { group in
+                        sectionHeader(title: "Strength Subcategories", count: filteredSubcategories.count)
+
+                        ForEach(filteredSubcategories, id: \.subcategory.id) { item in
                             VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 8) {
-                                    Circle()
-                                        .fill(categoryColor(for: group.categoryName))
-                                        .frame(width: 8, height: 8)
-                                    Text(group.categoryName)
-                                        .font(.headline)
+                                Text(item.subcategory.name)
+                                    .font(.body.weight(.semibold))
+                                Text(lastTrainedLine(for: item.lastLogged))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(20)
+                            .glassCard(cornerRadius: 32)
+                        }
+
+                        sectionHeader(title: "Strength Exercises", count: filteredExercises.count)
+
+                        ForEach(filteredExercises) { item in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(item.name)
+                                    .font(.body.weight(.semibold))
+
+                                if !item.linkedSubcategories.isEmpty {
+                                    Text(item.linkedSubcategories.joined(separator: " · "))
+                                        .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
-                                .padding(.horizontal, 4)
 
-                                ForEach(group.items, id: \.subcategory.id) { item in
-                                    HStack {
-                                        Text(item.subcategory.name)
-                                            .font(.body)
-                                        Spacer()
-                                        Text(lastLoggedText(for: item.lastLogged))
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(20)
-                                    .glassCard(cornerRadius: 32)
-                                }
+                                Text(lastTrainedLine(for: item.lastLogged))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(20)
+                            .glassCard(cornerRadius: 32)
                         }
                     }
                 }
@@ -98,24 +181,66 @@ struct SubcategoryLastLoggedView: View {
         }
         .navigationTitle("Last Trained")
         .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $searchText, prompt: "Search strength list")
     }
 
-    private func lastLoggedText(for date: Date?) -> String {
-        guard let date else { return "Never" }
+    private var summaryCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Full Strength List")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            Text("\(strengthSubcategories.count) subcategories · \(allStrengthExercises.count) exercises")
+                .font(.subheadline)
+
+            Text("Includes never-trained entries so gaps are visible.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private func sectionHeader(title: String, count: Int) -> some View {
+        HStack {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("\(count)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private func lastTrainedLine(for date: Date?) -> String {
+        guard let date else { return "Last trained: Never" }
+        return "Last trained: \(relativeDateText(for: date)) (\(date.formatted(date: .abbreviated, time: .shortened)))"
+    }
+
+    private func relativeDateText(for date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 
-    private func categoryColor(for name: String) -> Color {
-        guard let category = subcategories.first(where: { $0.category?.name == name })?.category else { return .secondary }
-        return Color(hex: category.color) ?? .secondary
+    private func normalizedName(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
+}
+
+private struct StrengthExerciseLastLogged: Identifiable {
+    let id: String
+    let name: String
+    let linkedSubcategories: [String]
+    let lastLogged: Date?
 }
 
 #Preview {
     NavigationStack {
         SubcategoryLastLoggedView()
     }
-    .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self], inMemory: true)
+    .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, SubcategoryExercise.self], inMemory: true)
 }

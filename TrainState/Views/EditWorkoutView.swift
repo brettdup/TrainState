@@ -13,6 +13,7 @@ struct EditWorkoutView: View {
     @State private var date: Date
     @State private var durationMinutes: Double
     @State private var distanceKilometers: Double
+    @State private var workoutRating: Double?
     @State private var notes: String
     @State private var selectedCategories: [WorkoutCategory]
     @State private var selectedSubcategories: [WorkoutSubcategory]
@@ -36,8 +37,17 @@ struct EditWorkoutView: View {
             set: { distanceKilometers = min(max($0, 0), 200) }
         )
     }
+    private var workoutRatingBinding: Binding<Double> {
+        Binding(
+            get: { workoutRating ?? 5.0 },
+            set: { workoutRating = min(max($0, 0), 10) }
+        )
+    }
     private var showsDistance: Bool {
         [.running, .cycling, .swimming].contains(type)
+    }
+    private var isImportedFromHealthKit: Bool {
+        workout.hkUUID != nil
     }
     private var availableExerciseSubcategories: [WorkoutSubcategory] {
         if !selectedSubcategories.isEmpty { return selectedSubcategories }
@@ -66,6 +76,7 @@ struct EditWorkoutView: View {
         _date = State(initialValue: workout.startDate)
         _durationMinutes = State(initialValue: workout.duration / 60)
         _distanceKilometers = State(initialValue: workout.distance ?? 0)
+        _workoutRating = State(initialValue: workout.rating)
         _notes = State(initialValue: workout.notes ?? "")
         _selectedCategories = State(initialValue: workout.categories ?? [])
         _selectedSubcategories = State(initialValue: workout.subcategories ?? [])
@@ -101,6 +112,7 @@ struct EditWorkoutView: View {
                     dateCard
                     durationCard
                     if showsDistance { distanceCard }
+                    ratingCard
                     categoriesCard
                     exercisesCard
                     notesCard
@@ -317,6 +329,60 @@ struct EditWorkoutView: View {
         .glassCard(cornerRadius: 32)
     }
 
+    private var ratingCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Workout Rating")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if isImportedFromHealthKit {
+                if let workoutRating {
+                    Text(String(format: "%.1f / 10", workoutRating))
+                        .font(.title3.weight(.semibold))
+                } else {
+                    Text("No rating available from Apple Health.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Text("Imported workouts read rating from Apple Health.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if workoutRating == nil {
+                Button {
+                    workoutRating = 5.0
+                } label: {
+                    Label("Add Rating", systemImage: "star")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule()
+                                .fill(type.tintColor.opacity(0.18))
+                        )
+                }
+                .buttonStyle(.plain)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text(String(format: "%.1f / 10", workoutRating ?? 0))
+                            .font(.title3.weight(.semibold))
+                        Spacer()
+                        Button("Clear") {
+                            workoutRating = nil
+                        }
+                        .font(.caption.weight(.semibold))
+                    }
+
+                    Slider(value: workoutRatingBinding, in: 0...10, step: 0.5)
+                        .tint(type.tintColor)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
     private var exercisesCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -501,6 +567,9 @@ struct EditWorkoutView: View {
             workout.startDate = date
             workout.duration = durationMinutes * 60
             workout.distance = showsDistance && distanceKilometers > 0 ? distanceKilometers : nil
+            if !isImportedFromHealthKit {
+                workout.rating = workoutRating
+            }
             let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
             workout.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
             workout.categories = selectedCategories

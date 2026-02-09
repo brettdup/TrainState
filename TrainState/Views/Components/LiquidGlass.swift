@@ -26,38 +26,27 @@ struct GlassEffectContainerWrapper<Content: View>: View {
 /// Reusable modifier for Liquid Glass cards with iOS 26+ fallback.
 /// Use on any card-style view for consistent glass appearance.
 struct GlassCardModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
     var cornerRadius: CGFloat
     var isInteractive: Bool
 
-    init(cornerRadius: CGFloat = 32, isInteractive: Bool = true) {
+    init(cornerRadius: CGFloat = 32, isInteractive: Bool = false) {
         self.cornerRadius = cornerRadius
         self.isInteractive = isInteractive
     }
 
     func body(content: Content) -> some View {
-        Group {
-            if #available(iOS 26, *) {
-                let glassStyle = isInteractive
-                    ? Glass.regular.tint(.white.opacity(0.22)).interactive()
-                    : Glass.regular.tint(.white.opacity(0.22))
-                content
-                    .glassEffect(glassStyle, in: .rect(cornerRadius: cornerRadius))
-            } else {
-                content
-                    .background(
-                        RoundedRectangle(cornerRadius: cornerRadius)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.06), radius: 10, x: 0, y: 3)
-                    )
-            }
-        }
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 3)
+            )
     }
 }
 
 extension View {
     /// Applies Liquid Glass styling on iOS 26+, material fallback on earlier versions.
-    func glassCard(cornerRadius: CGFloat = 32, isInteractive: Bool = true) -> some View {
+    func glassCard(cornerRadius: CGFloat = 32, isInteractive: Bool = false) -> some View {
         modifier(GlassCardModifier(cornerRadius: cornerRadius, isInteractive: isInteractive))
     }
 

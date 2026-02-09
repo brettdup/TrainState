@@ -4,9 +4,13 @@ import SwiftData
 struct AnalyticsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
+    @Query private var categories: [WorkoutCategory]
     @Query private var subcategories: [WorkoutSubcategory]
     @AppStorage("weeklyGoalWorkouts") private var weeklyGoalWorkouts: Int = 4
     @AppStorage("weeklyGoalMinutes") private var weeklyGoalMinutes: Int = 180
+
+    @State private var selectedFilter: AnalyticsWorkoutFilter = .all
+    @State private var showAllPersonalBests = false
 
     var body: some View {
         NavigationStack {
@@ -24,11 +28,19 @@ struct AnalyticsView: View {
 
                 ScrollView {
                     LazyVStack(spacing: 16) {
+                        filterCard
+                        NavigationLink {
+                            SubcategoryLastLoggedView()
+                        } label: {
+                            strengthInventoryCard
+                        }
+                        .buttonStyle(.plain)
                         weeklyGoalsCard
                         streakCard
                         personalBestsCard
                         smartPROpportunitiesCard
                         adaptivePlanCard
+                        untrainedCategoriesCard
                         summaryCard(title: "All Time", summary: allTimeSummary)
                     }
                     .glassEffectContainer(spacing: 16)
@@ -40,6 +52,23 @@ struct AnalyticsView: View {
             .navigationTitle("Analytics")
             .navigationBarTitleDisplayMode(.large)
         }
+    }
+
+    private var filterCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Workout Filter")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            Picker("Workout Filter", selection: $selectedFilter) {
+                ForEach(AnalyticsWorkoutFilter.allCases) { filter in
+                    Text(filter.title).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
     }
 
     private var weeklyGoalsCard: some View {
@@ -67,6 +96,30 @@ struct AnalyticsView: View {
         .glassCard(cornerRadius: 32)
     }
 
+    private var strengthInventoryCard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "list.bullet.rectangle")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Strength Last Trained List")
+                    .font(.subheadline.weight(.semibold))
+                Text("Full list of strength subcategories and exercises with last-trained dates.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
     private var streakCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Streaks")
@@ -83,22 +136,39 @@ struct AnalyticsView: View {
 
     private var personalBestsCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Personal Bests")
-                .font(.headline)
-                .foregroundStyle(.secondary)
+            HStack {
+                Text("Personal Bests")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if exercisePRs.count > 5 {
+                    Button(showAllPersonalBests ? "Show Top 5" : "View All") {
+                        showAllPersonalBests.toggle()
+                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.plain)
+                }
+            }
 
             if exercisePRs.isEmpty {
                 Text("Log weighted lifts (for example Bench Press) to track personal bests.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(exercisePRs.prefix(5), id: \.exerciseName) { pr in
+                ForEach(visiblePersonalBests, id: \.exerciseName) { pr in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(pr.exerciseName)
                             .font(.subheadline.weight(.semibold))
-                        Text(String(format: "Top Set: %.1f kg  •  Est 1RM: %.1f kg", pr.topSetWeight, pr.estimatedOneRepMax))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        Text(
+                            String(
+                                format: "Top Set: %.1f kg  •  Est 1RM: %.1f kg  •  %@",
+                                pr.topSetWeight,
+                                pr.estimatedOneRepMax,
+                                pr.date.formatted(date: .abbreviated, time: .omitted)
+                            )
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -162,6 +232,36 @@ struct AnalyticsView: View {
         .glassCard(cornerRadius: 32)
     }
 
+    private var untrainedCategoriesCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Not Trained Yet")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            if untrainedCategories.isEmpty {
+                Text("Every available category for this filter has training history.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(untrainedCategories, id: \.id) { category in
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(Color(hex: category.color) ?? .secondary)
+                            .frame(width: 10, height: 10)
+                        Text(category.name)
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(category.workoutType?.rawValue ?? "General")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
     private func summaryCard(title: String, summary: (count: Int, duration: String, distance: Double)) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(title)
@@ -190,21 +290,60 @@ struct AnalyticsView: View {
         }
     }
 
+    private var filteredWorkouts: [Workout] {
+        switch selectedFilter {
+        case .all:
+            return workouts
+        case .strength:
+            return workouts.filter { $0.type == .strength }
+        }
+    }
+
+    private var filteredSubcategories: [WorkoutSubcategory] {
+        switch selectedFilter {
+        case .all:
+            return subcategories
+        case .strength:
+            return subcategories.filter { $0.category?.workoutType == .strength }
+        }
+    }
+
+    private var categoriesForFilter: [WorkoutCategory] {
+        switch selectedFilter {
+        case .all:
+            return categories
+        case .strength:
+            return categories.filter { $0.workoutType == .strength }
+        }
+    }
+
+    private var untrainedCategories: [WorkoutCategory] {
+        let trainedCategoryIDs: Set<UUID> = Set(filteredWorkouts.flatMap { workout in
+            var ids = workout.categories?.map(\.id) ?? []
+            ids.append(contentsOf: (workout.subcategories ?? []).compactMap { $0.category?.id })
+            return ids
+        })
+
+        return categoriesForFilter
+            .filter { !trainedCategoryIDs.contains($0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
     private var weeklySummary: (count: Int, duration: String, distance: Double) {
         let calendar = Calendar.current
         guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: Date()) else {
             return (0, formattedDuration(0), 0)
         }
-        let weekWorkouts = workouts.filter { weekInterval.contains($0.startDate) }
+        let weekWorkouts = filteredWorkouts.filter { weekInterval.contains($0.startDate) }
         let duration = weekWorkouts.reduce(0) { $0 + $1.duration }
         let distance = weekWorkouts.reduce(0) { $0 + ($1.distance ?? 0) }
         return (weekWorkouts.count, formattedDuration(duration), distance)
     }
 
     private var allTimeSummary: (count: Int, duration: String, distance: Double) {
-        let duration = workouts.reduce(0) { $0 + $1.duration }
-        let distance = workouts.reduce(0) { $0 + ($1.distance ?? 0) }
-        return (workouts.count, formattedDuration(duration), distance)
+        let duration = filteredWorkouts.reduce(0) { $0 + $1.duration }
+        let distance = filteredWorkouts.reduce(0) { $0 + ($1.distance ?? 0) }
+        return (filteredWorkouts.count, formattedDuration(duration), distance)
     }
 
     private var weeklyMinutes: Int {
@@ -214,7 +353,7 @@ struct AnalyticsView: View {
     private var workoutsThisWeek: [Workout] {
         let calendar = Calendar.current
         guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: Date()) else { return [] }
-        return workouts.filter { weekInterval.contains($0.startDate) }
+        return filteredWorkouts.filter { weekInterval.contains($0.startDate) }
     }
 
     private var workoutGoalProgress: Double {
@@ -227,7 +366,7 @@ struct AnalyticsView: View {
 
     private var currentDailyStreak: Int {
         let calendar = Calendar.current
-        let days = Set(workouts.map { calendar.startOfDay(for: $0.startDate) })
+        let days = Set(filteredWorkouts.map { calendar.startOfDay(for: $0.startDate) })
         guard !days.isEmpty else { return 0 }
 
         var cursor = calendar.startOfDay(for: Date())
@@ -246,7 +385,7 @@ struct AnalyticsView: View {
 
     private var bestDailyStreak: Int {
         let calendar = Calendar.current
-        let sortedDays = Set(workouts.map { calendar.startOfDay(for: $0.startDate) }).sorted()
+        let sortedDays = Set(filteredWorkouts.map { calendar.startOfDay(for: $0.startDate) }).sorted()
         guard !sortedDays.isEmpty else { return 0 }
 
         var best = 1
@@ -271,7 +410,7 @@ struct AnalyticsView: View {
 
         while true {
             guard let nextWeek = calendar.date(byAdding: .day, value: 7, to: cursor) else { break }
-            let count = workouts.filter { $0.startDate >= cursor && $0.startDate < nextWeek }.count
+            let count = filteredWorkouts.filter { $0.startDate >= cursor && $0.startDate < nextWeek }.count
             if count >= weeklyGoalWorkouts {
                 streak += 1
             } else {
@@ -286,7 +425,7 @@ struct AnalyticsView: View {
     private var exercisePRs: [ExercisePR] {
         var bestByExercise: [String: ExercisePR] = [:]
 
-        for workout in workouts {
+        for workout in filteredWorkouts {
             for exercise in workout.exercises ?? [] {
                 let name = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !name.isEmpty, let weight = exercise.weight, weight > 0 else { continue }
@@ -308,12 +447,16 @@ struct AnalyticsView: View {
         return bestByExercise.values.sorted { $0.estimatedOneRepMax > $1.estimatedOneRepMax }
     }
 
+    private var visiblePersonalBests: [ExercisePR] {
+        showAllPersonalBests ? exercisePRs : Array(exercisePRs.prefix(5))
+    }
+
     private var smartPROpportunities: [SmartPROpportunity] {
         let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? .distantPast
         let prs = Dictionary(uniqueKeysWithValues: exercisePRs.map { ($0.exerciseName, $0) })
         var recentBest: [String: Double] = [:]
 
-        for workout in workouts where workout.startDate >= twoWeeksAgo {
+        for workout in filteredWorkouts where workout.startDate >= twoWeeksAgo {
             for exercise in workout.exercises ?? [] {
                 let name = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !name.isEmpty, let weight = exercise.weight, weight > 0 else { continue }
@@ -337,9 +480,9 @@ struct AnalyticsView: View {
 
     private var adaptiveRecommendations: [AdaptiveRecommendation] {
         let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? .distantPast
-        let recentWorkouts = workouts.filter { $0.startDate >= twoWeeksAgo }
+        let recentWorkouts = filteredWorkouts.filter { $0.startDate >= twoWeeksAgo }
 
-        let counts: [UUID: Int] = subcategories.reduce(into: [:]) { result, subcategory in
+        let counts: [UUID: Int] = filteredSubcategories.reduce(into: [:]) { result, subcategory in
             let count = recentWorkouts.reduce(0) { partial, workout in
                 let hasSubcategory = (workout.subcategories ?? []).contains { $0.id == subcategory.id }
                 return partial + (hasSubcategory ? 1 : 0)
@@ -347,7 +490,7 @@ struct AnalyticsView: View {
             result[subcategory.id] = count
         }
 
-        return subcategories
+        return filteredSubcategories
             .sorted { (counts[$0.id] ?? 0) < (counts[$1.id] ?? 0) }
             .prefix(3)
             .map { subcategory in
@@ -364,6 +507,20 @@ struct AnalyticsView: View {
         formatter.allowedUnits = [.hour, .minute]
         formatter.unitsStyle = .short
         return formatter.string(from: duration) ?? "0m"
+    }
+}
+
+private enum AnalyticsWorkoutFilter: String, CaseIterable, Identifiable {
+    case all
+    case strength
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All"
+        case .strength: return "Strength"
+        }
     }
 }
 
@@ -390,5 +547,5 @@ private struct AdaptiveRecommendation {
     NavigationStack {
         AnalyticsView()
     }
-    .modelContainer(for: [Workout.self, WorkoutSubcategory.self, WorkoutExercise.self], inMemory: true)
+    .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self], inMemory: true)
 }

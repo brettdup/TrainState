@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 struct WorkoutDetailView: View {
     @Environment(\.dismiss) private var dismiss
@@ -10,6 +11,7 @@ struct WorkoutDetailView: View {
     @State private var selectedCategories: [WorkoutCategory] = []
     @State private var selectedSubcategories: [WorkoutSubcategory] = []
     @State private var showingDeleteConfirmation = false
+    @State private var showingRouteMapSheet = false
 
     var body: some View {
         ZStack {
@@ -27,7 +29,7 @@ struct WorkoutDetailView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     headerCard
-                    if workout.duration > 0 || workout.distance ?? 0 > 0 || (workout.calories ?? 0) > 0 {
+                    if workout.duration > 0 || workout.distance ?? 0 > 0 || (workout.calories ?? 0) > 0 || (workout.rating ?? 0) > 0 {
                         statsCard
                     }
                     categoriesCard
@@ -36,6 +38,9 @@ struct WorkoutDetailView: View {
                     }
                     if let notes = workout.notes, !notes.isEmpty {
                         notesCard(notes)
+                    }
+                    if let route = workout.route?.decodedRoute, !route.isEmpty {
+                        routeCard(route)
                     }
                     editWorkoutButton
                 }
@@ -87,6 +92,13 @@ struct WorkoutDetailView: View {
             selectedCategories = workout.categories ?? []
             selectedSubcategories = workout.subcategories ?? []
         }
+        .sheet(isPresented: $showingRouteMapSheet) {
+            if let route = workout.route?.decodedRoute, !route.isEmpty {
+                RouteMapSheetView(route: route)
+            } else {
+                EmptyView()
+            }
+        }
     }
 
     private var headerCard: some View {
@@ -128,6 +140,9 @@ struct WorkoutDetailView: View {
                 }
                 if let calories = workout.calories, calories > 0 {
                     StatTile(title: "Calories", value: "\(Int(calories)) kcal")
+                }
+                if let rating = workout.rating, rating > 0 {
+                    StatTile(title: "Rating", value: String(format: "%.1f/10", rating))
                 }
             }
         }
@@ -172,6 +187,24 @@ struct WorkoutDetailView: View {
             Text(text)
                 .font(.body)
                 .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private func routeCard(_ route: [CLLocation]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Route")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            RouteMapView(route: route)
+                .frame(height: 230)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .onTapGesture {
+                    showingRouteMapSheet = true
+                }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
@@ -281,6 +314,25 @@ struct WorkoutDetailView: View {
         modelContext.delete(workout)
         try? modelContext.save()
         dismiss()
+    }
+}
+
+private struct RouteMapSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    let route: [CLLocation]
+
+    var body: some View {
+        NavigationStack {
+            RouteMapView(route: route)
+                .ignoresSafeArea(edges: .bottom)
+                .navigationTitle("Workout Route")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
     }
 }
 

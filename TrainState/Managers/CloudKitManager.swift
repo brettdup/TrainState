@@ -60,26 +60,9 @@ class CloudKitManager {
 
         updateDebug("Preparing backup...")
         let payload = try exportPayload(context: context)
-        let data = try JSONEncoder.iso8601.encode(payload)
-
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("TrainState-Backup-\(UUID().uuidString).json")
-        try data.write(to: tempURL, options: [.atomic])
-        let asset = CKAsset(fileURL: tempURL)
-
-        let record = CKRecord(recordType: "Backup")
-        record["name"] = "Backup \(Date().formatted(date: .abbreviated, time: .shortened))" as CKRecordValue
-        record["timestamp"] = Date() as CKRecordValue
-        record["deviceName"] = UIDevice.current.name as CKRecordValue
-        record["workoutCount"] = payload.workouts.count as CKRecordValue
-        record["categoryCount"] = payload.categories.count as CKRecordValue
-        record["subcategoryCount"] = payload.subcategories.count as CKRecordValue
-        record["assignedSubcategoryCount"] = payload.subcategories.filter { $0.categoryId != nil }.count as CKRecordValue
-        record["archive"] = asset
 
         updateDebug("Uploading to iCloud...")
-        _ = try await privateDatabase.save(record)
-
-        try? FileManager.default.removeItem(at: tempURL)
+        try await saveBackupRecord(payload: payload)
 
         // Enforce max backup limit: delete oldest when exceeding limit
         let allBackups = try await fetchAvailableBackups()
@@ -147,12 +130,7 @@ class CloudKitManager {
 
         let recordID = CKRecord.ID(recordName: backupInfo.recordName)
         let record = try await privateDatabase.record(for: recordID)
-        guard let asset = record["archive"] as? CKAsset, let fileURL = asset.fileURL else {
-            throw NSError(domain: "CloudKit", code: 2, userInfo: [NSLocalizedDescriptionKey: "Backup data missing."])
-        }
-
-        let data = try Data(contentsOf: fileURL)
-        let payload = try JSONDecoder.iso8601.decode(BackupPayload.self, from: data)
+        let payload = try payload(from: record)
         return BackupPreview(
             info: backupInfo,
             workouts: payload.workouts,
@@ -173,13 +151,9 @@ class CloudKitManager {
         updateDebug("Fetching backup...")
         let recordID = CKRecord.ID(recordName: backupInfo.recordName)
         let record = try await privateDatabase.record(for: recordID)
-        guard let asset = record["archive"] as? CKAsset, let fileURL = asset.fileURL else {
-            throw NSError(domain: "CloudKit", code: 2, userInfo: [NSLocalizedDescriptionKey: "Backup data missing."])
-        }
 
         updateDebug("Restoring data...")
-        let data = try Data(contentsOf: fileURL)
-        let payload = try JSONDecoder.iso8601.decode(BackupPayload.self, from: data)
+        let payload = try payload(from: record)
         try restorePayload(payload, context: context)
         updateDebug("Restore complete.")
     }
@@ -200,9 +174,42 @@ private struct BackupPayload: Codable {
     let categories: [WorkoutCategoryExport]
     let subcategories: [WorkoutSubcategoryExport]
     let exerciseTemplates: [SubcategoryExerciseExport]
+
+    enum CodingKeys: String, CodingKey {
+        case workouts
+        case categories
+        case subcategories
+        case exerciseTemplates
+    }
+
+    init(
+        workouts: [WorkoutExport],
+        categories: [WorkoutCategoryExport],
+        subcategories: [WorkoutSubcategoryExport],
+        exerciseTemplates: [SubcategoryExerciseExport]
+    ) {
+        self.workouts = workouts
+        self.categories = categories
+        self.subcategories = subcategories
+        self.exerciseTemplates = exerciseTemplates
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        workouts = try container.decode([WorkoutExport].self, forKey: .workouts)
+        categories = try container.decode([WorkoutCategoryExport].self, forKey: .categories)
+        subcategories = try container.decode([WorkoutSubcategoryExport].self, forKey: .subcategories)
+        exerciseTemplates = try container.decodeIfPresent([SubcategoryExerciseExport].self, forKey: .exerciseTemplates) ?? []
+    }
 }
 
 private extension CloudKitManager {
+    enum BackupStorageFormat {
+        case archive
+        case legacyWithTemplates
+        case legacy
+    }
+
     func exportPayload(context: ModelContext) throws -> BackupPayload {
         // Ensure newly created/edited categories and subcategories are persisted
         // before reading a backup snapshot.
@@ -219,6 +226,130 @@ private extension CloudKitManager {
             categories: categories.map(WorkoutCategoryExport.init),
             subcategories: subcategories.map(WorkoutSubcategoryExport.init),
             exerciseTemplates: templates.map(SubcategoryExerciseExport.init)
+        )
+    }
+
+    func saveBackupRecord(payload: BackupPayload) async throws {
+        let formats: [BackupStorageFormat] = [.archive, .legacyWithTemplates, .legacy]
+        var lastError: Error?
+
+        for format in formats {
+            let files = try temporaryBackupFiles(payload: payload, format: format)
+            defer {
+                for fileURL in files.values {
+                    try? FileManager.default.removeItem(at: fileURL)
+                }
+            }
+
+            let record = CKRecord(recordType: "Backup")
+            record["name"] = "Backup \(Date().formatted(date: .abbreviated, time: .shortened))" as CKRecordValue
+            record["timestamp"] = Date() as CKRecordValue
+            record["deviceName"] = UIDevice.current.name as CKRecordValue
+            record["workoutCount"] = payload.workouts.count as CKRecordValue
+            record["categoryCount"] = payload.categories.count as CKRecordValue
+            record["subcategoryCount"] = payload.subcategories.count as CKRecordValue
+            record["assignedSubcategoryCount"] = payload.subcategories.filter { $0.categoryId != nil }.count as CKRecordValue
+
+            for (key, fileURL) in files {
+                record[key] = CKAsset(fileURL: fileURL)
+            }
+
+            do {
+                _ = try await privateDatabase.save(record)
+                return
+            } catch {
+                lastError = error
+                guard shouldRetryWithLegacySchema(error: error, format: format) else {
+                    throw error
+                }
+            }
+        }
+
+        throw lastError ?? NSError(
+            domain: "CloudKit",
+            code: 99,
+            userInfo: [NSLocalizedDescriptionKey: "Unable to save backup record."]
+        )
+    }
+
+    func temporaryBackupFiles(payload: BackupPayload, format: BackupStorageFormat) throws -> [String: URL] {
+        switch format {
+        case .archive:
+            let data = try JSONEncoder.iso8601.encode(payload)
+            return ["archive": try writeTemporaryBackupFile(data: data, label: "archive")]
+        case .legacyWithTemplates:
+            return [
+                "workouts": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.workouts), label: "workouts"),
+                "categories": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.categories), label: "categories"),
+                "subcategories": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.subcategories), label: "subcategories"),
+                "exerciseTemplates": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.exerciseTemplates), label: "exerciseTemplates")
+            ]
+        case .legacy:
+            return [
+                "workouts": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.workouts), label: "workouts"),
+                "categories": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.categories), label: "categories"),
+                "subcategories": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.subcategories), label: "subcategories")
+            ]
+        }
+    }
+
+    func writeTemporaryBackupFile(data: Data, label: String) throws -> URL {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TrainState-Backup-\(UUID().uuidString)-\(label).json")
+        try data.write(to: fileURL, options: [.atomic])
+        return fileURL
+    }
+
+    func shouldRetryWithLegacySchema(error: Error, format: BackupStorageFormat) -> Bool {
+        let message = (error as NSError).localizedDescription.lowercased()
+        switch format {
+        case .archive:
+            return message.contains("cannot create or modify field 'archive'")
+        case .legacyWithTemplates:
+            return message.contains("cannot create or modify field 'exercisetemplates'")
+        case .legacy:
+            return false
+        }
+    }
+
+    func payload(from record: CKRecord) throws -> BackupPayload {
+        if let archiveAsset = record["archive"] as? CKAsset, let fileURL = archiveAsset.fileURL {
+            let data = try Data(contentsOf: fileURL)
+            return try JSONDecoder.iso8601.decode(BackupPayload.self, from: data)
+        }
+
+        guard
+            let workoutsAsset = record["workouts"] as? CKAsset,
+            let categoriesAsset = record["categories"] as? CKAsset,
+            let subcategoriesAsset = record["subcategories"] as? CKAsset,
+            let workoutsURL = workoutsAsset.fileURL,
+            let categoriesURL = categoriesAsset.fileURL,
+            let subcategoriesURL = subcategoriesAsset.fileURL
+        else {
+            throw NSError(domain: "CloudKit", code: 2, userInfo: [NSLocalizedDescriptionKey: "Backup data missing."])
+        }
+
+        let workoutsData = try Data(contentsOf: workoutsURL)
+        let categoriesData = try Data(contentsOf: categoriesURL)
+        let subcategoriesData = try Data(contentsOf: subcategoriesURL)
+
+        let workouts = try JSONDecoder.iso8601.decode([WorkoutExport].self, from: workoutsData)
+        let categories = try JSONDecoder.iso8601.decode([WorkoutCategoryExport].self, from: categoriesData)
+        let subcategories = try JSONDecoder.iso8601.decode([WorkoutSubcategoryExport].self, from: subcategoriesData)
+
+        let exerciseTemplates: [SubcategoryExerciseExport]
+        if let templatesAsset = record["exerciseTemplates"] as? CKAsset, let templatesURL = templatesAsset.fileURL {
+            let templatesData = try Data(contentsOf: templatesURL)
+            exerciseTemplates = try JSONDecoder.iso8601.decode([SubcategoryExerciseExport].self, from: templatesData)
+        } else {
+            exerciseTemplates = []
+        }
+
+        return BackupPayload(
+            workouts: workouts,
+            categories: categories,
+            subcategories: subcategories,
+            exerciseTemplates: exerciseTemplates
         )
     }
 
@@ -265,6 +396,7 @@ private extension CloudKitManager {
                 duration: export.duration,
                 calories: export.calories,
                 distance: export.distance,
+                rating: export.rating,
                 notes: export.notes,
                 categories: export.categoryIds?.compactMap { categoryMap[$0] },
                 subcategories: export.subcategoryIds?.compactMap { subcategoryMap[$0] },

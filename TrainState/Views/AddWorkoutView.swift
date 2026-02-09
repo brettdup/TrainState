@@ -14,6 +14,7 @@ struct AddWorkoutView: View {
     @State private var date = Date()
     @State private var durationMinutes = 30.0
     @State private var distanceKilometers = 0.0
+    @State private var workoutRating: Double?
     @State private var notes = ""
     @State private var selectedCategories: [WorkoutCategory] = []
     @State private var selectedSubcategories: [WorkoutSubcategory] = []
@@ -37,6 +38,12 @@ struct AddWorkoutView: View {
         Binding(
             get: { distanceKilometers },
             set: { distanceKilometers = min(max($0, 0), 200) }
+        )
+    }
+    private var workoutRatingBinding: Binding<Double> {
+        Binding(
+            get: { workoutRating ?? 5.0 },
+            set: { workoutRating = min(max($0, 0), 10) }
         )
     }
     private var canAddWorkout: Bool {
@@ -69,6 +76,33 @@ struct AddWorkoutView: View {
         }
         return options
     }
+    private var trackedExerciseCount: Int {
+        exerciseEntries.filter { !$0.trimmedName.isEmpty }.count
+    }
+    private var completedExerciseDetailsCount: Int {
+        exerciseEntries.filter {
+            !$0.trimmedName.isEmpty &&
+            $0.sets != nil &&
+            $0.reps != nil &&
+            $0.weight != nil
+        }.count
+    }
+    private var suggestedQuickAddOptions: [ExerciseQuickAddOption] {
+        var seen: Set<String> = []
+        let existing = Set(
+            exerciseEntries
+                .map(\.trimmedName)
+                .filter { !$0.isEmpty }
+                .map { $0.lowercased() }
+        )
+
+        return quickAddOptions.compactMap { option in
+            let key = "\(option.subcategoryID.uuidString)-\(option.name.lowercased())"
+            guard !seen.contains(key), !existing.contains(option.name.lowercased()) else { return nil }
+            seen.insert(key)
+            return option
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -95,6 +129,7 @@ struct AddWorkoutView: View {
                             durationCard
                         }
                         if showsDistance { distanceCard }
+                        ratingCard
                         categoriesCard
                         if !isStrengthSessionType || strengthEntryMode == .manual {
                             exercisesCard
@@ -369,6 +404,48 @@ struct AddWorkoutView: View {
         .glassCard(cornerRadius: 32)
     }
 
+    private var ratingCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Workout Rating")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if workoutRating == nil {
+                Button {
+                    workoutRating = 5.0
+                } label: {
+                    Label("Add Rating", systemImage: "star")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule()
+                                .fill(type.tintColor.opacity(0.18))
+                        )
+                }
+                .buttonStyle(.plain)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text(String(format: "%.1f / 10", workoutRating ?? 0))
+                            .font(.title3.weight(.semibold))
+                        Spacer()
+                        Button("Clear") {
+                            workoutRating = nil
+                        }
+                        .font(.caption.weight(.semibold))
+                    }
+
+                    Slider(value: workoutRatingBinding, in: 0...10, step: 0.5)
+                        .tint(type.tintColor)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
     private var exercisesCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -389,6 +466,39 @@ struct AddWorkoutView: View {
                         )
                 }
                 .buttonStyle(.plain)
+            }
+
+            HStack {
+                Text("\(trackedExerciseCount) exercise\(trackedExerciseCount == 1 ? "" : "s") logged")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(completedExerciseDetailsCount) with full sets/reps/weight")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !suggestedQuickAddOptions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(suggestedQuickAddOptions.prefix(10)), id: \.id) { option in
+                            Button {
+                                addExercise(from: option)
+                            } label: {
+                                Text(option.name)
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        Capsule()
+                                            .fill(type.tintColor.opacity(0.18))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
             }
 
             if exerciseEntries.isEmpty {
@@ -483,6 +593,7 @@ struct AddWorkoutView: View {
                 startDate: date,
                 duration: durationMinutes * 60,
                 distance: showsDistance && distanceKilometers > 0 ? distanceKilometers : nil,
+                rating: workoutRating,
                 notes: notes.isEmpty ? nil : notes,
                 categories: selectedCategories,
                 subcategories: selectedSubcategories,
@@ -570,6 +681,7 @@ struct AddWorkoutView: View {
             startDate: startDate,
             duration: duration,
             distance: nil,
+            rating: workoutRating,
             notes: notes.isEmpty ? nil : notes,
             categories: selectedCategories,
             subcategories: selectedSubcategories,
@@ -598,6 +710,15 @@ struct AddWorkoutView: View {
         let newEntry = defaultExerciseEntry()
         exerciseEntries.append(newEntry)
         activeExerciseSelection = ExerciseEditorSelection(id: newEntry.id)
+    }
+
+    private func addExercise(from option: ExerciseQuickAddOption) {
+        var entry = ExerciseLogEntry(name: option.name, subcategoryID: option.subcategoryID)
+        if let recentMatch = exerciseEntries.last(where: { $0.subcategoryID == option.subcategoryID }) {
+            entry.sets = recentMatch.sets
+            entry.reps = recentMatch.reps
+        }
+        exerciseEntries.append(entry)
     }
 
     private func exerciseSummary(for entry: ExerciseLogEntry) -> String? {

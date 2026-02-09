@@ -16,6 +16,7 @@ final class Workout {
     var duration: TimeInterval = 0
     var calories: Double?
     var distance: Double?
+    var rating: Double?
     var notes: String?
     var hkActivityTypeRaw: Int?
     var hkUUID: String?
@@ -36,6 +37,7 @@ final class Workout {
         duration: TimeInterval = 0,
         calories: Double? = nil,
         distance: Double? = nil,
+        rating: Double? = nil,
         notes: String? = nil,
         categories: [WorkoutCategory]? = nil,
         subcategories: [WorkoutSubcategory]? = nil,
@@ -48,6 +50,7 @@ final class Workout {
         self.duration = duration
         self.calories = calories
         self.distance = distance
+        self.rating = rating
         self.notes = notes
         self.categories = categories
         self.subcategories = subcategories
@@ -183,6 +186,7 @@ struct WorkoutExport: Codable {
     let duration: TimeInterval
     let calories: Double?
     let distance: Double?
+    let rating: Double?
     let notes: String?
     let hkActivityTypeRaw: Int?
     let hkUUID: String?
@@ -196,6 +200,7 @@ struct WorkoutExport: Codable {
         self.duration = workout.duration
         self.calories = workout.calories
         self.distance = workout.distance
+        self.rating = workout.rating
         self.notes = workout.notes
         self.hkActivityTypeRaw = workout.hkActivityTypeRaw
         self.hkUUID = workout.hkUUID

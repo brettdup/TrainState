@@ -4,6 +4,58 @@
 - Keep this file in the repo root and update it with each Codex change.
 - If this file is missing, recreate it before completing work.
 
+## 2026-02-08
+- Added a lightweight, on-demand HealthKit recent import flow in `TrainState/Views/WorkoutListView.swift`:
+  - new HealthKit menu button (`heart.text.square`) beside the existing `+` add button,
+  - menu action to refresh and show only a small recent set of workouts available for import,
+  - one-tap import from the menu with success/error feedback.
+- Updated the HealthKit menu in `TrainState/Views/WorkoutListView.swift` to:
+  - show the most recent 10 workouts,
+  - keep already imported workouts visible with an `Imported` status indicator,
+  - display relative date labels like `Today` and `Yesterday` in item subtitles.
+- Updated HealthKit import state in `TrainState/Views/WorkoutListView.swift` so importing a workout keeps it in the menu list and marks it `Imported` immediately instead of removing it.
+- Fixed false `HealthKit access is denied` errors in `TrainState/Services/HealthKitRecentWorkoutImporter.swift` by removing preemptive authorization-status gating and always requesting read authorization before querying workouts.
+- Added persisted startup cache for HealthKit recent menu items:
+  - `TrainState/Views/WorkoutListView.swift` now stores/loads the last fetched recent workouts via `@AppStorage`, so the menu can show previous results immediately on app launch before a refresh.
+  - `TrainState/Services/HealthKitRecentWorkoutImporter.swift` now returns a codable menu-item model for cache persistence.
+- Added HealthKit route import for imported workouts:
+  - `TrainState/Services/HealthKitRecentWorkoutImporter.swift` now requests `HKWorkoutRoute` read access, fetches route samples for the selected HealthKit workout, reads route coordinates, down-samples very large tracks, and stores them in `WorkoutRoute` linked to the imported workout.
+  - `TrainState/Views/WorkoutListView.swift` import call updated to await async route-aware import.
+- Added route map display in workout details:
+  - `TrainState/Views/WorkoutDetailView.swift` now shows a `Route` card with `RouteMapView` when a workout has imported route coordinates.
+- Added a dedicated route map sheet in workout details:
+  - `TrainState/Views/WorkoutDetailView.swift` now supports opening a larger map in a modal sheet (`RouteMapSheetView`) from the route card (`Open Map` button or map tap).
+- Fixed random Delete Backup alert presentation in `TrainState/Views/SettingsView.swift`:
+  - replaced optional-derived alert binding (`backupToDelete != nil`) with an explicit `showDeleteBackupAlert` state,
+  - now the delete modal is presented only from the backup row Delete action.
+- Added `TrainState/Services/HealthKitRecentWorkoutImporter.swift`:
+  - requests HealthKit read authorization only when needed,
+  - fetches recent workouts with a hard limit,
+  - filters out workouts already imported by `hkUUID`,
+  - maps HealthKit activity types into app `WorkoutType`,
+  - imports selected workouts into SwiftData with HealthKit metadata.
+- Updated `TrainState/Info.plist` with `NSHealthShareUsageDescription` for HealthKit read permission prompts.
+
+## 2026-02-07
+- Expanded `SubcategoryLastLoggedView` into a full strength inventory view showing:
+  - all strength subcategories with last-trained timestamps,
+  - all strength exercises (from templates + logged workouts) with last-trained timestamps,
+  - never-trained entries included,
+  - search across subcategory/exercise names.
+- Added direct navigation access to the strength last-trained list from:
+  - `AnalyticsView` via a dedicated “Strength Last Trained List” card,
+  - `WorkoutListView` by always showing the “Last Trained” shortcut card.
+- Reduced lag from card rendering by changing `glassCard` defaults to non-interactive and applying material styling for non-interactive cards on iOS 26+, so outer cards no longer use Liquid Glass unless explicitly opted in (`TrainState/Views/Components/LiquidGlass.swift`).
+- Improved analytics usability in `TrainState/Views/AnalyticsView.swift`:
+  - added a workout filter (All / Strength),
+  - made all analytics calculations filter-aware,
+  - added `View All` personal bests (with date in each row),
+  - added a `Not Trained Yet` card that shows categories with no history for the active filter.
+- Improved exercise tracking flow in `TrainState/Views/AddWorkoutView.swift`:
+  - added exercise-progress status (`logged` and `fully detailed` counts),
+  - added one-tap quick-add chips for suggested exercises not already in the workout,
+  - added smarter quick-add insertion that reuses the most recent sets/reps for the same subcategory.
+
 ## 2026-02-04
 - Removed `ExerciseEntryCardView` entirely and migrated `LiveStrengthSessionView` to the same sheet-based `ExerciseEditorSheetView` flow used in add/edit screens.
 - Switched `AddWorkoutView` to use `ExerciseEditorSheetView` for editing/adding exercises (sheet-based flow with row tap + add-and-open behavior), aligning it with `EditWorkoutView`.

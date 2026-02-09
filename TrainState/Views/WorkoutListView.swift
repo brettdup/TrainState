@@ -1,9 +1,11 @@
 import SwiftUI
 import SwiftData
 import RevenueCatUI
+import HealthKit
 
 struct WorkoutListView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
     @Query private var categories: [WorkoutCategory]
     @Query private var subcategories: [WorkoutSubcategory]
@@ -11,6 +13,14 @@ struct WorkoutListView: View {
     @State private var showingAddWorkout = false
     @State private var showingPaywall = false
     @State private var selectedFilter: WorkoutFilter = .all
+    @AppStorage("healthKitRecentWorkoutsCache") private var healthKitRecentWorkoutsCacheData: Data = Data()
+    @State private var recentHealthKitWorkouts: [HealthKitRecentWorkoutMenuItem] = []
+    @State private var isLoadingRecentHealthKitWorkouts = false
+    @State private var isImportingHealthKitWorkout = false
+    @State private var healthKitImportErrorMessage: String?
+    @State private var healthKitImportSuccessMessage: String?
+    @State private var newlyImportedHealthKitUUIDs: Set<String> = []
+    private let healthKitImporter = HealthKitRecentWorkoutImporter()
 
     private var canAddWorkout: Bool {
         guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
@@ -46,14 +56,12 @@ struct WorkoutListView: View {
                                 }
                                 .padding(.top, 40)
 
-                                if !subcategories.isEmpty {
-                                    NavigationLink {
-                                        SubcategoryLastLoggedView()
-                                    } label: {
-                                        lastTrainedCard
-                                    }
-                                    .buttonStyle(.plain)
+                                NavigationLink {
+                                    SubcategoryLastLoggedView()
+                                } label: {
+                                    lastTrainedCard
                                 }
+                                .buttonStyle(.plain)
                                 if showLimitsCard {
                                     limitsCard
                                 }
@@ -70,14 +78,12 @@ struct WorkoutListView: View {
                                     limitsCard
                                 }
                                 summaryCard
-                                if !subcategories.isEmpty {
-                                    NavigationLink {
-                                        SubcategoryLastLoggedView()
-                                    } label: {
-                                        lastTrainedCard
-                                    }
-                                    .buttonStyle(.plain)
+                                NavigationLink {
+                                    SubcategoryLastLoggedView()
+                                } label: {
+                                    lastTrainedCard
                                 }
+                                .buttonStyle(.plain)
                                 ForEach(groupedVisibleWorkouts, id: \.date) { entry in
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text(sectionHeaderTitle(for: entry.date))
@@ -125,6 +131,53 @@ struct WorkoutListView: View {
                     } label: {
                         Image(systemName: "line.3.horizontal.decrease.circle")
                     }
+                    Menu {
+                        Section("HealthKit") {
+                            Button {
+                                Task { await loadRecentHealthKitWorkouts() }
+                            } label: {
+                                Label("Refresh Recent Workouts", systemImage: "arrow.clockwise")
+                            }
+                        }
+
+                        if isLoadingRecentHealthKitWorkouts {
+                            Section {
+                                Label("Loading...", systemImage: "hourglass")
+                            }
+                        } else if recentHealthKitWorkouts.isEmpty {
+                            Section {
+                                Text("No recent workouts available for import.")
+                            }
+                        } else {
+                            Section("Recent Workouts") {
+                                ForEach(recentHealthKitWorkouts) { candidate in
+                                    let isImported = importedHealthKitUUIDs.contains(candidate.hkUUID) || newlyImportedHealthKitUUIDs.contains(candidate.hkUUID)
+                                    Button {
+                                        Task { await importHealthKitWorkout(candidate) }
+                                    } label: {
+                                        HStack(alignment: .top, spacing: 10) {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(healthKitWorkoutTitle(candidate))
+                                                Text(healthKitWorkoutSubtitle(candidate))
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            if isImported {
+                                                Label("Imported", systemImage: "checkmark.circle.fill")
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundStyle(.green)
+                                            }
+                                        }
+                                    }
+                                    .disabled(isImported)
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "heart.text.square")
+                    }
+                    .disabled(isImportingHealthKitWorkout)
                     Button {
                         if canAddWorkout {
                             showingAddWorkout = true
@@ -150,6 +203,29 @@ struct WorkoutListView: View {
                     PaywallPlaceholderView(onDismiss: { showingPaywall = false })
                 }
             }
+            .alert("HealthKit Import", isPresented: Binding(
+                get: { healthKitImportErrorMessage != nil || healthKitImportSuccessMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        healthKitImportErrorMessage = nil
+                        healthKitImportSuccessMessage = nil
+                    }
+                }
+            )) {
+                Button("OK", role: .cancel) {
+                    healthKitImportErrorMessage = nil
+                    healthKitImportSuccessMessage = nil
+                }
+            } message: {
+                if let healthKitImportErrorMessage {
+                    Text(healthKitImportErrorMessage)
+                } else if let healthKitImportSuccessMessage {
+                    Text(healthKitImportSuccessMessage)
+                }
+            }
+        }
+        .onAppear {
+            loadCachedRecentHealthKitWorkouts()
         }
     }
 
@@ -296,6 +372,125 @@ struct WorkoutListView: View {
         formatter.allowedUnits = [.hour, .minute]
         formatter.unitsStyle = .short
         return formatter.string(from: duration) ?? "0m"
+    }
+
+    private var importedHealthKitUUIDs: Set<String> {
+        Set(workouts.compactMap(\.hkUUID))
+    }
+
+    @MainActor
+    private func loadRecentHealthKitWorkouts() async {
+        guard !isLoadingRecentHealthKitWorkouts else { return }
+        isLoadingRecentHealthKitWorkouts = true
+        defer { isLoadingRecentHealthKitWorkouts = false }
+
+        do {
+            recentHealthKitWorkouts = try await healthKitImporter.fetchRecentWorkouts(limit: 10)
+            saveRecentHealthKitWorkoutsCache(recentHealthKitWorkouts)
+            if recentHealthKitWorkouts.isEmpty {
+                healthKitImportSuccessMessage = "No recent workouts were found."
+                healthKitImportErrorMessage = nil
+            }
+        } catch {
+            healthKitImportErrorMessage = error.localizedDescription
+            healthKitImportSuccessMessage = nil
+        }
+    }
+
+    @MainActor
+    private func importHealthKitWorkout(_ candidate: HealthKitRecentWorkoutMenuItem) async {
+        guard !isImportingHealthKitWorkout else { return }
+        if importedHealthKitUUIDs.contains(candidate.hkUUID) || newlyImportedHealthKitUUIDs.contains(candidate.hkUUID) {
+            return
+        }
+        isImportingHealthKitWorkout = true
+        defer { isImportingHealthKitWorkout = false }
+
+        do {
+            try await healthKitImporter.importWorkout(candidate, into: modelContext)
+            newlyImportedHealthKitUUIDs.insert(candidate.hkUUID)
+            healthKitImportSuccessMessage = "Imported \(healthKitWorkoutTitle(candidate))."
+            healthKitImportErrorMessage = nil
+        } catch {
+            healthKitImportErrorMessage = "Import failed: \(error.localizedDescription)"
+            healthKitImportSuccessMessage = nil
+        }
+    }
+
+    private func healthKitWorkoutTitle(_ candidate: HealthKitRecentWorkoutMenuItem) -> String {
+        let type = mappedWorkoutType(from: candidate.activityType)
+        return "\(type.rawValue) • \(formattedDuration(candidate.duration)) • \(relativeDateCompactLabel(for: candidate.startDate))"
+    }
+
+    private func healthKitWorkoutSubtitle(_ candidate: HealthKitRecentWorkoutMenuItem) -> String {
+        var parts: [String] = [
+            relativeWorkoutDateLabel(for: candidate.startDate)
+        ]
+        if let distance = candidate.distanceKilometers, distance > 0 {
+            parts.append(String(format: "%.1f km", distance))
+        }
+        parts.append(candidate.sourceName)
+        return parts.joined(separator: " · ")
+    }
+
+    private func relativeWorkoutDateLabel(for date: Date) -> String {
+        let calendar = Calendar.current
+        let timeText = date.formatted(date: .omitted, time: .shortened)
+        if calendar.isDateInToday(date) {
+            return "Today at \(timeText)"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday at \(timeText)"
+        }
+        return "\(date.formatted(date: .abbreviated, time: .omitted)) at \(timeText)"
+    }
+
+    private func relativeDateCompactLabel(for date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private func mappedWorkoutType(from activity: HKWorkoutActivityType) -> WorkoutType {
+        switch activity {
+        case .running:
+            return .running
+        case .cycling:
+            return .cycling
+        case .swimming:
+            return .swimming
+        case .yoga:
+            return .yoga
+        case .traditionalStrengthTraining, .functionalStrengthTraining, .coreTraining:
+            return .strength
+        case .walking, .hiking, .elliptical, .rowing, .stairClimbing, .mixedCardio:
+            return .cardio
+        default:
+            return .other
+        }
+    }
+
+    private func loadCachedRecentHealthKitWorkouts() {
+        guard !healthKitRecentWorkoutsCacheData.isEmpty else { return }
+        guard recentHealthKitWorkouts.isEmpty else { return }
+
+        do {
+            recentHealthKitWorkouts = try JSONDecoder().decode(
+                [HealthKitRecentWorkoutMenuItem].self,
+                from: healthKitRecentWorkoutsCacheData
+            )
+        } catch {
+            healthKitRecentWorkoutsCacheData = Data()
+        }
+    }
+
+    private func saveRecentHealthKitWorkoutsCache(_ items: [HealthKitRecentWorkoutMenuItem]) {
+        do {
+            healthKitRecentWorkoutsCacheData = try JSONEncoder().encode(items)
+        } catch {
+            // Ignore cache writes if encoding fails.
+        }
     }
 }
 
