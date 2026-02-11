@@ -20,6 +20,9 @@ struct WorkoutListView: View {
     @State private var healthKitImportErrorMessage: String?
     @State private var healthKitImportSuccessMessage: String?
     @State private var newlyImportedHealthKitUUIDs: Set<String> = []
+    @State private var pendingHealthKitItem: HealthKitRecentWorkoutMenuItem?
+    @State private var pendingAttachItem: HealthKitRecentWorkoutMenuItem?
+    @State private var showingHealthKitActionSheet = false
     private let healthKitImporter = HealthKitRecentWorkoutImporter()
 
     private var canAddWorkout: Bool {
@@ -154,7 +157,8 @@ struct WorkoutListView: View {
                                 ForEach(recentHealthKitWorkouts) { candidate in
                                     let isImported = importedHealthKitUUIDs.contains(candidate.hkUUID) || newlyImportedHealthKitUUIDs.contains(candidate.hkUUID)
                                     Button {
-                                        Task { await importHealthKitWorkout(candidate) }
+                                        pendingHealthKitItem = candidate
+                                        showingHealthKitActionSheet = true
                                     } label: {
                                         HStack(alignment: .top, spacing: 10) {
                                             VStack(alignment: .leading, spacing: 2) {
@@ -223,6 +227,30 @@ struct WorkoutListView: View {
                 } else if let healthKitImportSuccessMessage {
                     Text(healthKitImportSuccessMessage)
                 }
+            }
+            .confirmationDialog(
+                "Use this Apple Health workout",
+                isPresented: $showingHealthKitActionSheet,
+                presenting: pendingHealthKitItem
+            ) { item in
+                Button("Attach to an existing workout") {
+                    pendingAttachItem = item
+                }
+                Button("Import as new workout") {
+                    Task { await importHealthKitWorkout(item) }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: { item in
+                Text(healthKitWorkoutTitle(item))
+            }
+            .sheet(item: $pendingAttachItem) { item in
+                HealthKitAttachTargetPickerView(
+                    item: item,
+                    workouts: attachableWorkouts(for: item),
+                    onSelect: { workout in
+                        Task { await attachHealthKitWorkout(item, to: workout) }
+                    }
+                )
             }
         }
         .onAppear {
@@ -418,6 +446,39 @@ struct WorkoutListView: View {
         }
     }
 
+    @MainActor
+    private func attachHealthKitWorkout(_ candidate: HealthKitRecentWorkoutMenuItem, to workout: Workout) async {
+        guard !isImportingHealthKitWorkout else { return }
+        if importedHealthKitUUIDs.contains(candidate.hkUUID) || newlyImportedHealthKitUUIDs.contains(candidate.hkUUID) {
+            return
+        }
+        isImportingHealthKitWorkout = true
+        defer { isImportingHealthKitWorkout = false }
+
+        do {
+            try await healthKitImporter.attachWorkout(candidate, to: workout, in: modelContext)
+            newlyImportedHealthKitUUIDs.insert(candidate.hkUUID)
+            let workoutTitle = "\(workout.type.rawValue) • \(workout.startDate.formatted(date: .abbreviated, time: .shortened))"
+            healthKitImportSuccessMessage = "Linked \(healthKitWorkoutTitle(candidate)) to \(workoutTitle)."
+            healthKitImportErrorMessage = nil
+        } catch {
+            healthKitImportErrorMessage = "Attach failed: \(error.localizedDescription)"
+            healthKitImportSuccessMessage = nil
+        }
+    }
+
+    private func attachableWorkouts(for item: HealthKitRecentWorkoutMenuItem) -> [Workout] {
+        let calendar = Calendar.current
+        // Prefer workouts logged on the same day as the HealthKit workout.
+        let sameDay = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: item.startDate) }
+        if !sameDay.isEmpty {
+            return sameDay
+        }
+        // Fallback: recent workouts within the last 2 days.
+        let twoDaysAgo = calendar.date(byAdding: .day, value: -2, to: item.startDate) ?? item.startDate
+        return workouts.filter { $0.startDate >= twoDaysAgo && $0.startDate <= Date() }
+    }
+
     private func healthKitWorkoutTitle(_ candidate: HealthKitRecentWorkoutMenuItem) -> String {
         let type = mappedWorkoutType(from: candidate.activityType)
         return "\(type.rawValue) • \(formattedDuration(candidate.duration)) • \(relativeDateCompactLabel(for: candidate.startDate))"
@@ -568,6 +629,47 @@ private struct WorkoutRowView: View {
         formatter.allowedUnits = [.hour, .minute]
         formatter.unitsStyle = .short
         return formatter.string(from: duration) ?? "0m"
+    }
+}
+
+// MARK: - HealthKit Attach Target Picker
+private struct HealthKitAttachTargetPickerView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let item: HealthKitRecentWorkoutMenuItem
+    let workouts: [Workout]
+    let onSelect: (Workout) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if workouts.isEmpty {
+                    Text("No workouts found for this day. Log a workout first, then attach this Apple Health session.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .padding(.vertical, 8)
+                } else {
+                    Section(header: Text("Workouts on \(item.startDate.formatted(date: .abbreviated, time: .omitted))")) {
+                        ForEach(workouts, id: \.id) { workout in
+                            Button {
+                                onSelect(workout)
+                                dismiss()
+                            } label: {
+                                WorkoutRowView(workout: workout)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Attach to Workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
     }
 }
 

@@ -110,6 +110,43 @@ final class HealthKitRecentWorkoutImporter {
         try context.save()
     }
 
+    /// Attach HealthKit data to an already logged workout instead of creating a new one.
+    /// This keeps manually-entered categories, subcategories, and exercises, and only
+    /// fills in missing metrics (duration, distance, calories, rating, route).
+    func attachWorkout(_ item: HealthKitRecentWorkoutMenuItem, to workout: Workout, in context: ModelContext) async throws {
+        // Link identity back to HealthKit so this workout won't be imported twice.
+        workout.hkUUID = item.hkUUID
+        workout.hkActivityTypeRaw = item.activityTypeRaw
+
+        // Only fill gaps so we don't unexpectedly overwrite manual edits.
+        if workout.duration <= 0 {
+            workout.duration = item.duration
+        }
+        if (workout.distance ?? 0) <= 0, let distance = item.distanceKilometers, distance > 0 {
+            workout.distance = distance
+        }
+        if workout.calories == nil, let calories = item.calories {
+            workout.calories = calories
+        }
+        if workout.rating == nil, let rating = item.workoutRating {
+            workout.rating = rating
+        }
+
+        // Attach route if one doesn't already exist.
+        if workout.route == nil,
+           let sourceWorkout = try await findWorkout(uuidString: item.hkUUID),
+           let importedRoute = try await fetchRouteLocations(for: sourceWorkout),
+           !importedRoute.isEmpty {
+            let route = WorkoutRoute()
+            route.decodedRoute = downsampleLocations(importedRoute, maxPoints: 2000)
+            route.workout = workout
+            workout.route = route
+            context.insert(route)
+        }
+
+        try context.save()
+    }
+
     private func queryRecentWorkouts(limit: Int) async throws -> [HealthKitRecentWorkoutMenuItem] {
         let workouts: [HKWorkout] = try await withCheckedThrowingContinuation { continuation in
             let startDate = Calendar.current.date(byAdding: .day, value: -60, to: Date())

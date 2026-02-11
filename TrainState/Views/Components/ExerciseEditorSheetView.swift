@@ -15,6 +15,7 @@ struct ExerciseEditorSheetView: View {
     @FocusState private var focusedField: Field?
     @State private var isCreatingCustomExercise = false
     @State private var activeMetricEditor: MetricEditor?
+    @State private var showingCategoryBrowser = false
 
     private enum Field: Hashable {
         case name
@@ -85,6 +86,21 @@ struct ExerciseEditorSheetView: View {
                             .textInputAutocapitalization(.words)
                             .disableAutocorrection(true)
                     }
+
+                    if !availableSubcategories.isEmpty {
+                        Button {
+                            showingCategoryBrowser = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "list.bullet.rectangle")
+                                Text("Browse by category")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
                 }
 
                 Section {
@@ -153,6 +169,15 @@ struct ExerciseEditorSheetView: View {
             metricEditorSheet(metric: metric)
                 .presentationDetents([.fraction(0.35), .medium])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingCategoryBrowser) {
+            ExerciseCategoryBrowserView(
+                subcategories: availableSubcategories,
+                options: availableOptions
+            ) { option in
+                entry.subcategoryID = option.subcategoryID
+                entry.name = option.name
+            }
         }
     }
 
