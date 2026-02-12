@@ -22,7 +22,9 @@ struct TrainStateApp: App {
                 UserSettings.self,
                 WorkoutRoute.self,
                 WorkoutExercise.self,
-                SubcategoryExercise.self
+                SubcategoryExercise.self,
+                StrengthWorkoutTemplate.self,
+                StrengthWorkoutTemplateExercise.self
             ])
             
             // Use persistent database that preserves all data
@@ -46,7 +48,9 @@ struct TrainStateApp: App {
                     UserSettings.self,
                     WorkoutRoute.self,
                     WorkoutExercise.self,
-                    SubcategoryExercise.self
+                    SubcategoryExercise.self,
+                    StrengthWorkoutTemplate.self,
+                    StrengthWorkoutTemplateExercise.self
                 ])
                 let config = ModelConfiguration(isStoredInMemoryOnly: true)
                 modelContainer = try ModelContainer(for: schema, configurations: config)
@@ -67,57 +71,6 @@ struct TrainStateApp: App {
             .onAppear {
                 print("[App] App body appeared successfully")
             }
-        }
-    }
-    
-    // MARK: - Migration
-    
-    @MainActor
-    private func performWorkoutTypeMigration() async {
-        let migrationKey = "workoutTypeMigrationV3"
-        guard !UserDefaults.standard.bool(forKey: migrationKey) else {
-            return // Migration already completed
-        }
-        
-        do {
-            let context = modelContainer.mainContext
-            let workouts = try context.fetch(FetchDescriptor<Workout>())
-            
-            print("[Migration] Found \(workouts.count) workouts")
-            
-            var fixedCount = 0
-            for workout in workouts {
-                print("[Migration] Workout: typeRawValue='\(workout.typeRawValue)', notes='\(workout.notes ?? "none")'")
-                
-                // If typeRawValue is empty but the workout should have a type, try to fix it
-                if workout.typeRawValue.isEmpty {
-                    // Try to determine type from the notes if it says "Imported from Health"
-                    if let notes = workout.notes, notes.contains("Imported from Health") {
-                        // This is likely a HealthKit import, let's set it to a reasonable default
-                        // We can't determine the original type, so set it to "Other" properly
-                        workout.typeRawValue = WorkoutType.other.rawValue
-                        fixedCount += 1
-                        print("[Migration] Fixed workout with empty typeRawValue")
-                    } else {
-                        // This is likely a manually created workout, set to "Other"
-                        workout.typeRawValue = WorkoutType.other.rawValue
-                        fixedCount += 1
-                        print("[Migration] Fixed manual workout with empty typeRawValue")
-                    }
-                }
-            }
-            
-            if fixedCount > 0 {
-                try context.save()
-                print("[Migration] Fixed \(fixedCount) workouts")
-            }
-            
-            // Mark migration as completed
-            UserDefaults.standard.set(true, forKey: migrationKey)
-            print("[Migration] Workout type migration completed")
-            
-        } catch {
-            print("[Migration] Migration failed: \(error)")
         }
     }
 } 

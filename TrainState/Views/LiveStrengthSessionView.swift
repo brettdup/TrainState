@@ -15,6 +15,7 @@ struct LiveStrengthSessionView: View {
     @State private var showCancelConfirmation = false
     @State private var showExerciseLinkAlert = false
     @State private var activeExerciseSelection: ExerciseEditorSelection?
+    @State private var didStartLiveActivity = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -65,6 +66,7 @@ struct LiveStrengthSessionView: View {
             .interactiveDismissDisabled(true)
             .confirmationDialog("Discard this live session?", isPresented: $showCancelConfirmation, titleVisibility: .visible) {
                 Button("Discard Session", role: .destructive) {
+                    WorkoutLiveActivityManager.shared.end()
                     onCancel(entries)
                     dismiss()
                 }
@@ -79,7 +81,7 @@ struct LiveStrengthSessionView: View {
             }
             .sheet(item: $activeExerciseSelection) { selection in
                 if let index = entries.firstIndex(where: { $0.id == selection.id }) {
-                    ExerciseEditorSheetView(
+                    LiveExerciseLoggerSheetView(
                         entry: $entries[index],
                         availableSubcategories: availableSubcategories,
                         availableOptions: quickAddOptions,
@@ -94,10 +96,35 @@ struct LiveStrengthSessionView: View {
         }
         .onReceive(timer) { timestamp in
             now = timestamp
+            if didStartLiveActivity {
+                WorkoutLiveActivityManager.shared.update(
+                    elapsedSeconds: Int(elapsedDuration),
+                    exerciseCount: loggedExerciseCount,
+                    currentExercise: activeExerciseName
+                )
+            }
+        }
+        .onAppear {
+            guard !didStartLiveActivity else { return }
+            didStartLiveActivity = true
+            WorkoutLiveActivityManager.shared.start(
+                workoutName: "Strength Workout",
+                startedAt: sessionStart,
+                exerciseCount: loggedExerciseCount,
+                currentExercise: activeExerciseName
+            )
+        }
+        .onDisappear {
+            WorkoutLiveActivityManager.shared.end()
+            didStartLiveActivity = false
         }
         .onChange(of: activeExerciseSelection) { _, newValue in
             if newValue == nil {
-                entries.removeAll { $0.isEmpty }
+                // Defer cleanup so we don't mutate the entries array while the
+                // sheet is still using an index-based binding, which can crash.
+                DispatchQueue.main.async {
+                    entries.removeAll { $0.isEmpty }
+                }
             }
         }
     }
@@ -107,9 +134,15 @@ struct LiveStrengthSessionView: View {
             Text("Session Running")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
+
+            Label("Live mode active", systemImage: "dot.radiowaves.left.and.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(typeTintColor)
+
             Text(formattedDuration(elapsedDuration))
                 .font(.system(size: 44, weight: .bold, design: .rounded))
                 .monospacedDigit()
+
             Text("Started \(sessionStart.formatted(date: .omitted, time: .shortened))")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -140,38 +173,73 @@ struct LiveStrengthSessionView: View {
                 .buttonStyle(.plain)
             }
 
-            VStack(spacing: 12) {
-                ForEach(entries) { entry in
-                    Button {
-                        activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
-                                    .font(.body.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-
-                                if let summary = exerciseSummary(for: entry) {
-                                    Text(summary)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+            if !quickAddOptions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(quickAddOptions.prefix(10)), id: \.id) { option in
+                            Button {
+                                addExercise(from: option)
+                            } label: {
+                                Text(option.name)
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        Capsule()
+                                            .fill(typeTintColor.opacity(0.16))
+                                    )
                             }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
+                            .buttonStyle(.plain)
                         }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.primary.opacity(0.06))
-                        )
                     }
-                    .buttonStyle(.plain)
+                }
+            }
+
+            if entries.isEmpty {
+                Text("Start by choosing an exercise like Bench Press, then log each set.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(entries) { entry in
+                        Button {
+                            activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+
+                                    if let summary = exerciseSummary(for: entry) {
+                                        Text(summary)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    if !entry.setSummaryLines.isEmpty {
+                                        Text(entry.setSummaryLines.joined(separator: "\n"))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color.primary.opacity(0.06))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
 
@@ -190,12 +258,21 @@ struct LiveStrengthSessionView: View {
         max(now.timeIntervalSince(sessionStart), 0)
     }
 
+    private var loggedExerciseCount: Int {
+        entries.filter { !$0.trimmedName.isEmpty }.count
+    }
+
+    private var activeExerciseName: String {
+        entries.last(where: { !$0.trimmedName.isEmpty })?.trimmedName ?? "Logging sets"
+    }
+
     private func finishSession() {
         guard !hasUnlinkedExercises(entries) else {
             showExerciseLinkAlert = true
             return
         }
         onFinish(entries, sessionStart, elapsedDuration)
+        WorkoutLiveActivityManager.shared.end()
         dismiss()
     }
 
@@ -218,12 +295,24 @@ struct LiveStrengthSessionView: View {
         activeExerciseSelection = ExerciseEditorSelection(id: newEntry.id)
     }
 
+    private func addExercise(from option: ExerciseQuickAddOption) {
+        var entry = ExerciseLogEntry(name: option.name, subcategoryID: option.subcategoryID)
+        if let lastMatch = entries.last(where: { $0.trimmedName.caseInsensitiveCompare(option.name) == .orderedSame }) {
+            entry.setEntries = lastMatch.setEntries
+            entry.sets = lastMatch.effectiveSetCount
+            entry.reps = lastMatch.effectiveReps
+            entry.weight = lastMatch.effectiveWeight
+        }
+        entries.append(entry)
+        activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
+    }
+
     private func exerciseSummary(for entry: ExerciseLogEntry) -> String? {
-        let setsText = entry.sets.map { "\($0)x" }
-        let repsText = entry.reps.map { "\($0)" }
+        let setsText = entry.effectiveSetCount.map { "\($0)x" }
+        let repsText = entry.effectiveReps.map { "\($0)" }
         let weightText: String? = {
-            guard let w = entry.weight, w > 0 else { return nil }
-            return String(format: "%.1f kg", w)
+            guard let w = entry.effectiveWeight, w > 0 else { return nil }
+            return "\(ExerciseLogEntry.displayWeight(w)) kg"
         }()
 
         let primary = [setsText, repsText].compactMap { $0 }.joined(separator: " ")

@@ -205,8 +205,20 @@ class PurchaseManager: ObservableObject {
 
 #if DEBUG
 extension PurchaseManager {
+    var isDebugPremiumOverrideEnabled: Bool {
+        debugPremiumOverride
+    }
+    
     func forcePremiumForPreview() {
         debugPremiumOverride = true
+    }
+    
+    func togglePremiumOverride() {
+        debugPremiumOverride.toggle()
+    }
+    
+    func setPremiumOverride(_ enabled: Bool) {
+        debugPremiumOverride = enabled
     }
 }
 #endif

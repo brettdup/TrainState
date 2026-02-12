@@ -140,11 +140,11 @@ struct EditWorkoutView: View {
             )
         }
         .sheet(isPresented: $showingExercisePicker) {
-            ExerciseOptionPickerView(
-                options: quickAddOptions,
-                subcategories: availableExerciseSubcategories
-            ) { option in
-                addExercise(from: option)
+            ExerciseLibraryPickerView(
+                subcategories: availableExerciseSubcategories,
+                options: quickAddOptions
+            ) { selected in
+                addExercises(from: selected)
             }
         }
         .sheet(item: $activeExerciseSelection) { selection in
@@ -154,7 +154,7 @@ struct EditWorkoutView: View {
                     availableSubcategories: availableExerciseSubcategories,
                     availableOptions: quickAddOptions,
                     onDelete: {
-                        exerciseEntries.remove(at: index)
+                        exerciseEntries.removeAll { $0.id == selection.id }
                     }
                 )
             } else {
@@ -182,9 +182,13 @@ struct EditWorkoutView: View {
             }
         }
         .onChange(of: activeExerciseSelection) { _, newValue in
-            // When leaving the editor page, clean up any fully empty exercises
+            // When leaving the editor page, clean up any fully empty exercises.
+            // Do this on the next runloop tick so we don't mutate the array
+            // while SwiftUI is still holding index-based bindings into it.
             if newValue == nil {
-                exerciseEntries.removeAll { $0.isEmpty }
+                DispatchQueue.main.async {
+                    exerciseEntries.removeAll { $0.isEmpty }
+                }
             }
         }
     }
@@ -390,78 +394,40 @@ struct EditWorkoutView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button {
-                    addAndEditNewExercise()
-                } label: {
-                    Label("Add Exercise", systemImage: "plus.circle.fill")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(type.tintColor.opacity(0.18))
-                        )
-                }
-                .buttonStyle(.plain)
             }
 
-            if !quickAddOptions.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Quick add from your templates")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(quickAddOptions) { option in
-                                Button {
-                                    addExercise(from: option)
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "bolt.fill")
-                                            .font(.caption2)
-                                        Text(option.name)
-                                            .font(.caption.weight(.semibold))
-                                            .lineLimit(1)
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        Capsule()
-                                            .fill(type.tintColor.opacity(0.18))
-                                    )
-                                    .foregroundStyle(type.tintColor)
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            Button {
-                                showingExercisePicker = true
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "line.3.horizontal.decrease.circle")
-                                        .font(.caption2)
-                                    Text("Browse all")
-                                        .font(.caption.weight(.semibold))
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(
-                                    Capsule()
-                                        .stroke(Color.primary.opacity(0.15), lineWidth: 1)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
+            Button {
+                showingExercisePicker = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "list.bullet.rectangle.portrait")
+                        .font(.subheadline.weight(.semibold))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Browse exercise library")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Pick from categories and templates")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(type.tintColor.opacity(0.12))
+                )
             }
+            .buttonStyle(.plain)
 
             if exerciseEntries.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("No exercises yet")
                         .font(.subheadline.weight(.semibold))
-                    Text("Use quick-add chips above or add a custom exercise to start tracking sets, reps, and weight.")
+                    Text("Tap \"Browse exercise library\" or add a custom exercise to start tracking sets, reps, and weight.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -501,12 +467,6 @@ struct EditWorkoutView: View {
                     }
                 }
             }
-            if quickAddOptions.isEmpty {
-                Text("Select workout subcategories to unlock quick-add exercise chips.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             Button {
                 addAndEditNewExercise()
             } label: {
@@ -560,6 +520,8 @@ struct EditWorkoutView: View {
                 showingExerciseLinkAlert = true
                 return
             }
+            // Auto-include any categories/subcategories referenced by exercises.
+            syncSelectionFromExercises()
             isSaving = true
             persistExerciseTemplates(from: exerciseEntries)
 
@@ -635,8 +597,19 @@ struct EditWorkoutView: View {
     }
 
     private func addAndEditNewExercise() {
-        let newEntry = defaultExerciseEntry()
+        // Start a fully new, blank exercise entry (no template-prefilled name),
+        // but link to the first available subcategory when possible so it can be saved
+        // and auto-associate categories/subcategories with the workout.
+        let initialSubcategoryID = availableExerciseSubcategories.first?.id
+        let newEntry = ExerciseLogEntry(
+            name: "",
+            sets: nil,
+            reps: nil,
+            weight: nil,
+            subcategoryID: initialSubcategoryID
+        )
         exerciseEntries.append(newEntry)
+        ensureSelectionForSubcategoryID(initialSubcategoryID)
         activeExerciseSelection = ExerciseEditorSelection(id: newEntry.id)
     }
 
@@ -649,6 +622,35 @@ struct EditWorkoutView: View {
             subcategoryID: option.subcategoryID
         )
         exerciseEntries.append(newEntry)
+        ensureSelectionForSubcategoryID(option.subcategoryID)
+    }
+
+    private func addExercises(from options: [ExerciseQuickAddOption]) {
+        for option in options {
+            addExercise(from: option)
+        }
+    }
+
+    /// Ensure that the workout's selected categories/subcategories include anything
+    /// referenced by exercise entries, so selection stays in sync with actual content.
+    private func syncSelectionFromExercises() {
+        for entry in exerciseEntries {
+            ensureSelectionForSubcategoryID(entry.subcategoryID)
+        }
+    }
+
+    private func ensureSelectionForSubcategoryID(_ id: UUID?) {
+        guard let id,
+              let subcategory = allSubcategories.first(where: { $0.id == id }) else { return }
+
+        if !selectedSubcategories.contains(where: { $0.id == subcategory.id }) {
+            selectedSubcategories.append(subcategory)
+        }
+
+        if let category = subcategory.category,
+           !selectedCategories.contains(where: { $0.id == category.id }) {
+            selectedCategories.append(category)
+        }
     }
 
     private func defaultExerciseEntry() -> ExerciseLogEntry {

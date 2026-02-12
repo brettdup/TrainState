@@ -7,11 +7,14 @@ struct WorkoutDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @Bindable var workout: Workout
+    @Query(sort: \StrengthWorkoutTemplate.updatedAt, order: .reverse) private var strengthTemplates: [StrengthWorkoutTemplate]
     @State private var showingCategoryPicker = false
     @State private var selectedCategories: [WorkoutCategory] = []
     @State private var selectedSubcategories: [WorkoutSubcategory] = []
     @State private var showingDeleteConfirmation = false
     @State private var showingRouteMapSheet = false
+    @State private var showingSaveTemplateAlert = false
+    @State private var templateName = ""
 
     var body: some View {
         ZStack {
@@ -63,6 +66,15 @@ struct WorkoutDetailView: View {
                         Label("Edit Workout", systemImage: "pencil")
                     }
 
+                    if canSaveAsStrengthTemplate {
+                        Button {
+                            templateName = defaultTemplateName
+                            showingSaveTemplateAlert = true
+                        } label: {
+                            Label("Save as Template", systemImage: "square.and.arrow.down")
+                        }
+                    }
+
                     Button(role: .destructive) {
                         showingDeleteConfirmation = true
                     } label: {
@@ -80,6 +92,19 @@ struct WorkoutDetailView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This workout will be permanently deleted. This action cannot be undone.")
+        }
+        .alert("Save as Template", isPresented: $showingSaveTemplateAlert) {
+            TextField("Template name", text: $templateName)
+            Button("Cancel", role: .cancel) {
+                templateName = ""
+            }
+            Button("Save") {
+                saveWorkoutAsTemplate()
+                templateName = ""
+            }
+            .disabled(templateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        } message: {
+            Text("Save this workout's exercises as a reusable strength template.")
         }
         .sheet(isPresented: $showingCategoryPicker, onDismiss: applyCategorySelection) {
             CategoryAndSubcategorySelectionView(
@@ -253,21 +278,78 @@ struct WorkoutDetailView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            VStack(spacing: 10) {
+            VStack(spacing: 12) {
                 ForEach(exercises.sorted(by: { $0.orderIndex < $1.orderIndex }), id: \.id) { exercise in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(exercise.name)
-                            .font(.body.weight(.semibold))
-                        Spacer()
-                        Text(exerciseStatLine(for: exercise))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    NavigationLink {
+                        ExerciseInsightsView(
+                            exerciseName: exercise.name,
+                            subcategoryID: exercise.subcategory?.id
+                        )
+                    } label: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(exercise.name)
+                                    .font(.body.weight(.semibold))
+
+                                Spacer()
+
+                                if let subcategory = exercise.subcategory {
+                                    Text(subcategory.name)
+                                        .font(.caption.weight(.medium))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(
+                                            Capsule()
+                                                .fill(workout.type.tintColor.opacity(colorScheme == .dark ? 0.35 : 0.18))
+                                        )
+                                        .foregroundStyle(workout.type.tintColor)
+                                }
+                            }
+
+                            let statItems = exerciseStatItems(for: exercise)
+                            if !statItems.isEmpty {
+                                HStack(spacing: 8) {
+                                    ForEach(statItems, id: \.self) { item in
+                                        Text(item)
+                                            .font(.caption)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 4)
+                                            .background(
+                                                Capsule()
+                                                    .fill(Color.secondary.opacity(0.14))
+                                            )
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+
+                            let setLines = exerciseSetSummaryLines(for: exercise)
+                            if !setLines.isEmpty {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    ForEach(Array(setLines.enumerated()), id: \.offset) { _, line in
+                                        Text(line)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+
+                            if let additionalNotes = additionalExerciseNotes(for: exercise) {
+                                Text(additionalNotes)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18)
+                                .fill(Color(.systemBackground).opacity(colorScheme == .dark ? 0.55 : 0.9))
+                        )
                     }
-                    if let subcategory = exercise.subcategory {
-                        Text("Linked: \(subcategory.name)")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -276,8 +358,15 @@ struct WorkoutDetailView: View {
         .glassCard(cornerRadius: 32)
     }
 
-    private func exerciseStatLine(for exercise: WorkoutExercise) -> String {
+    private func exerciseStatItems(for exercise: WorkoutExercise) -> [String] {
         var parts: [String] = []
+        let setLines = exerciseSetSummaryLines(for: exercise)
+        if !setLines.isEmpty {
+            parts.append("\(setLines.count) sets")
+            parts.append("Per-set details")
+            return parts
+        }
+
         if let sets = exercise.sets, sets > 0 {
             parts.append("\(sets) sets")
         }
@@ -287,7 +376,25 @@ struct WorkoutDetailView: View {
         if let weight = exercise.weight, weight > 0 {
             parts.append(String(format: "%.1f kg", weight))
         }
-        return parts.isEmpty ? "Logged" : parts.joined(separator: " • ")
+        return parts
+    }
+
+    private func exerciseSetSummaryLines(for exercise: WorkoutExercise) -> [String] {
+        guard let notes = exercise.notes, !notes.isEmpty else { return [] }
+        return notes
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.hasPrefix("Set ") }
+    }
+
+    private func additionalExerciseNotes(for exercise: WorkoutExercise) -> String? {
+        guard let notes = exercise.notes, !notes.isEmpty else { return nil }
+        let nonSetLines = notes
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("Set ") }
+        guard !nonSetLines.isEmpty else { return nil }
+        return nonSetLines.joined(separator: " ")
     }
 
     private var categoriesSummary: String {
@@ -314,6 +421,51 @@ struct WorkoutDetailView: View {
         modelContext.delete(workout)
         try? modelContext.save()
         dismiss()
+    }
+
+    private var canSaveAsStrengthTemplate: Bool {
+        workout.type == .strength && !(workout.exercises?.isEmpty ?? true)
+    }
+
+    private var defaultTemplateName: String {
+        let base = "Strength \(workout.startDate.formatted(date: .abbreviated, time: .omitted))"
+        let existingNames = Set(strengthTemplates.map { $0.name.lowercased() })
+        if !existingNames.contains(base.lowercased()) {
+            return base
+        }
+        var suffix = 2
+        while existingNames.contains("\(base) \(suffix)".lowercased()) {
+            suffix += 1
+        }
+        return "\(base) \(suffix)"
+    }
+
+    private func saveWorkoutAsTemplate() {
+        let name = templateName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let sortedWorkoutExercises = (workout.exercises ?? []).sorted { $0.orderIndex < $1.orderIndex }
+        let templateExercises = sortedWorkoutExercises.enumerated().map { index, exercise in
+            StrengthWorkoutTemplateExercise(
+                name: exercise.name,
+                orderIndex: index,
+                sets: exercise.sets,
+                reps: exercise.reps,
+                weight: exercise.weight,
+                subcategoryID: exercise.subcategory?.id
+            )
+        }
+        guard !templateExercises.isEmpty else { return }
+
+        if let existing = strengthTemplates.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            existing.name = name
+            existing.mainCategoryRawValue = workout.type.rawValue
+            existing.updatedAt = Date()
+            existing.exercises = templateExercises
+        } else {
+            let template = StrengthWorkoutTemplate(name: name, mainCategoryRawValue: workout.type.rawValue, exercises: templateExercises)
+            modelContext.insert(template)
+        }
+        try? modelContext.save()
     }
 }
 
@@ -354,7 +506,7 @@ private struct StatTile: View {
 
 #Preview {
     let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-    let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, configurations: config)
+    let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self, configurations: config)
     let context = container.mainContext
 
     let endurance = WorkoutCategory(name: "Endurance", color: "#FFEAA7", workoutType: .running)

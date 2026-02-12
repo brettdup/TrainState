@@ -11,25 +11,54 @@ struct ExerciseEditorSheetView: View {
     let availableSubcategories: [WorkoutSubcategory]
     let availableOptions: [ExerciseQuickAddOption]
     let onDelete: () -> Void
+    let mode: Mode
 
     @FocusState private var focusedField: Field?
     @State private var isCreatingCustomExercise = false
-    @State private var activeMetricEditor: MetricEditor?
+    @State private var activePickerEditor: PickerEditor?
     @State private var showingCategoryBrowser = false
 
     private enum Field: Hashable {
         case name
     }
 
-    private enum MetricEditor: String, Identifiable {
-        case sets
-        case reps
-        case weight
+    enum Mode {
+        case workout
+        case template
+    }
 
-        var id: String { rawValue }
+    private enum PickerEditor: Hashable, Identifiable {
+        case sets
+        case reps(UUID)
+        case weight(UUID)
+
+        var id: String {
+            switch self {
+            case .sets:
+                return "sets"
+            case .reps(let id):
+                return "reps-\(id.uuidString)"
+            case .weight(let id):
+                return "weight-\(id.uuidString)"
+            }
+        }
     }
 
     private let newExercisePickerValue = "__new_exercise__"
+
+    init(
+        entry: Binding<ExerciseLogEntry>,
+        availableSubcategories: [WorkoutSubcategory],
+        availableOptions: [ExerciseQuickAddOption],
+        onDelete: @escaping () -> Void,
+        mode: Mode = .workout
+    ) {
+        self._entry = entry
+        self.availableSubcategories = availableSubcategories
+        self.availableOptions = availableOptions
+        self.onDelete = onDelete
+        self.mode = mode
+    }
 
     private var exerciseNamesForSelectedSubcategory: [String] {
         guard let id = entry.subcategoryID else { return [] }
@@ -43,14 +72,6 @@ struct ExerciseEditorSheetView: View {
 
         let all = availableOptions.map(\.name)
         return Array(Set(all)).sorted()
-    }
-
-    private var detailCompletionCount: Int {
-        var count = 0
-        if entry.sets != nil { count += 1 }
-        if entry.reps != nil { count += 1 }
-        if entry.weight != nil { count += 1 }
-        return count
     }
 
     private var isReadyToSave: Bool {
@@ -104,25 +125,89 @@ struct ExerciseEditorSheetView: View {
                 }
 
                 Section {
-                    VStack(spacing: 10) {
-                        metricCard(title: "Sets", value: entry.sets.map(String.init) ?? "-", metric: .sets)
-                        metricCard(title: "Reps", value: entry.reps.map(String.init) ?? "-", metric: .reps)
-                        metricCard(
-                            title: "Weight",
-                            value: entry.weight.map(displayValue) ?? "-",
-                            suffix: "kg",
-                            metric: .weight
-                        )
+                    Button {
+                        HapticManager.lightImpact()
+                        activePickerEditor = .sets
+                    } label: {
+                        HStack {
+                            Text("Sets")
+                            Spacer()
+                            Text("\(entry.effectiveSetCount ?? 0)")
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
                     }
-                    .padding(.vertical, 4)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .buttonStyle(.plain)
                 } header: {
                     Text("Details")
                 } footer: {
-                    HStack {
-                        Text(isReadyToSave ? "Ready to save" : "Add an exercise name to save")
-                        Spacer()
-                        Text("\(detailCompletionCount)/3")
+                    Text(isReadyToSave ? "Ready to save" : "Add an exercise name to save")
+                }
+
+                if !entry.setEntries.isEmpty {
+                    Section("Set Plan") {
+                        ForEach(Array(entry.setEntries.enumerated()), id: \.element.id) { index, setEntry in
+                            HStack(spacing: 12) {
+                                if mode == .workout {
+                                    Button {
+                                        toggleSetCompletion(setID: setEntry.id)
+                                    } label: {
+                                        Image(systemName: setEntry.isCompleted ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(setEntry.isCompleted ? Color.green : Color.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                Text("Set \(index + 1)")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer(minLength: 8)
+
+                                Button {
+                                    HapticManager.lightImpact()
+                                    activePickerEditor = .reps(setEntry.id)
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Text("Reps")
+                                        Text("\(setEntry.reps)")
+                                            .monospacedDigit()
+                                            .fontWeight(.semibold)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        Capsule(style: .continuous)
+                                            .fill(Color.primary.opacity(0.08))
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    HapticManager.lightImpact()
+                                    activePickerEditor = .weight(setEntry.id)
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Text("Kg")
+                                        Text(displayValue(setEntry.weight))
+                                            .monospacedDigit()
+                                            .fontWeight(.semibold)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        Capsule(style: .continuous)
+                                            .fill(Color.primary.opacity(0.08))
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        if mode == .workout {
+                            Text("\(entry.completedSetCount)/\(entry.setEntries.count) sets completed")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -160,13 +245,14 @@ struct ExerciseEditorSheetView: View {
             if entry.subcategoryID == nil, let first = availableSubcategories.first {
                 entry.subcategoryID = first.id
             }
+            syncPlannedSetEntriesFromMetrics()
             syncExerciseSelectionForCurrentSubcategory()
         }
         .onChange(of: entry.subcategoryID) { _, _ in
             syncExerciseSelectionForCurrentSubcategory()
         }
-        .sheet(item: $activeMetricEditor) { metric in
-            metricEditorSheet(metric: metric)
+        .sheet(item: $activePickerEditor) { editor in
+            pickerEditorSheet(editor: editor)
                 .presentationDetents([.fraction(0.35), .medium])
                 .presentationDragIndicator(.visible)
         }
@@ -216,60 +302,18 @@ struct ExerciseEditorSheetView: View {
     }
 
     @ViewBuilder
-    private func metricCard(
-        title: String,
-        value: String,
-        suffix: String? = nil,
-        metric: MetricEditor
-    ) -> some View {
-        Button {
-            HapticManager.lightImpact()
-            activeMetricEditor = metric
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                HStack(alignment: .lastTextBaseline, spacing: 4) {
-                    Text(value)
-                        .font(.title3.weight(.semibold))
-                        .monospacedDigit()
-                    if let suffix {
-                        Text(suffix)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.up")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private func metricEditorSheet(metric: MetricEditor) -> some View {
+    private func pickerEditorSheet(editor: PickerEditor) -> some View {
         VStack(spacing: 18) {
-            Text(metricTitle(metric))
+            Text(pickerTitle(editor))
                 .font(.headline)
 
-            Text(metricValueString(metric))
+            Text(pickerValueString(editor))
                 .font(.system(size: 36, weight: .bold, design: .rounded))
                 .monospacedDigit()
 
             HStack(spacing: 16) {
                 Button {
-                    adjust(metric: metric, delta: -metricStep(metric))
+                    adjust(editor: editor, delta: -pickerStep(editor))
                 } label: {
                     Image(systemName: "minus")
                         .font(.title2.weight(.bold))
@@ -278,7 +322,7 @@ struct ExerciseEditorSheetView: View {
                 .buttonStyle(.borderedProminent)
 
                 Button {
-                    clearMetric(metric)
+                    clear(editor: editor)
                 } label: {
                     Text("Clear")
                         .font(.subheadline.weight(.semibold))
@@ -286,7 +330,7 @@ struct ExerciseEditorSheetView: View {
                 .buttonStyle(.bordered)
 
                 Button {
-                    adjust(metric: metric, delta: metricStep(metric))
+                    adjust(editor: editor, delta: pickerStep(editor))
                 } label: {
                     Image(systemName: "plus")
                         .font(.title2.weight(.bold))
@@ -314,12 +358,14 @@ struct ExerciseEditorSheetView: View {
             return
         }
 
+        // If the entry has no name yet, keep it as a custom exercise
+        // instead of auto-filling from templates.
         if trimmedName.isEmpty {
-            entry.name = options[0]
-            isCreatingCustomExercise = false
+            isCreatingCustomExercise = true
             return
         }
 
+        // For named entries that match an option, keep them in-sync with that option.
         isCreatingCustomExercise = !options.contains(trimmedName)
         if !isCreatingCustomExercise, let matched = options.first(where: { $0 == trimmedName }) {
             entry.name = matched
@@ -333,76 +379,117 @@ struct ExerciseEditorSheetView: View {
         return String(format: "%.1f", value)
     }
 
-    private func metricTitle(_ metric: MetricEditor) -> String {
-        switch metric {
-        case .sets: return "Sets"
-        case .reps: return "Reps"
-        case .weight: return "Weight (kg)"
-        }
-    }
-
-    private func metricValueString(_ metric: MetricEditor) -> String {
-        switch metric {
+    private func pickerTitle(_ editor: PickerEditor) -> String {
+        switch editor {
         case .sets:
-            return entry.sets.map(String.init) ?? "-"
+            return "Sets"
         case .reps:
-            return entry.reps.map(String.init) ?? "-"
+            return "Reps"
         case .weight:
-            return entry.weight.map(displayValue) ?? "-"
+            return "Weight (kg)"
         }
     }
 
-    private func metricStep(_ metric: MetricEditor) -> Double {
-        switch metric {
-        case .sets, .reps: return 1
-        case .weight: return 2.5
-        }
-    }
-
-    private func adjust(metric: MetricEditor, delta: Double) {
-        let didChange: Bool
-        switch metric {
+    private func pickerValueString(_ editor: PickerEditor) -> String {
+        switch editor {
         case .sets:
-            let previous = entry.sets
-            let current = Double(entry.sets ?? 0)
-            let next = max(0, current + delta)
-            entry.sets = next > 0 ? Int(next) : nil
-            didChange = previous != entry.sets
-        case .reps:
-            let previous = entry.reps
-            let current = Double(entry.reps ?? 0)
-            let next = max(0, current + delta)
-            entry.reps = next > 0 ? Int(next) : nil
-            didChange = previous != entry.reps
+            return "\(entry.effectiveSetCount ?? 0)"
+        case .reps(let setID):
+            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return "0" }
+            return "\(entry.setEntries[idx].reps)"
+        case .weight(let setID):
+            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return "0" }
+            return displayValue(entry.setEntries[idx].weight)
+        }
+    }
+
+    private func pickerStep(_ editor: PickerEditor) -> Double {
+        switch editor {
+        case .sets, .reps:
+            return 1
         case .weight:
-            let previous = entry.weight
-            let current = entry.weight ?? 0
-            let next = max(0, current + delta)
-            entry.weight = next > 0 ? next : nil
-            didChange = previous != entry.weight
-        }
-
-        if didChange {
-            HapticManager.lightImpact()
+            return 2.5
         }
     }
 
-    private func clearMetric(_ metric: MetricEditor) {
-        let didChange: Bool
-        switch metric {
+    private func adjust(editor: PickerEditor, delta: Double) {
+        switch editor {
         case .sets:
-            didChange = entry.sets != nil
+            let current = Double(entry.effectiveSetCount ?? 0)
+            let next = max(0, Int(current + delta))
+            entry.sets = next > 0 ? next : nil
+            syncPlannedSetEntriesFromMetrics()
+            syncLegacyMetricsFromFirstSet()
+        case .reps(let setID):
+            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
+            let current = Double(entry.setEntries[idx].reps)
+            entry.setEntries[idx].reps = max(Int(current + delta), 0)
+            syncLegacyMetricsFromFirstSet()
+        case .weight(let setID):
+            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
+            let current = entry.setEntries[idx].weight
+            entry.setEntries[idx].weight = max(current + delta, 0)
+            syncLegacyMetricsFromFirstSet()
+        }
+        HapticManager.lightImpact()
+    }
+
+    private func clear(editor: PickerEditor) {
+        switch editor {
+        case .sets:
             entry.sets = nil
-        case .reps:
-            didChange = entry.reps != nil
-            entry.reps = nil
-        case .weight:
-            didChange = entry.weight != nil
-            entry.weight = nil
+            syncPlannedSetEntriesFromMetrics()
+            syncLegacyMetricsFromFirstSet()
+        case .reps(let setID):
+            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
+            entry.setEntries[idx].reps = 0
+            syncLegacyMetricsFromFirstSet()
+        case .weight(let setID):
+            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
+            entry.setEntries[idx].weight = 0
+            syncLegacyMetricsFromFirstSet()
+        }
+        HapticManager.lightImpact()
+    }
+
+    private func syncPlannedSetEntriesFromMetrics() {
+        let plannedCount = max(entry.sets ?? 0, 0)
+        guard plannedCount > 0 else {
+            entry.setEntries = []
+            return
         }
 
-        if didChange {
-            HapticManager.lightImpact()
+        var sets = entry.setEntries
+        if sets.count > plannedCount {
+            sets = Array(sets.prefix(plannedCount))
+        }
+        while sets.count < plannedCount {
+            let fallbackReps = max(entry.reps ?? sets.last?.reps ?? 0, 0)
+            let fallbackWeight = max(entry.weight ?? sets.last?.weight ?? 0, 0)
+            sets.append(
+                ExerciseSetEntry(
+                    reps: fallbackReps,
+                    weight: fallbackWeight,
+                    isCompleted: false
+                )
+            )
+        }
+        entry.setEntries = sets
+    }
+
+    private func toggleSetCompletion(setID: UUID) {
+        guard let index = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
+        entry.setEntries[index].isCompleted.toggle()
+        HapticManager.lightImpact()
+    }
+
+    private func syncLegacyMetricsFromFirstSet() {
+        if let first = entry.setEntries.first {
+            entry.reps = first.reps
+            entry.weight = first.weight
+        } else {
+            entry.reps = nil
+            entry.weight = nil
         }
     }
 
@@ -463,7 +550,8 @@ private struct ExerciseEditorSheetPreviewHost: View {
             availableOptions: availableOptions,
             onDelete: {
                 entry = ExerciseLogEntry(subcategoryID: availableSubcategories.first?.id)
-            }
+            },
+            mode: .workout
         )
     }
 }

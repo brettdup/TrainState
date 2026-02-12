@@ -4,6 +4,7 @@ import SwiftData
 struct DeveloperOptionsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var purchaseManager = PurchaseManager.shared
 
     var body: some View {
         ZStack {
@@ -19,41 +20,92 @@ struct DeveloperOptionsView: View {
             .ignoresSafeArea()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Data")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Button {
-                        seedSampleWorkouts()
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "square.and.arrow.down")
-                            Text("Seed Sample Workouts")
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
-
-                    NavigationLink {
-                        AppIconGenerator()
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "square.grid.3x3.fill")
-                            Text("Generate App Icon")
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
+                VStack(spacing: 24) {
+                    #if DEBUG
+                    premiumOverrideCard
+                    #endif
+                    
+                    dataCard
                 }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .glassCard(cornerRadius: 32)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
             }
         }
         .navigationTitle("Developer")
+    }
+    
+    #if DEBUG
+    private var premiumOverrideCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Premium Testing")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            
+            Toggle(isOn: Binding(
+                get: { purchaseManager.isDebugPremiumOverrideEnabled },
+                set: { purchaseManager.setPremiumOverride($0) }
+            )) {
+                HStack(spacing: 12) {
+                    Image(systemName: "crown.fill")
+                        .foregroundStyle(.yellow)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Enable Premium Membership")
+                            .font(.body)
+                        Text("Override premium status for testing")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .tint(.accentColor)
+            
+            if purchaseManager.hasActiveSubscription {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Premium is currently active")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(cornerRadius: 32)
+    }
+    #endif
+    
+    private var dataCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Data")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Button {
+                seedSampleWorkouts()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "square.and.arrow.down")
+                    Text("Seed Sample Workouts")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink {
+                AppIconGenerator()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "square.grid.3x3.fill")
+                    Text("Generate App Icon")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(cornerRadius: 32)
     }
 
     private func seedSampleWorkouts() {

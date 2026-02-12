@@ -59,12 +59,6 @@ struct WorkoutListView: View {
                                 }
                                 .padding(.top, 40)
 
-                                NavigationLink {
-                                    SubcategoryLastLoggedView()
-                                } label: {
-                                    lastTrainedCard
-                                }
-                                .buttonStyle(.plain)
                                 if showLimitsCard {
                                     limitsCard
                                 }
@@ -80,13 +74,6 @@ struct WorkoutListView: View {
                                 if showLimitsCard {
                                     limitsCard
                                 }
-                                summaryCard
-                                NavigationLink {
-                                    SubcategoryLastLoggedView()
-                                } label: {
-                                    lastTrainedCard
-                                }
-                                .buttonStyle(.plain)
                                 ForEach(groupedVisibleWorkouts, id: \.date) { entry in
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text(sectionHeaderTitle(for: entry.date))
@@ -323,43 +310,6 @@ struct WorkoutListView: View {
         }
     }
 
-    private var summaryCard: some View {
-        let summary = weeklySummary(for: filteredWorkouts)
-        return HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("This Week")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text("\(summary.count) workouts · \(summary.duration)")
-                    .font(.headline)
-            }
-            Spacer()
-        }
-        .padding(16)
-        .glassCard(cornerRadius: 32)
-    }
-
-    private var lastTrainedCard: some View {
-        HStack {
-            Image(systemName: "calendar.badge.clock")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Last Trained")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text("When you last trained legs, push, pull…")
-                    .font(.headline)
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(16)
-        .glassCard(cornerRadius: 32)
-    }
-
     private var filteredWorkouts: [Workout] {
         if selectedFilter == .all {
             return workouts
@@ -384,16 +334,6 @@ struct WorkoutListView: View {
         formatter.dateStyle = .full
         formatter.timeStyle = .none
         return formatter.string(from: date)
-    }
-
-    private func weeklySummary(for workouts: [Workout]) -> (count: Int, duration: String) {
-        let calendar = Calendar.current
-        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: Date()) else {
-            return (workouts.count, formattedDuration(0))
-        }
-        let weekWorkouts = workouts.filter { weekInterval.contains($0.startDate) }
-        let totalDuration = weekWorkouts.reduce(0) { $0 + $1.duration }
-        return (weekWorkouts.count, formattedDuration(totalDuration))
     }
 
     private func formattedDuration(_ duration: TimeInterval) -> String {

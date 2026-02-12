@@ -174,24 +174,28 @@ private struct BackupPayload: Codable {
     let categories: [WorkoutCategoryExport]
     let subcategories: [WorkoutSubcategoryExport]
     let exerciseTemplates: [SubcategoryExerciseExport]
+    let strengthTemplates: [StrengthWorkoutTemplateExport]
 
     enum CodingKeys: String, CodingKey {
         case workouts
         case categories
         case subcategories
         case exerciseTemplates
+        case strengthTemplates
     }
 
     init(
         workouts: [WorkoutExport],
         categories: [WorkoutCategoryExport],
         subcategories: [WorkoutSubcategoryExport],
-        exerciseTemplates: [SubcategoryExerciseExport]
+        exerciseTemplates: [SubcategoryExerciseExport],
+        strengthTemplates: [StrengthWorkoutTemplateExport]
     ) {
         self.workouts = workouts
         self.categories = categories
         self.subcategories = subcategories
         self.exerciseTemplates = exerciseTemplates
+        self.strengthTemplates = strengthTemplates
     }
 
     init(from decoder: Decoder) throws {
@@ -200,6 +204,7 @@ private struct BackupPayload: Codable {
         categories = try container.decode([WorkoutCategoryExport].self, forKey: .categories)
         subcategories = try container.decode([WorkoutSubcategoryExport].self, forKey: .subcategories)
         exerciseTemplates = try container.decodeIfPresent([SubcategoryExerciseExport].self, forKey: .exerciseTemplates) ?? []
+        strengthTemplates = try container.decodeIfPresent([StrengthWorkoutTemplateExport].self, forKey: .strengthTemplates) ?? []
     }
 }
 
@@ -221,11 +226,13 @@ private extension CloudKitManager {
         let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
         let subcategories = try context.fetch(FetchDescriptor<WorkoutSubcategory>())
         let templates = try context.fetch(FetchDescriptor<SubcategoryExercise>())
+        let strengthTemplates = try context.fetch(FetchDescriptor<StrengthWorkoutTemplate>())
         return BackupPayload(
             workouts: workouts.map(WorkoutExport.init),
             categories: categories.map(WorkoutCategoryExport.init),
             subcategories: subcategories.map(WorkoutSubcategoryExport.init),
-            exerciseTemplates: templates.map(SubcategoryExerciseExport.init)
+            exerciseTemplates: templates.map(SubcategoryExerciseExport.init),
+            strengthTemplates: strengthTemplates.map(StrengthWorkoutTemplateExport.init)
         )
     }
 
@@ -282,7 +289,8 @@ private extension CloudKitManager {
                 "workouts": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.workouts), label: "workouts"),
                 "categories": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.categories), label: "categories"),
                 "subcategories": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.subcategories), label: "subcategories"),
-                "exerciseTemplates": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.exerciseTemplates), label: "exerciseTemplates")
+                "exerciseTemplates": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.exerciseTemplates), label: "exerciseTemplates"),
+                "strengthTemplates": try writeTemporaryBackupFile(data: JSONEncoder.iso8601.encode(payload.strengthTemplates), label: "strengthTemplates")
             ]
         case .legacy:
             return [
@@ -306,7 +314,8 @@ private extension CloudKitManager {
         case .archive:
             return message.contains("cannot create or modify field 'archive'")
         case .legacyWithTemplates:
-            return message.contains("cannot create or modify field 'exercisetemplates'")
+            return message.contains("cannot create or modify field 'exercisetemplates'") ||
+                   message.contains("cannot create or modify field 'strengthtemplates'")
         case .legacy:
             return false
         }
@@ -345,11 +354,21 @@ private extension CloudKitManager {
             exerciseTemplates = []
         }
 
+        let strengthTemplates: [StrengthWorkoutTemplateExport]
+        if let strengthTemplatesAsset = record["strengthTemplates"] as? CKAsset,
+           let strengthTemplatesURL = strengthTemplatesAsset.fileURL {
+            let strengthTemplatesData = try Data(contentsOf: strengthTemplatesURL)
+            strengthTemplates = try JSONDecoder.iso8601.decode([StrengthWorkoutTemplateExport].self, from: strengthTemplatesData)
+        } else {
+            strengthTemplates = []
+        }
+
         return BackupPayload(
             workouts: workouts,
             categories: categories,
             subcategories: subcategories,
-            exerciseTemplates: exerciseTemplates
+            exerciseTemplates: exerciseTemplates,
+            strengthTemplates: strengthTemplates
         )
     }
 
@@ -358,8 +377,10 @@ private extension CloudKitManager {
         let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
         let subcategories = try context.fetch(FetchDescriptor<WorkoutSubcategory>())
         let templates = try context.fetch(FetchDescriptor<SubcategoryExercise>())
+        let strengthTemplates = try context.fetch(FetchDescriptor<StrengthWorkoutTemplate>())
 
         workouts.forEach { context.delete($0) }
+        strengthTemplates.forEach { context.delete($0) }
         categories.forEach { context.delete($0) }
         subcategories.forEach { context.delete($0) }
         templates.forEach { context.delete($0) }
@@ -387,6 +408,37 @@ private extension CloudKitManager {
             let template = SubcategoryExercise(name: export.name, subcategory: subcategory, orderIndex: export.orderIndex)
             template.id = export.id
             context.insert(template)
+        }
+
+        for export in payload.strengthTemplates {
+            let strengthTemplate = StrengthWorkoutTemplate(
+                name: export.name,
+                mainCategoryRawValue: export.mainCategoryRawValue,
+                createdAt: export.createdAt,
+                updatedAt: export.updatedAt,
+                exercises: []
+            )
+            strengthTemplate.id = export.id
+
+            let mappedExercises = export.exercises
+                .sorted { $0.orderIndex < $1.orderIndex }
+                .map { exerciseExport in
+                    let exercise = StrengthWorkoutTemplateExercise(
+                        name: exerciseExport.name,
+                        orderIndex: exerciseExport.orderIndex,
+                        sets: exerciseExport.sets,
+                        reps: exerciseExport.reps,
+                        weight: exerciseExport.weight,
+                        subcategoryID: exerciseExport.subcategoryId,
+                        setPlanJSON: exerciseExport.setPlanJSON,
+                        template: strengthTemplate
+                    )
+                    exercise.id = exerciseExport.id
+                    return exercise
+                }
+
+            strengthTemplate.exercises = mappedExercises
+            context.insert(strengthTemplate)
         }
 
         for export in payload.workouts {

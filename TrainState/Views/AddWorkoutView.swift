@@ -9,6 +9,7 @@ struct AddWorkoutView: View {
     @Query private var workouts: [Workout]
     @Query(sort: \WorkoutSubcategory.name) private var allSubcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
+    @Query(sort: \StrengthWorkoutTemplate.updatedAt, order: .reverse) private var strengthTemplates: [StrengthWorkoutTemplate]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var type: WorkoutType = .other
     @State private var date = Date()
@@ -19,13 +20,18 @@ struct AddWorkoutView: View {
     @State private var selectedCategories: [WorkoutCategory] = []
     @State private var selectedSubcategories: [WorkoutSubcategory] = []
     @State private var exerciseEntries: [ExerciseLogEntry] = []
-    @State private var strengthEntryMode: StrengthEntryMode = .manual
+    @State private var strengthEntryMode: StrengthEntryMode = .live
     @State private var showingLiveStrengthSession = false
     @State private var showingCategoryPicker = false
     @State private var activeExerciseSelection: ExerciseEditorSelection?
     @State private var showingPaywall = false
     @State private var isSaving = false
     @State private var showingExerciseLinkAlert = false
+    @State private var hasAppliedSuggestedType = false
+    @State private var showingTemplateLibrary = false
+    @State private var showingSaveTemplateAlert = false
+    @State private var newTemplateName = ""
+    @State private var activeTemplateID: UUID?
 
     private let quickDurations: [Double] = [15, 30, 45, 60, 90, 120]
     private var durationBinding: Binding<Double> {
@@ -50,6 +56,25 @@ struct AddWorkoutView: View {
         guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
         return purchaseManager.hasActiveSubscription || workouts.count < PremiumLimits.freeWorkoutLimit
     }
+    private var suggestedWorkoutType: WorkoutType? {
+        guard !workouts.isEmpty else { return nil }
+
+        var stats: [WorkoutType: (count: Int, latest: Date)] = [:]
+        for workout in workouts {
+            let current = stats[workout.type] ?? (count: 0, latest: .distantPast)
+            stats[workout.type] = (
+                count: current.count + 1,
+                latest: max(current.latest, workout.startDate)
+            )
+        }
+
+        return stats.max { lhs, rhs in
+            if lhs.value.count != rhs.value.count {
+                return lhs.value.count < rhs.value.count
+            }
+            return lhs.value.latest < rhs.value.latest
+        }?.key
+    }
     private var showsDistance: Bool {
         [.running, .cycling, .swimming].contains(type)
     }
@@ -58,6 +83,13 @@ struct AddWorkoutView: View {
     }
     private var availableExerciseSubcategories: [WorkoutSubcategory] {
         if !selectedSubcategories.isEmpty { return selectedSubcategories }
+        if !selectedCategories.isEmpty {
+            let selectedIDs = Set(selectedCategories.map(\.id))
+            return allSubcategories.filter { subcategory in
+                guard let categoryID = subcategory.category?.id else { return false }
+                return selectedIDs.contains(categoryID)
+            }
+        }
         return allSubcategories.filter { $0.category?.workoutType == type || $0.category?.workoutType == nil }
     }
     private var quickAddOptions: [ExerciseQuickAddOption] {
@@ -78,6 +110,19 @@ struct AddWorkoutView: View {
     }
     private var trackedExerciseCount: Int {
         exerciseEntries.filter { !$0.trimmedName.isEmpty }.count
+    }
+    private var totalPlannedSets: Int {
+        exerciseEntries.reduce(0) { $0 + $1.setEntries.count }
+    }
+    private var totalCompletedSets: Int {
+        exerciseEntries.reduce(0) { $0 + $1.completedSetCount }
+    }
+    private var activeTemplateName: String? {
+        guard let activeTemplateID else { return nil }
+        return strengthTemplates.first(where: { $0.id == activeTemplateID })?.name
+    }
+    private var quickTemplateCandidates: [StrengthWorkoutTemplate] {
+        Array(strengthTemplates.prefix(3))
     }
     private var completedExerciseDetailsCount: Int {
         exerciseEntries.filter {
@@ -124,6 +169,7 @@ struct AddWorkoutView: View {
                         dateCard
                         if isStrengthSessionType {
                             strengthModeCard
+                            strengthTemplatesCard
                         }
                         if !isStrengthSessionType || strengthEntryMode == .manual {
                             durationCard
@@ -202,6 +248,22 @@ struct AddWorkoutView: View {
                 exerciseEntries = draftEntries
             }
         }
+        .sheet(isPresented: $showingTemplateLibrary) {
+            templateLibrarySheet
+        }
+        .alert("Save Strength Template", isPresented: $showingSaveTemplateAlert) {
+            TextField("Template name", text: $newTemplateName)
+            Button("Cancel", role: .cancel) {
+                newTemplateName = ""
+            }
+            Button("Save") {
+                saveStrengthTemplate(named: newTemplateName, from: exerciseEntries)
+                newTemplateName = ""
+            }
+            .disabled(!canSaveCurrentEntriesAsTemplate || newTemplateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        } message: {
+            Text("Save your current strength exercise list as a reusable template.")
+        }
         .onChange(of: type) { _, _ in
             selectedCategories.removeAll()
             selectedSubcategories.removeAll()
@@ -216,18 +278,32 @@ struct AddWorkoutView: View {
             if type == .strength && exerciseEntries.isEmpty {
                 exerciseEntries = [defaultExerciseEntry()]
             }
-            if type != .strength {
+            if type == .strength {
+                strengthEntryMode = .live
+            } else {
                 strengthEntryMode = .manual
+                activeTemplateID = nil
             }
         }
         .onAppear {
+            if !hasAppliedSuggestedType {
+                if let suggestedWorkoutType {
+                    type = suggestedWorkoutType
+                }
+                hasAppliedSuggestedType = true
+            }
             if type == .strength && exerciseEntries.isEmpty {
                 exerciseEntries = [defaultExerciseEntry()]
             }
         }
         .onChange(of: activeExerciseSelection) { _, newValue in
+            // Defer cleanup so we don't mutate the backing array while the
+            // sheet is still using an index-based binding, which can cause
+            // index-out-of-range crashes during dismissal.
             if newValue == nil {
-                exerciseEntries.removeAll { $0.isEmpty }
+                DispatchQueue.main.async {
+                    exerciseEntries.removeAll { $0.isEmpty }
+                }
             }
         }
     }
@@ -341,6 +417,110 @@ struct AddWorkoutView: View {
             Text("Use a dedicated live screen so the session can't be dismissed by accident. You can leave and return to the app while it runs.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard(cornerRadius: 32)
+    }
+
+    private var strengthTemplatesCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Strength Templates")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(strengthTemplates.count) saved")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            if let activeTemplateName {
+                Text("Current plan: \(activeTemplateName)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(type.tintColor)
+                if totalPlannedSets > 0 {
+                    Text("Progress: \(totalCompletedSets)/\(totalPlannedSets) sets done")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let latest = strengthTemplates.first {
+                Text("Last updated: \(latest.name)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Save a common routine once, then load it instantly.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !quickTemplateCandidates.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Quick start")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(quickTemplateCandidates) { template in
+                        Button {
+                            applyStrengthTemplate(template)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(template.name)
+                                        .font(.subheadline.weight(.semibold))
+                                    Text(templateSummary(template))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if activeTemplateID == template.id {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(type.tintColor)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.primary.opacity(0.06))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    showingTemplateLibrary = true
+                } label: {
+                    Label("Choose Template", systemImage: "square.stack.3d.up")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(type.tintColor.opacity(0.18))
+                        )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    newTemplateName = suggestedTemplateName
+                    showingSaveTemplateAlert = true
+                } label: {
+                    Label("Save Current", systemImage: "square.and.arrow.down")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color.primary.opacity(0.08))
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSaveCurrentEntriesAsTemplate)
+                .opacity(canSaveCurrentEntriesAsTemplate ? 1 : 0.5)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
@@ -478,29 +658,6 @@ struct AddWorkoutView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if !suggestedQuickAddOptions.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(suggestedQuickAddOptions.prefix(10)), id: \.id) { option in
-                            Button {
-                                addExercise(from: option)
-                            } label: {
-                                Text(option.name)
-                                    .font(.caption.weight(.semibold))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        Capsule()
-                                            .fill(type.tintColor.opacity(0.18))
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-
             if exerciseEntries.isEmpty {
                 Text("Add sets/reps/weight to track lifts like Bench Press and calculate personal bests.")
                     .font(.subheadline)
@@ -508,43 +665,47 @@ struct AddWorkoutView: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(exerciseEntries) { entry in
-                        Button {
-                            activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
 
-                                    if let summary = exerciseSummary(for: entry) {
-                                        Text(summary)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
+                                if let summary = exerciseSummary(for: entry) {
+                                    Text(summary)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
+                            }
 
-                                Spacer()
+                            Spacer()
+
+                            HStack(spacing: 10) {
+                                if let completionLabel = nextSetCompletionLabel(for: entry) {
+                                    Button(completionLabel) {
+                                        markNextSetDone(for: entry.id)
+                                    }
+                                    .font(.caption.weight(.semibold))
+                                    .buttonStyle(.bordered)
+                                }
 
                                 Image(systemName: "chevron.right")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.tertiary)
                             }
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.04))
-                            )
                         }
-                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.04))
+                        )
                     }
                 }
-            }
-            if quickAddOptions.isEmpty {
-                Text("Select workout subcategories to unlock quick-add exercise chips.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -595,8 +756,8 @@ struct AddWorkoutView: View {
                 distance: showsDistance && distanceKilometers > 0 ? distanceKilometers : nil,
                 rating: workoutRating,
                 notes: notes.isEmpty ? nil : notes,
-                categories: selectedCategories,
-                subcategories: selectedSubcategories,
+                categories: resolvedCategories(for: exerciseEntries),
+                subcategories: resolvedSubcategories(for: exerciseEntries),
                 exercises: exerciseEntries
                     .enumerated()
                     .compactMap { index, entry in
@@ -605,9 +766,10 @@ struct AddWorkoutView: View {
                         let linkedSubcategory = allSubcategories.first { $0.id == entry.subcategoryID }
                         return WorkoutExercise(
                             name: name,
-                            sets: entry.sets,
-                            reps: entry.reps,
-                            weight: entry.weight,
+                            sets: entry.effectiveSetCount,
+                            reps: entry.effectiveReps,
+                            weight: entry.effectiveWeight,
+                            notes: exerciseNotes(for: entry),
                             orderIndex: index,
                             subcategory: linkedSubcategory
                         )
@@ -647,6 +809,23 @@ struct AddWorkoutView: View {
         return "Save Workout"
     }
 
+    private var canSaveCurrentEntriesAsTemplate: Bool {
+        type == .strength && exerciseEntries.contains { !$0.trimmedName.isEmpty }
+    }
+
+    private var suggestedTemplateName: String {
+        let base = "Template \(Date.now.formatted(date: .abbreviated, time: .omitted))"
+        let existingNames = Set(strengthTemplates.map { $0.name.lowercased() })
+        if !existingNames.contains(base.lowercased()) {
+            return base
+        }
+        var suffix = 2
+        while existingNames.contains("\(base) \(suffix)".lowercased()) {
+            suffix += 1
+        }
+        return "\(base) \(suffix)"
+    }
+
     private var categoriesSummary: String {
         var parts: [String] = []
         if !selectedCategories.isEmpty {
@@ -683,17 +862,18 @@ struct AddWorkoutView: View {
             distance: nil,
             rating: workoutRating,
             notes: notes.isEmpty ? nil : notes,
-            categories: selectedCategories,
-            subcategories: selectedSubcategories,
+            categories: resolvedCategories(for: entries),
+            subcategories: resolvedSubcategories(for: entries),
             exercises: entries.enumerated().compactMap { index, entry in
                 let name = entry.trimmedName
                 guard !name.isEmpty else { return nil }
                 let linkedSubcategory = allSubcategories.first { $0.id == entry.subcategoryID }
                 return WorkoutExercise(
                     name: name,
-                    sets: entry.sets,
-                    reps: entry.reps,
-                    weight: entry.weight,
+                    sets: entry.effectiveSetCount,
+                    reps: entry.effectiveReps,
+                    weight: entry.effectiveWeight,
+                    notes: exerciseNotes(for: entry),
                     orderIndex: index,
                     subcategory: linkedSubcategory
                 )
@@ -722,11 +902,11 @@ struct AddWorkoutView: View {
     }
 
     private func exerciseSummary(for entry: ExerciseLogEntry) -> String? {
-        let setsText = entry.sets.map { "\($0)x" }
-        let repsText = entry.reps.map { "\($0)" }
+        let setsText = entry.effectiveSetCount.map { "\($0)x" }
+        let repsText = entry.effectiveReps.map { "\($0)" }
         let weightText: String? = {
-            guard let w = entry.weight, w > 0 else { return nil }
-            return String(format: "%.1f kg", w)
+            guard let w = entry.effectiveWeight, w > 0 else { return nil }
+            return "\(ExerciseLogEntry.displayWeight(w)) kg"
         }()
 
         let primary = [setsText, repsText].compactMap { $0 }.joined(separator: " ")
@@ -737,7 +917,70 @@ struct AddWorkoutView: View {
             withWeight = primary
         }
 
-        return withWeight.isEmpty ? nil : withWeight
+        let progressSuffix: String = {
+            guard !entry.setEntries.isEmpty else { return "" }
+            return " · \(entry.completedSetCount)/\(entry.setEntries.count) done"
+        }()
+
+        let summary = withWeight + progressSuffix
+        return summary.isEmpty ? nil : summary
+    }
+
+    private func nextSetCompletionLabel(for entry: ExerciseLogEntry) -> String? {
+        guard !entry.setEntries.isEmpty else { return nil }
+        if let nextIndex = entry.setEntries.firstIndex(where: { !$0.isCompleted }) {
+            return "Set \(nextIndex + 1) done"
+        }
+        return "Reset"
+    }
+
+    private func markNextSetDone(for entryID: UUID) {
+        guard let entryIndex = exerciseEntries.firstIndex(where: { $0.id == entryID }) else { return }
+        if let nextIndex = exerciseEntries[entryIndex].setEntries.firstIndex(where: { !$0.isCompleted }) {
+            exerciseEntries[entryIndex].setEntries[nextIndex].isCompleted = true
+            HapticManager.lightImpact()
+            return
+        }
+
+        for index in exerciseEntries[entryIndex].setEntries.indices {
+            exerciseEntries[entryIndex].setEntries[index].isCompleted = false
+        }
+        HapticManager.lightImpact()
+    }
+
+    private func exerciseNotes(for entry: ExerciseLogEntry) -> String? {
+        let lines = entry.setSummaryLines
+        guard !lines.isEmpty else { return nil }
+        return lines.joined(separator: "\n")
+    }
+
+    private func resolvedSubcategories(for entries: [ExerciseLogEntry]) -> [WorkoutSubcategory] {
+        var merged: [WorkoutSubcategory] = selectedSubcategories
+        var seenIDs = Set(merged.map(\.id))
+
+        for entry in entries {
+            guard let subcategoryID = entry.subcategoryID,
+                  let subcategory = allSubcategories.first(where: { $0.id == subcategoryID }),
+                  !seenIDs.contains(subcategory.id) else { continue }
+            merged.append(subcategory)
+            seenIDs.insert(subcategory.id)
+        }
+
+        return merged
+    }
+
+    private func resolvedCategories(for entries: [ExerciseLogEntry]) -> [WorkoutCategory] {
+        var merged: [WorkoutCategory] = selectedCategories
+        var seenIDs = Set(merged.map(\.id))
+
+        for subcategory in resolvedSubcategories(for: entries) {
+            guard let category = subcategory.category,
+                  !seenIDs.contains(category.id) else { continue }
+            merged.append(category)
+            seenIDs.insert(category.id)
+        }
+
+        return merged
     }
 
     private func persistExerciseTemplates(from entries: [ExerciseLogEntry]) {
@@ -773,6 +1016,153 @@ struct AddWorkoutView: View {
             name: templates.first ?? "",
             subcategoryID: firstSubcategory.id
         )
+    }
+
+    private var templateLibrarySheet: some View {
+        NavigationStack {
+            List {
+                if strengthTemplates.isEmpty {
+                    Text("No templates yet. Save your current strength exercises to create one.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(strengthTemplates) { template in
+                        Button {
+                            applyStrengthTemplate(template)
+                            showingTemplateLibrary = false
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(template.name)
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                    Text(templateSummary(template))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "arrow.down.doc")
+                                    .foregroundStyle(type.tintColor)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                deleteStrengthTemplate(template)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Strength Templates")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showingTemplateLibrary = false }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    NavigationLink {
+                        StrengthTemplatesManagementView()
+                    } label: {
+                        Text("Manage")
+                    }
+                }
+            }
+        }
+    }
+
+    private func templateSummary(_ template: StrengthWorkoutTemplate) -> String {
+        let count = template.exercises?.count ?? 0
+        let updated = template.updatedAt.formatted(date: .abbreviated, time: .omitted)
+        let categoryName = template.mainCategoryRawValue
+        return "\(categoryName) • \(count) exercise\(count == 1 ? "" : "s") • Updated \(updated)"
+    }
+
+    private func applyStrengthTemplate(_ template: StrengthWorkoutTemplate) {
+        activeTemplateID = template.id
+        type = WorkoutType(rawValue: template.mainCategoryRawValue) ?? .strength
+        let sortedExercises = (template.exercises ?? []).sorted { $0.orderIndex < $1.orderIndex }
+        exerciseEntries = sortedExercises.map { item in
+            let decodedPlan = item.decodedSetPlan()
+            let plannedSetEntries: [ExerciseSetEntry]
+            if !decodedPlan.isEmpty {
+                plannedSetEntries = decodedPlan.map {
+                    ExerciseSetEntry(reps: max($0.reps, 0), weight: max($0.weight, 0), isCompleted: false)
+                }
+            } else {
+                let plannedSetCount = max(item.sets ?? 0, 0)
+                let plannedReps = max(item.reps ?? 0, 0)
+                let plannedWeight = max(item.weight ?? 0, 0)
+                plannedSetEntries = (0..<plannedSetCount).map { _ in
+                    ExerciseSetEntry(reps: plannedReps, weight: plannedWeight, isCompleted: false)
+                }
+            }
+            return ExerciseLogEntry(
+                name: item.name,
+                sets: item.sets,
+                reps: item.reps,
+                weight: item.weight,
+                subcategoryID: item.subcategoryID,
+                setEntries: plannedSetEntries
+            )
+        }
+        if exerciseEntries.isEmpty {
+            exerciseEntries = [defaultExerciseEntry()]
+        }
+
+        selectedCategories = []
+
+        let entrySubcategoryIDs = Set(exerciseEntries.compactMap(\.subcategoryID))
+        selectedSubcategories = allSubcategories.filter { entrySubcategoryIDs.contains($0.id) }
+    }
+
+    private func saveStrengthTemplate(named rawName: String, from entries: [ExerciseLogEntry]) {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        let snapshot = entries
+            .enumerated()
+            .compactMap { index, entry -> StrengthWorkoutTemplateExercise? in
+                let exerciseName = entry.trimmedName
+                guard !exerciseName.isEmpty else { return nil }
+                return StrengthWorkoutTemplateExercise(
+                    name: exerciseName,
+                    orderIndex: index,
+                    sets: entry.effectiveSetCount,
+                    reps: entry.effectiveReps,
+                    weight: entry.effectiveWeight,
+                    subcategoryID: entry.subcategoryID,
+                    setPlanJSON: StrengthWorkoutTemplateExercise.encodeSetPlan(
+                        entry.setEntries.map { setEntry in
+                            TemplateSetPlanEntry(reps: max(setEntry.reps, 0), weight: max(setEntry.weight, 0))
+                        }
+                    )
+                )
+            }
+        guard !snapshot.isEmpty else { return }
+
+        if let existing = strengthTemplates.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            existing.name = name
+            existing.mainCategoryRawValue = type.rawValue
+            existing.updatedAt = Date()
+            existing.exercises = snapshot
+        } else {
+            let template = StrengthWorkoutTemplate(
+                name: name,
+                mainCategoryRawValue: type.rawValue,
+                createdAt: Date(),
+                updatedAt: Date(),
+                exercises: snapshot
+            )
+            modelContext.insert(template)
+        }
+        try? modelContext.save()
+    }
+
+    private func deleteStrengthTemplate(_ template: StrengthWorkoutTemplate) {
+        modelContext.delete(template)
+        try? modelContext.save()
     }
 }
 
@@ -823,5 +1213,5 @@ private struct TypeOptionButton: View {
 
 #Preview {
     AddWorkoutView()
-        .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, SubcategoryExercise.self], inMemory: true)
+        .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, SubcategoryExercise.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self], inMemory: true)
 }

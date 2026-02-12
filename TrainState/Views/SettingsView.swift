@@ -356,6 +356,12 @@ struct SettingsView: View {
                 SettingsRow(icon: "calendar.badge.clock", title: "Last Trained")
             }
 
+            NavigationLink {
+                StrengthTemplatesManagementView()
+            } label: {
+                SettingsRow(icon: "square.stack.3d.up", title: "Manage Strength Templates")
+            }
+
             Button(role: .destructive) {
                 Task { await resetWorkouts() }
             } label: {
@@ -689,5 +695,5 @@ private extension Binding where Value == Bool {
 
 #Preview {
     SettingsView()
-        .modelContainer(for: [Workout.self], inMemory: true)
+        .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self], inMemory: true)
 }

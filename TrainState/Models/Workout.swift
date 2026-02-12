@@ -259,3 +259,80 @@ struct SubcategoryExerciseExport: Codable {
         self.subcategoryId = template.subcategory?.id
     }
 }
+
+struct StrengthWorkoutTemplateExerciseExport: Codable {
+    let id: UUID
+    let name: String
+    let orderIndex: Int
+    let sets: Int?
+    let reps: Int?
+    let weight: Double?
+    let subcategoryId: UUID?
+    let setPlanJSON: String?
+
+    init(exercise: StrengthWorkoutTemplateExercise) {
+        self.id = exercise.id
+        self.name = exercise.name
+        self.orderIndex = exercise.orderIndex
+        self.sets = exercise.sets
+        self.reps = exercise.reps
+        self.weight = exercise.weight
+        self.subcategoryId = exercise.subcategoryID
+        self.setPlanJSON = exercise.setPlanJSON
+    }
+}
+
+struct StrengthWorkoutTemplateExport: Codable {
+    let id: UUID
+    let name: String
+    let createdAt: Date
+    let updatedAt: Date
+    let mainCategoryRawValue: String
+    let exercises: [StrengthWorkoutTemplateExerciseExport]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case createdAt
+        case updatedAt
+        case mainCategoryRawValue
+        case categoryId // legacy
+        case exercises
+    }
+
+    init(template: StrengthWorkoutTemplate) {
+        self.id = template.id
+        self.name = template.name
+        self.createdAt = template.createdAt
+        self.updatedAt = template.updatedAt
+        self.mainCategoryRawValue = template.mainCategoryRawValue
+        self.exercises = (template.exercises ?? [])
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map(StrengthWorkoutTemplateExerciseExport.init)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        if let raw = try container.decodeIfPresent(String.self, forKey: .mainCategoryRawValue), !raw.isEmpty {
+            mainCategoryRawValue = raw
+        } else {
+            // Backward compatibility for older backups that only stored categoryId.
+            mainCategoryRawValue = WorkoutType.strength.rawValue
+        }
+        exercises = try container.decodeIfPresent([StrengthWorkoutTemplateExerciseExport].self, forKey: .exercises) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(mainCategoryRawValue, forKey: .mainCategoryRawValue)
+        try container.encode(exercises, forKey: .exercises)
+    }
+}
