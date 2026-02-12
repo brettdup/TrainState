@@ -274,11 +274,17 @@ struct WorkoutDetailView: View {
 
     private func exercisesCard(_ exercises: [WorkoutExercise]) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Exercises")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            HStack {
+                Text("Exercises")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(exercises.count) exercise\(exercises.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
 
-            VStack(spacing: 12) {
+            VStack(spacing: 10) {
                 ForEach(exercises.sorted(by: { $0.orderIndex < $1.orderIndex }), id: \.id) { exercise in
                     NavigationLink {
                         ExerciseInsightsView(
@@ -286,67 +292,10 @@ struct WorkoutDetailView: View {
                             subcategoryID: exercise.subcategory?.id
                         )
                     } label: {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(exercise.name)
-                                    .font(.body.weight(.semibold))
-
-                                Spacer()
-
-                                if let subcategory = exercise.subcategory {
-                                    Text(subcategory.name)
-                                        .font(.caption.weight(.medium))
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 4)
-                                        .background(
-                                            Capsule()
-                                                .fill(workout.type.tintColor.opacity(colorScheme == .dark ? 0.35 : 0.18))
-                                        )
-                                        .foregroundStyle(workout.type.tintColor)
-                                }
-                            }
-
-                            let statItems = exerciseStatItems(for: exercise)
-                            if !statItems.isEmpty {
-                                HStack(spacing: 8) {
-                                    ForEach(statItems, id: \.self) { item in
-                                        Text(item)
-                                            .font(.caption)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 4)
-                                            .background(
-                                                Capsule()
-                                                    .fill(Color.secondary.opacity(0.14))
-                                            )
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-
-                            let setLines = exerciseSetSummaryLines(for: exercise)
-                            if !setLines.isEmpty {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    ForEach(Array(setLines.enumerated()), id: \.offset) { _, line in
-                                        Text(line)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                }
-                            }
-
-                            if let additionalNotes = additionalExerciseNotes(for: exercise) {
-                                Text(additionalNotes)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18)
-                                .fill(Color(.systemBackground).opacity(colorScheme == .dark ? 0.55 : 0.9))
+                        ExerciseCardView(
+                            exercise: exercise,
+                            showChevron: true,
+                            colorScheme: colorScheme
                         )
                     }
                     .buttonStyle(.plain)
@@ -356,45 +305,6 @@ struct WorkoutDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
         .glassCard(cornerRadius: 32)
-    }
-
-    private func exerciseStatItems(for exercise: WorkoutExercise) -> [String] {
-        var parts: [String] = []
-        let setLines = exerciseSetSummaryLines(for: exercise)
-        if !setLines.isEmpty {
-            parts.append("\(setLines.count) sets")
-            parts.append("Per-set details")
-            return parts
-        }
-
-        if let sets = exercise.sets, sets > 0 {
-            parts.append("\(sets) sets")
-        }
-        if let reps = exercise.reps, reps > 0 {
-            parts.append("\(reps) reps")
-        }
-        if let weight = exercise.weight, weight > 0 {
-            parts.append(String(format: "%.1f kg", weight))
-        }
-        return parts
-    }
-
-    private func exerciseSetSummaryLines(for exercise: WorkoutExercise) -> [String] {
-        guard let notes = exercise.notes, !notes.isEmpty else { return [] }
-        return notes
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.hasPrefix("Set ") }
-    }
-
-    private func additionalExerciseNotes(for exercise: WorkoutExercise) -> String? {
-        guard let notes = exercise.notes, !notes.isEmpty else { return nil }
-        let nonSetLines = notes
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && !$0.hasPrefix("Set ") }
-        guard !nonSetLines.isEmpty else { return nil }
-        return nonSetLines.joined(separator: " ")
     }
 
     private var categoriesSummary: String {

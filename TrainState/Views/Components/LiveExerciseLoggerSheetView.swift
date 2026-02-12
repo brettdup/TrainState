@@ -10,6 +10,7 @@ struct LiveExerciseLoggerSheetView: View {
 
     @FocusState private var focusedField: Bool
     @State private var activeMetricEditor: SetMetricEditor?
+    @State private var isCreatingCustomExercise = false
 
     private enum SetMetric: String {
         case reps
@@ -22,6 +23,8 @@ struct LiveExerciseLoggerSheetView: View {
 
         var id: String { "\(setID.uuidString)-\(metric.rawValue)" }
     }
+
+    private let newExercisePickerValue = "__new_exercise__"
 
     private var availableExerciseNames: [String] {
         guard let subcategoryID = entry.subcategoryID else { return [] }
@@ -44,13 +47,16 @@ struct LiveExerciseLoggerSheetView: View {
                     }
 
                     if !availableExerciseNames.isEmpty {
-                        Picker("Exercise", selection: nameBinding) {
+                        Picker("Exercise", selection: exerciseSelectionBinding) {
                             ForEach(availableExerciseNames, id: \.self) { name in
                                 Text(name).tag(name)
                             }
+                            Text("New Exercise...").tag(newExercisePickerValue)
                         }
-                    } else {
-                        TextField("Exercise name", text: $entry.name)
+                    }
+
+                    if isCreatingCustomExercise || availableExerciseNames.isEmpty {
+                        TextField("New exercise name", text: $entry.name)
                             .textInputAutocapitalization(.words)
                             .disableAutocorrection(true)
                             .focused($focusedField)
@@ -140,6 +146,7 @@ struct LiveExerciseLoggerSheetView: View {
             if entry.subcategoryID == nil, let first = availableSubcategories.first {
                 entry.subcategoryID = first.id
             }
+            syncExerciseSelectionForCurrentSubcategory()
         }
         .sheet(item: $activeMetricEditor) { editor in
             setMetricEditorSheet(editor)
@@ -153,10 +160,7 @@ struct LiveExerciseLoggerSheetView: View {
             get: { entry.subcategoryID },
             set: { newValue in
                 entry.subcategoryID = newValue
-                if !availableExerciseNames.contains(entry.trimmedName),
-                   let first = availableExerciseNames.first {
-                    entry.name = first
-                }
+                syncExerciseSelectionForCurrentSubcategory()
             }
         )
     }
@@ -166,6 +170,51 @@ struct LiveExerciseLoggerSheetView: View {
             get: { entry.trimmedName },
             set: { entry.name = $0 }
         )
+    }
+
+    private var exerciseSelectionBinding: Binding<String> {
+        Binding(
+            get: {
+                if isCreatingCustomExercise { return newExercisePickerValue }
+                if availableExerciseNames.contains(entry.trimmedName) {
+                    return entry.trimmedName
+                }
+                return newExercisePickerValue
+            },
+            set: { newValue in
+                if newValue == newExercisePickerValue {
+                    isCreatingCustomExercise = true
+                    if availableExerciseNames.contains(entry.trimmedName) {
+                        entry.name = ""
+                    }
+                    focusedField = true
+                } else {
+                    isCreatingCustomExercise = false
+                    entry.name = newValue
+                    focusedField = false
+                }
+            }
+        )
+    }
+
+    private func syncExerciseSelectionForCurrentSubcategory() {
+        let options = availableExerciseNames
+        let trimmedName = entry.trimmedName
+
+        guard !options.isEmpty else {
+            isCreatingCustomExercise = true
+            return
+        }
+
+        if trimmedName.isEmpty {
+            isCreatingCustomExercise = true
+            return
+        }
+
+        isCreatingCustomExercise = !options.contains(trimmedName)
+        if !isCreatingCustomExercise, let matched = options.first(where: { $0 == trimmedName }) {
+            entry.name = matched
+        }
     }
 
     private func addSet() {
@@ -338,4 +387,104 @@ struct LiveExerciseLoggerSheetView: View {
         entry.setEntries[index].isCompleted.toggle()
         HapticManager.lightImpact()
     }
+}
+
+// MARK: - Preview Data
+
+private enum LiveExerciseLoggerPreviewData {
+    static func make() -> (subcategories: [WorkoutSubcategory], options: [ExerciseQuickAddOption]) {
+        let category = WorkoutCategory(name: "Strength", color: "#FF9500", workoutType: .strength)
+        let chest = WorkoutSubcategory(name: "Chest", category: category)
+        let back = WorkoutSubcategory(name: "Back", category: category)
+        let legs = WorkoutSubcategory(name: "Legs", category: category)
+
+        let options = [
+            ExerciseQuickAddOption(name: "Bench Press", subcategoryID: chest.id),
+            ExerciseQuickAddOption(name: "Incline Dumbbell Press", subcategoryID: chest.id),
+            ExerciseQuickAddOption(name: "Cable Fly", subcategoryID: chest.id),
+            ExerciseQuickAddOption(name: "Barbell Row", subcategoryID: back.id),
+            ExerciseQuickAddOption(name: "Lat Pulldown", subcategoryID: back.id),
+            ExerciseQuickAddOption(name: "Back Squat", subcategoryID: legs.id),
+            ExerciseQuickAddOption(name: "Romanian Deadlift", subcategoryID: legs.id),
+        ]
+
+        return ([chest, back, legs], options)
+    }
+}
+
+// MARK: - Preview Host
+
+private struct LiveExerciseLoggerPreviewHost: View {
+    enum Mode {
+        case empty
+        case withSets
+        case partiallyCompleted
+    }
+
+    @State private var entry: ExerciseLogEntry
+    private let availableSubcategories: [WorkoutSubcategory]
+    private let availableOptions: [ExerciseQuickAddOption]
+
+    init(mode: Mode) {
+        let data = LiveExerciseLoggerPreviewData.make()
+        self.availableSubcategories = data.subcategories
+        self.availableOptions = data.options
+
+        var entry = ExerciseLogEntry()
+        entry.subcategoryID = data.subcategories.first?.id
+
+        switch mode {
+        case .empty:
+            break
+        case .withSets:
+            entry.name = "Bench Press"
+            entry.sets = 4
+            entry.reps = 8
+            entry.weight = 80.0
+            entry.setEntries = [
+                ExerciseSetEntry(reps: 8, weight: 80, isCompleted: false),
+                ExerciseSetEntry(reps: 8, weight: 80, isCompleted: false),
+                ExerciseSetEntry(reps: 8, weight: 80, isCompleted: false),
+                ExerciseSetEntry(reps: 8, weight: 80, isCompleted: false),
+            ]
+        case .partiallyCompleted:
+            entry.name = "Back Squat"
+            entry.subcategoryID = data.subcategories.last?.id
+            entry.sets = 3
+            entry.reps = 5
+            entry.weight = 100.0
+            entry.setEntries = [
+                ExerciseSetEntry(reps: 5, weight: 100, isCompleted: true),
+                ExerciseSetEntry(reps: 5, weight: 100, isCompleted: true),
+                ExerciseSetEntry(reps: 5, weight: 100, isCompleted: false),
+            ]
+        }
+
+        _entry = State(initialValue: entry)
+    }
+
+    var body: some View {
+        LiveExerciseLoggerSheetView(
+            entry: $entry,
+            availableSubcategories: availableSubcategories,
+            availableOptions: availableOptions,
+            onDelete: {
+                entry = ExerciseLogEntry(subcategoryID: availableSubcategories.first?.id)
+            }
+        )
+    }
+}
+
+// MARK: - Previews
+
+#Preview("Live Exercise - Empty") {
+    LiveExerciseLoggerPreviewHost(mode: .empty)
+}
+
+#Preview("Live Exercise - With Sets") {
+    LiveExerciseLoggerPreviewHost(mode: .withSets)
+}
+
+#Preview("Live Exercise - Partially Completed") {
+    LiveExerciseLoggerPreviewHost(mode: .partiallyCompleted)
 }

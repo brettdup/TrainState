@@ -20,6 +20,7 @@ struct EditWorkoutView: View {
     @State private var exerciseEntries: [ExerciseLogEntry]
     @State private var showingCategoryPicker = false
     @State private var showingExercisePicker = false
+    @State private var showingUnifiedPicker = false
     @State private var activeExerciseSelection: ExerciseEditorSelection?
     @State private var isSaving = false
     @State private var showingExerciseLinkAlert = false
@@ -140,12 +141,26 @@ struct EditWorkoutView: View {
             )
         }
         .sheet(isPresented: $showingExercisePicker) {
-            ExerciseLibraryPickerView(
+            UnifiedExercisePickerView(
                 subcategories: availableExerciseSubcategories,
-                options: quickAddOptions
-            ) { selected in
-                addExercises(from: selected)
-            }
+                exerciseOptions: quickAddOptions,
+                existingExerciseNames: Set(exerciseEntries.map { $0.trimmedName.lowercased() }),
+                onSelect: { selected in
+                    addExercises(from: selected)
+                },
+                onCreateCustom: { name, subcategoryID in
+                    let newEntry = ExerciseLogEntry(
+                        name: name,
+                        sets: nil,
+                        reps: nil,
+                        weight: nil,
+                        subcategoryID: subcategoryID
+                    )
+                    exerciseEntries.append(newEntry)
+                    ensureSelectionForSubcategoryID(subcategoryID)
+                },
+                tintColor: type.tintColor
+            )
         }
         .sheet(item: $activeExerciseSelection) { selection in
             if let index = exerciseEntries.firstIndex(where: { $0.id == selection.id }) {
@@ -394,18 +409,25 @@ struct EditWorkoutView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
+                if !exerciseEntries.isEmpty {
+                    Text("Drag to reorder")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
 
+            // Add exercises button
             Button {
                 showingExercisePicker = true
             } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: "list.bullet.rectangle.portrait")
-                        .font(.subheadline.weight(.semibold))
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(type.tintColor)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Browse exercise library")
+                        Text("Add Exercises")
                             .font(.subheadline.weight(.semibold))
-                        Text("Pick from categories and templates")
+                        Text("Search and select from your library")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -427,45 +449,18 @@ struct EditWorkoutView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("No exercises yet")
                         .font(.subheadline.weight(.semibold))
-                    Text("Tap \"Browse exercise library\" or add a custom exercise to start tracking sets, reps, and weight.")
+                    Text("Tap \"Add Exercises\" to search and select from your library.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
             } else {
-                VStack(spacing: 12) {
-                    ForEach(exerciseEntries) { entry in
-                        Button {
-                            activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
-
-                                    if let summary = exerciseSummary(for: entry) {
-                                        Text(summary)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.04))
-                            )
-                        }
-                        .buttonStyle(.plain)
+                ReorderableExerciseList(
+                    entries: $exerciseEntries,
+                    colorScheme: colorScheme,
+                    onTap: { entry in
+                        activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
                     }
-                }
+                )
             }
             Button {
                 addAndEditNewExercise()
@@ -705,6 +700,82 @@ struct EditWorkoutView: View {
         if modelContext.hasChanges {
             try? modelContext.save()
         }
+    }
+}
+
+// MARK: - Reorderable Exercise List
+
+private struct ReorderableExerciseList: View {
+    @Binding var entries: [ExerciseLogEntry]
+    let colorScheme: ColorScheme
+    let onTap: (ExerciseLogEntry) -> Void
+
+    @State private var draggingItem: ExerciseLogEntry?
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ForEach(entries) { entry in
+                Button {
+                    onTap(entry)
+                } label: {
+                    ExerciseCardView(
+                        entry: entry,
+                        showDragHandle: true,
+                        isDragging: draggingItem?.id == entry.id,
+                        colorScheme: colorScheme
+                    )
+                }
+                .buttonStyle(.plain)
+                .zIndex(draggingItem?.id == entry.id ? 1 : 0)
+                .onDrag {
+                    HapticManager.lightImpact()
+                    draggingItem = entry
+                    return NSItemProvider(object: entry.id.uuidString as NSString)
+                }
+                .onDrop(of: [.text], delegate: ExerciseDropDelegate(
+                    item: entry,
+                    entries: $entries,
+                    draggingItem: $draggingItem
+                ))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: entries.map(\.id))
+    }
+}
+
+private struct ExerciseDropDelegate: DropDelegate {
+    let item: ExerciseLogEntry
+    @Binding var entries: [ExerciseLogEntry]
+    @Binding var draggingItem: ExerciseLogEntry?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingItem,
+              draggingItem.id != item.id,
+              let fromIndex = entries.firstIndex(where: { $0.id == draggingItem.id }),
+              let toIndex = entries.firstIndex(where: { $0.id == item.id }) else {
+            return
+        }
+
+        HapticManager.lightImpact()
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            entries.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        DispatchQueue.main.async {
+            draggingItem = nil
+        }
+        return true
+    }
+
+    func dropExited(info: DropInfo) {
+        // Don't clear draggingItem here - only clear when drop is performed
     }
 }
 

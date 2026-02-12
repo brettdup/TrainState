@@ -32,6 +32,7 @@ struct AddWorkoutView: View {
     @State private var showingSaveTemplateAlert = false
     @State private var newTemplateName = ""
     @State private var activeTemplateID: UUID?
+    @State private var showingExercisePicker = false
 
     private let quickDurations: [Double] = [15, 30, 45, 60, 90, 120]
     private var durationBinding: Binding<Double> {
@@ -207,6 +208,25 @@ struct AddWorkoutView: View {
                 workoutType: type
             )
         }
+        .sheet(isPresented: $showingExercisePicker) {
+            UnifiedExercisePickerView(
+                subcategories: availableExerciseSubcategories,
+                exerciseOptions: quickAddOptions,
+                existingExerciseNames: Set(exerciseEntries.map { $0.trimmedName.lowercased() }),
+                onSelect: { selected in
+                    for option in selected {
+                        addExercise(from: option)
+                    }
+                },
+                onCreateCustom: { name, subcategoryID in
+                    exerciseEntries.append(ExerciseLogEntry(
+                        name: name,
+                        subcategoryID: subcategoryID
+                    ))
+                },
+                tintColor: type.tintColor
+            )
+        }
         .sheet(isPresented: $showingPaywall) {
             if let offering = purchaseManager.offerings?.current {
                 PaywallView(offering: offering)
@@ -275,9 +295,6 @@ struct AddWorkoutView: View {
                 }
                 return entry
             }
-            if type == .strength && exerciseEntries.isEmpty {
-                exerciseEntries = [defaultExerciseEntry()]
-            }
             if type == .strength {
                 strengthEntryMode = .live
             } else {
@@ -291,9 +308,6 @@ struct AddWorkoutView: View {
                     type = suggestedWorkoutType
                 }
                 hasAppliedSuggestedType = true
-            }
-            if type == .strength && exerciseEntries.isEmpty {
-                exerciseEntries = [defaultExerciseEntry()]
             }
         }
         .onChange(of: activeExerciseSelection) { _, newValue in
@@ -634,9 +648,9 @@ struct AddWorkoutView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
-                    addAndEditNewExercise()
+                    showingExercisePicker = true
                 } label: {
-                    Label("Add Exercise", systemImage: "plus.circle.fill")
+                    Label("Add Exercises", systemImage: "plus.circle.fill")
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -665,17 +679,25 @@ struct AddWorkoutView: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(exerciseEntries) { entry in
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        HStack(alignment: .top, spacing: 12) {
+                            // Exercise icon
+                            Image(systemName: ExerciseIconMapper.icon(for: entry.trimmedName))
+                                .font(.system(size: 18))
+                                .foregroundStyle(ExerciseIconMapper.iconColor(for: entry.trimmedName))
+                                .frame(width: 24)
+
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
                                     .font(.body.weight(.semibold))
                                     .foregroundStyle(.primary)
                                     .lineLimit(1)
 
-                                if let summary = exerciseSummary(for: entry) {
-                                    Text(summary)
-                                        .font(.caption)
+                                // Show set details if available
+                                if !entry.setSummaryLines.isEmpty {
+                                    Text(entry.setSummaryLines.joined(separator: "\n"))
+                                        .font(.caption2)
                                         .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.leading)
                                 }
                             }
 

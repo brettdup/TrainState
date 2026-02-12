@@ -511,25 +511,35 @@ private struct WorkoutRowView: View {
                         .fill(workout.type.tintColor.opacity(0.15))
                 )
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
+                // Workout type
                 Text(workout.type.rawValue)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.primary)
 
-                Text(workout.startDate.formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
+                // Main category (if any)
+                if let mainCategory = mainCategoryName {
+                    Text(mainCategory)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
 
-                if !categoryAndSubcategoryNames.isEmpty {
-                    Text(categoryAndSubcategoryNames)
-                        .font(.caption2)
+                // Subcategories (smaller, underneath)
+                if !subcategoryNames.isEmpty {
+                    Text(subcategoryNames)
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.tertiary)
                 }
+
+                // Date/time
+                Text(workout.startDate.formatted(date: .abbreviated, time: .shortened))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
             }
 
             Spacer(minLength: 8)
 
-            Group {
+            VStack(alignment: .trailing, spacing: 4) {
                 if !statsLine.isEmpty {
                     Text(statsLine)
                         .font(.system(size: 13, weight: .semibold))
@@ -547,10 +557,20 @@ private struct WorkoutRowView: View {
         .glassCard(cornerRadius: 32)
     }
 
-    private var categoryAndSubcategoryNames: String {
-        let catNames = workout.categories?.map(\.name) ?? []
-        let subNames = workout.subcategories?.map(\.name) ?? []
-        return (catNames + subNames).joined(separator: ", ")
+    /// First category name as the main category
+    private var mainCategoryName: String? {
+        guard let categories = workout.categories, !categories.isEmpty else { return nil }
+        if categories.count == 1 {
+            return categories.first?.name
+        }
+        // Multiple categories - show them all
+        return categories.map(\.name).joined(separator: " · ")
+    }
+
+    /// Subcategory names joined
+    private var subcategoryNames: String {
+        guard let subcategories = workout.subcategories, !subcategories.isEmpty else { return "" }
+        return subcategories.map(\.name).joined(separator: ", ")
     }
 
     private var statsLine: String {

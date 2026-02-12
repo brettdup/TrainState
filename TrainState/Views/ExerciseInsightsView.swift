@@ -47,22 +47,27 @@ struct ExerciseInsightsView: View {
         }
     }
 
+    /// History points sorted in ascending date order to ensure charts and stats use a consistent timeline.
+    private var sortedHistoryPoints: [ExerciseHistoryPoint] {
+        historyPoints.sorted { $0.date < $1.date }
+    }
+
     private var bestTopSet: Double {
-        historyPoints.map(\.topSetWeight).max() ?? 0
+        sortedHistoryPoints.map(\.topSetWeight).max() ?? 0
     }
 
     private var bestEstimatedOneRepMax: Double {
-        historyPoints.map(\.estimatedOneRepMax).max() ?? 0
+        sortedHistoryPoints.map(\.estimatedOneRepMax).max() ?? 0
     }
 
     private var latestPoint: ExerciseHistoryPoint? {
-        historyPoints.last
+        sortedHistoryPoints.last
     }
 
     private var trendDelta: Double {
-        guard historyPoints.count >= 2 else { return 0 }
-        let latest = historyPoints[historyPoints.count - 1]
-        let previous = historyPoints[historyPoints.count - 2]
+        guard sortedHistoryPoints.count >= 2 else { return 0 }
+        let latest = sortedHistoryPoints[sortedHistoryPoints.count - 1]
+        let previous = sortedHistoryPoints[sortedHistoryPoints.count - 2]
         switch selectedMetric {
         case .topSet:
             return latest.topSetWeight - previous.topSetWeight
@@ -140,7 +145,7 @@ struct ExerciseInsightsView: View {
             }
             .pickerStyle(.segmented)
 
-            if historyPoints.count > 1 {
+            if sortedHistoryPoints.count > 1 {
                 let sign = trendDelta >= 0 ? "+" : ""
                 Text("Last session change: \(sign)\(metricString(abs(trendDelta), suffix: selectedMetric.suffix))")
                     .font(.caption)
@@ -157,7 +162,7 @@ struct ExerciseInsightsView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            Chart(historyPoints) { point in
+            Chart(sortedHistoryPoints) { point in
                 LineMark(
                     x: .value("Date", point.date),
                     y: .value(selectedMetric.title, point.value(for: selectedMetric))
@@ -186,7 +191,7 @@ struct ExerciseInsightsView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            ForEach(historyPoints.reversed()) { point in
+            ForEach(sortedHistoryPoints.reversed()) { point in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(point.date.formatted(date: .abbreviated, time: .omitted))
                         .font(.subheadline.weight(.semibold))

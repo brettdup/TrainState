@@ -19,7 +19,7 @@ struct TrainStateWidgetExtensionLiveActivity: Widget {
             LockScreenLiveActivityView(context: context)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 6)
-                .activityBackgroundTint(Color.black.opacity(0.15))
+                .activityBackgroundTint(Color.black.opacity(0.7))
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {

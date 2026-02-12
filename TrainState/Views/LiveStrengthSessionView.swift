@@ -16,6 +16,7 @@ struct LiveStrengthSessionView: View {
     @State private var showExerciseLinkAlert = false
     @State private var activeExerciseSelection: ExerciseEditorSelection?
     @State private var didStartLiveActivity = false
+    @State private var showingExercisePicker = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -93,6 +94,24 @@ struct LiveStrengthSessionView: View {
                     EmptyView()
                 }
             }
+            .sheet(isPresented: $showingExercisePicker) {
+                UnifiedExercisePickerView(
+                    subcategories: availableSubcategories,
+                    exerciseOptions: quickAddOptions,
+                    existingExerciseNames: Set(entries.map { $0.trimmedName.lowercased() }),
+                    onSelect: { selected in
+                        for option in selected {
+                            addExercise(from: option)
+                        }
+                    },
+                    onCreateCustom: { name, subcategoryID in
+                        var entry = ExerciseLogEntry(name: name, subcategoryID: subcategoryID)
+                        entries.append(entry)
+                        activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
+                    },
+                    tintColor: typeTintColor
+                )
+            }
         }
         .onReceive(timer) { timestamp in
             now = timestamp
@@ -159,9 +178,9 @@ struct LiveStrengthSessionView: View {
                     .font(.headline)
                 Spacer()
                 Button {
-                    addAndEditNewExercise()
+                    showingExercisePicker = true
                 } label: {
-                    Label("Add Exercise", systemImage: "plus.circle.fill")
+                    Label("Browse All", systemImage: "list.bullet.rectangle.portrait")
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -180,14 +199,19 @@ struct LiveStrengthSessionView: View {
                             Button {
                                 addExercise(from: option)
                             } label: {
-                                Text(option.name)
-                                    .font(.caption.weight(.semibold))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        Capsule()
-                                            .fill(typeTintColor.opacity(0.16))
-                                    )
+                                HStack(spacing: 6) {
+                                    Image(systemName: ExerciseIconMapper.icon(for: option.name))
+                                        .font(.caption)
+                                        .foregroundStyle(ExerciseIconMapper.iconColor(for: option.name))
+                                    Text(option.name)
+                                        .font(.caption.weight(.semibold))
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule()
+                                        .fill(typeTintColor.opacity(0.16))
+                                )
                             }
                             .buttonStyle(.plain)
                         }
@@ -205,38 +229,7 @@ struct LiveStrengthSessionView: View {
                         Button {
                             activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
                         } label: {
-                            HStack(alignment: .top, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
-
-                                    if let summary = exerciseSummary(for: entry) {
-                                        Text(summary)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    if !entry.setSummaryLines.isEmpty {
-                                        Text(entry.setSummaryLines.joined(separator: "\n"))
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .multilineTextAlignment(.leading)
-                                    }
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.primary.opacity(0.06))
-                            )
+                            ExerciseCardView(entry: entry)
                         }
                         .buttonStyle(.plain)
                     }

@@ -38,6 +38,9 @@ class PurchaseManager: ObservableObject {
     
     // Keep a context reference only if needed later; avoid separate containers.
     private let modelContext: ModelContext?
+    #if DEBUG
+    private let debugPremiumOverrideDefaultsKey = "TrainState.debugPremiumOverrideEnabled"
+    #endif
     private init() {
         // Avoid creating a separate container; purchases don't require a local store.
         self.modelContext = nil
@@ -47,6 +50,12 @@ class PurchaseManager: ObservableObject {
         
         print("PurchaseManager: ModelContext initialized")
         debugLog += "PurchaseManager: ModelContext initialized\n"
+
+        #if DEBUG
+        // Restore the developer premium override from UserDefaults so it
+        // persists across simulator runs and new debug builds.
+        debugPremiumOverride = UserDefaults.standard.bool(forKey: debugPremiumOverrideDefaultsKey)
+        #endif
         
         Task { [weak self] in
             guard let self else { return }
@@ -211,14 +220,17 @@ extension PurchaseManager {
     
     func forcePremiumForPreview() {
         debugPremiumOverride = true
+        UserDefaults.standard.set(true, forKey: debugPremiumOverrideDefaultsKey)
     }
     
     func togglePremiumOverride() {
         debugPremiumOverride.toggle()
+        UserDefaults.standard.set(debugPremiumOverride, forKey: debugPremiumOverrideDefaultsKey)
     }
     
     func setPremiumOverride(_ enabled: Bool) {
         debugPremiumOverride = enabled
+        UserDefaults.standard.set(enabled, forKey: debugPremiumOverrideDefaultsKey)
     }
 }
 #endif

@@ -257,13 +257,21 @@ struct ExerciseEditorSheetView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingCategoryBrowser) {
-            ExerciseCategoryBrowserView(
+            UnifiedExercisePickerView(
                 subcategories: availableSubcategories,
-                options: availableOptions
-            ) { option in
-                entry.subcategoryID = option.subcategoryID
-                entry.name = option.name
-            }
+                exerciseOptions: availableOptions,
+                existingExerciseNames: [],
+                onSelect: { selected in
+                    if let option = selected.first {
+                        entry.subcategoryID = option.subcategoryID
+                        entry.name = option.name
+                    }
+                },
+                onCreateCustom: { name, subcategoryID in
+                    entry.subcategoryID = subcategoryID
+                    entry.name = name
+                }
+            )
         }
     }
 

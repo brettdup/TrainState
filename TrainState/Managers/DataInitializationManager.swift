@@ -17,18 +17,41 @@ class DataInitializationManager {
     }
 
     private let defaultCategorySeeds: [DefaultCategorySeed] = [
+        // Strength split matching the "real phone" experience.
         DefaultCategorySeed(
             name: "Push",
             color: "#FF6B6B",
             workoutType: .strength,
-            subcategories: ["Chest", "Shoulders"]
+            subcategories: ["Chest", "Shoulders", "Triceps"]
         ),
+        DefaultCategorySeed(
+            name: "Pull",
+            color: "#4ECDC4",
+            workoutType: .strength,
+            subcategories: ["Back", "Biceps", "Rear Delts"]
+        ),
+        DefaultCategorySeed(
+            name: "Legs",
+            color: "#45B7D1",
+            workoutType: .strength,
+            subcategories: ["Quads", "Hamstrings", "Calves"]
+        ),
+
+        // Cardio / conditioning.
         DefaultCategorySeed(
             name: "Intervals",
             color: "#FF8C42",
             workoutType: .cardio,
             subcategories: ["HIIT", "Steady State"]
         ),
+        DefaultCategorySeed(
+            name: "Endurance",
+            color: "#45B7D1",
+            workoutType: .running,
+            subcategories: ["Easy Run", "Tempo"]
+        ),
+
+        // Skill / movement categories.
         DefaultCategorySeed(
             name: "Flow",
             color: "#A66CFF",
@@ -47,18 +70,8 @@ class DataInitializationManager {
             workoutType: .swimming,
             subcategories: ["Freestyle", "Drills"]
         ),
-        DefaultCategorySeed(
-            name: "Pull",
-            color: "#4ECDC4",
-            workoutType: .strength,
-            subcategories: ["Back", "Biceps"]
-        ),
-        DefaultCategorySeed(
-            name: "Endurance",
-            color: "#45B7D1",
-            workoutType: .running,
-            subcategories: ["Easy Run", "Tempo"]
-        ),
+
+        // General-purpose / recovery.
         DefaultCategorySeed(
             name: "General Fitness",
             color: "#8D99AE",

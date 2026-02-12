@@ -109,18 +109,134 @@ struct DeveloperOptionsView: View {
     }
 
     private func seedSampleWorkouts() {
+        // Ensure core seed data (categories, subcategories, templates, user settings) exists.
+        DataInitializationManager.shared.initializeAppData(context: modelContext)
+
         let calendar = Calendar.current
-        let samples: [(WorkoutType, Int, Double, Double?)] = [
-            (.running, 0, 45, 6.2),
-            (.strength, 1, 50, nil),
-            (.yoga, 2, 30, nil),
-            (.cycling, 4, 60, 18.5)
-        ]
-        for sample in samples {
-            let date = calendar.date(byAdding: .day, value: -sample.1, to: Date()) ?? Date()
-            let workout = Workout(type: sample.0, startDate: date, duration: sample.2 * 60, distance: sample.3)
+
+        // Fetch categories & subcategories so seeded workouts are wired into the
+        // current category model and show up correctly across all new views.
+        let categoryDescriptor = FetchDescriptor<WorkoutCategory>()
+        let subcategoryDescriptor = FetchDescriptor<WorkoutSubcategory>()
+
+        let categories = (try? modelContext.fetch(categoryDescriptor)) ?? []
+        let subcategories = (try? modelContext.fetch(subcategoryDescriptor)) ?? []
+
+        func firstCategory(for type: WorkoutType) -> WorkoutCategory? {
+            categories.first { $0.workoutType == type }
+        }
+
+        func firstSubcategory(
+            for type: WorkoutType,
+            matchingNameContains search: String? = nil
+        ) -> WorkoutSubcategory? {
+            let candidates = subcategories.filter { $0.category?.workoutType == type }
+            guard !candidates.isEmpty else { return nil }
+
+            if let search,
+               let match = candidates.first(where: { $0.name.localizedCaseInsensitiveContains(search) }) {
+                return match
+            }
+            return candidates.first
+        }
+
+        // Running sample (used by lists, insights, etc.)
+        if let runningCategory = firstCategory(for: .running),
+           let tempoSubcategory = firstSubcategory(for: .running, matchingNameContains: "tempo") {
+            let date = calendar.date(byAdding: .day, value: 0, to: Date()) ?? Date()
+            let workout = Workout(
+                type: .running,
+                startDate: date,
+                duration: 45 * 60,
+                distance: 6.2,
+                categories: [runningCategory],
+                subcategories: [tempoSubcategory]
+            )
             modelContext.insert(workout)
         }
+
+        // Strength sample (with exercises wired into subcategories so the new
+        // exercise flows and insights have real data in the simulator).
+        if let strengthCategory = firstCategory(for: .strength) {
+            let strengthSubcategories = subcategories.filter { $0.category?.workoutType == .strength }
+            let chest = strengthSubcategories.first { $0.name.localizedCaseInsensitiveContains("chest") }
+            let legs = strengthSubcategories.first { $0.name.localizedCaseInsensitiveContains("leg") }
+
+            let date = calendar.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+            let workout = Workout(
+                type: .strength,
+                startDate: date,
+                duration: 50 * 60,
+                categories: [strengthCategory],
+                subcategories: [chest, legs].compactMap { $0 }
+            )
+
+            var exercises: [WorkoutExercise] = []
+
+            if let chest {
+                exercises.append(
+                    WorkoutExercise(
+                        name: "Bench Press",
+                        sets: 4,
+                        reps: 8,
+                        weight: 80,
+                        notes: "Simulator seed – chest focus",
+                        orderIndex: 0,
+                        workout: workout,
+                        subcategory: chest
+                    )
+                )
+            }
+
+            if let legs {
+                exercises.append(
+                    WorkoutExercise(
+                        name: "Back Squat",
+                        sets: 3,
+                        reps: 5,
+                        weight: 100,
+                        notes: "Simulator seed – legs focus",
+                        orderIndex: 1,
+                        workout: workout,
+                        subcategory: legs
+                    )
+                )
+            }
+
+            workout.exercises = exercises
+            modelContext.insert(workout)
+            exercises.forEach { modelContext.insert($0) }
+        }
+
+        // Yoga sample.
+        if let yogaCategory = firstCategory(for: .yoga),
+           let flowSubcategory = firstSubcategory(for: .yoga, matchingNameContains: "flow") {
+            let date = calendar.date(byAdding: .day, value: -2, to: Date()) ?? Date()
+            let workout = Workout(
+                type: .yoga,
+                startDate: date,
+                duration: 30 * 60,
+                categories: [yogaCategory],
+                subcategories: [flowSubcategory]
+            )
+            modelContext.insert(workout)
+        }
+
+        // Cycling sample.
+        if let cyclingCategory = firstCategory(for: .cycling),
+           let roadSubcategory = firstSubcategory(for: .cycling, matchingNameContains: "road") {
+            let date = calendar.date(byAdding: .day, value: -4, to: Date()) ?? Date()
+            let workout = Workout(
+                type: .cycling,
+                startDate: date,
+                duration: 60 * 60,
+                distance: 18.5,
+                categories: [cyclingCategory],
+                subcategories: [roadSubcategory]
+            )
+            modelContext.insert(workout)
+        }
+
         try? modelContext.save()
     }
 }
