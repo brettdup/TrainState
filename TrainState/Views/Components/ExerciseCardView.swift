@@ -2,13 +2,18 @@ import SwiftUI
 
 /// Shared exercise card component used across EditWorkout, AddWorkout, LiveStrengthSession, and WorkoutDetail views.
 struct ExerciseCardView: View {
+    @Environment(\.colorScheme) private var environmentColorScheme
     let name: String
     let setDetails: [String]
     let subcategoryName: String?
     var showDragHandle: Bool = false
     var showChevron: Bool = true
     var isDragging: Bool = false
-    var colorScheme: ColorScheme = .light
+    var colorScheme: ColorScheme? = nil
+
+    private var effectiveColorScheme: ColorScheme {
+        colorScheme ?? environmentColorScheme
+    }
 
     private var iconColor: Color {
         ExerciseIconMapper.iconColor(for: name)
@@ -84,9 +89,9 @@ struct ExerciseCardView: View {
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(colorScheme == .dark
-                    ? Color(.systemGray6)
-                    : .white)
+                .fill(effectiveColorScheme == .dark
+                    ? Color(.secondarySystemBackground)
+                    : Color(.systemBackground))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -117,7 +122,7 @@ struct ExerciseCardView: View {
 
 extension ExerciseCardView {
     /// Initialize from an ExerciseLogEntry (for Add/Edit/Live views)
-    init(entry: ExerciseLogEntry, subcategoryName: String? = nil, showDragHandle: Bool = false, showChevron: Bool = true, isDragging: Bool = false, colorScheme: ColorScheme = .light) {
+    init(entry: ExerciseLogEntry, subcategoryName: String? = nil, showDragHandle: Bool = false, showChevron: Bool = true, isDragging: Bool = false, colorScheme: ColorScheme? = nil) {
         self.name = entry.trimmedName
         self.setDetails = entry.setSummaryLines
         self.subcategoryName = subcategoryName
@@ -128,7 +133,7 @@ extension ExerciseCardView {
     }
 
     /// Initialize from a WorkoutExercise (for WorkoutDetail view)
-    init(exercise: WorkoutExercise, showChevron: Bool = true, colorScheme: ColorScheme = .light) {
+    init(exercise: WorkoutExercise, showChevron: Bool = true, colorScheme: ColorScheme? = nil) {
         self.name = exercise.name
         self.subcategoryName = exercise.subcategory?.name
         self.showDragHandle = false

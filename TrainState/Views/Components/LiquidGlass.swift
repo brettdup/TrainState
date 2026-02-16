@@ -26,6 +26,7 @@ struct GlassEffectContainerWrapper<Content: View>: View {
 /// Reusable modifier for Liquid Glass cards with iOS 26+ fallback.
 /// Use on any card-style view for consistent glass appearance.
 struct GlassCardModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
     var cornerRadius: CGFloat
     var isInteractive: Bool
 
@@ -38,8 +39,24 @@ struct GlassCardModifier: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Color.white)
-                    .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 3)
+                    .fill(colorScheme == .dark
+                        ? Color(.secondarySystemBackground)
+                        : Color(.systemBackground))
+                    .shadow(
+                        color: .black.opacity(colorScheme == .dark ? 0.28 : 0.08),
+                        radius: colorScheme == .dark ? 14 : 10,
+                        x: 0,
+                        y: colorScheme == .dark ? 5 : 3
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(
+                        colorScheme == .dark
+                            ? Color.white.opacity(0.12)
+                            : Color.black.opacity(0.04),
+                        lineWidth: 1
+                    )
             )
     }
 }

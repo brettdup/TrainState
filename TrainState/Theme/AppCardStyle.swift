@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Reusable card styling to keep visual language consistent across the app.
 struct AppCardStyle: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
     var padding: CGFloat = 16
     var cornerRadius: CGFloat = AppTheme.cornerRadius
     var shadowOpacity: Double = 0.12
@@ -10,13 +11,16 @@ struct AppCardStyle: ViewModifier {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white)
+            .background(colorScheme == .dark ? Color(.secondarySystemBackground) : Color(.systemBackground))
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color(.separator), lineWidth: 0.6)
+                    .stroke(
+                        colorScheme == .dark ? Color.white.opacity(0.12) : Color(.separator),
+                        lineWidth: 0.6
+                    )
             )
-            .shadow(color: .black.opacity(shadowOpacity), radius: 6, y: 4)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : shadowOpacity), radius: 6, y: 4)
     }
 }
 
