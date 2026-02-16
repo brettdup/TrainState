@@ -11,16 +11,19 @@ struct AppCardStyle: ViewModifier {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(colorScheme == .dark ? Color(.secondarySystemBackground) : Color(.systemBackground))
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.white.opacity(0.62))
+            )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(
-                        colorScheme == .dark ? Color.white.opacity(0.12) : Color(.separator),
-                        lineWidth: 0.6
+                        colorScheme == .dark ? Color.white.opacity(0.14) : Color.white.opacity(0.72),
+                        lineWidth: 0.5
                     )
             )
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : shadowOpacity), radius: 6, y: 4)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.16 : 0.05), radius: 4, y: 2)
     }
 }
 

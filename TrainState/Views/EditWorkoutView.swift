@@ -24,6 +24,9 @@ struct EditWorkoutView: View {
     @State private var activeExerciseSelection: ExerciseEditorSelection?
     @State private var isSaving = false
     @State private var showingExerciseLinkAlert = false
+    @State private var showingAdvancedFields = false
+    @State private var showingDiscardChangesAlert = false
+    private let initialSnapshot: EditWorkoutSnapshot
 
     private let quickDurations: [Double] = [15, 30, 45, 60, 90, 120]
     private var durationBinding: Binding<Double> {
@@ -73,6 +76,7 @@ struct EditWorkoutView: View {
 
     init(workout: Workout) {
         self.workout = workout
+        self.initialSnapshot = EditWorkoutSnapshot(workout: workout)
         _type = State(initialValue: workout.type)
         _date = State(initialValue: workout.startDate)
         _durationMinutes = State(initialValue: workout.duration / 60)
@@ -98,39 +102,42 @@ struct EditWorkoutView: View {
         ZStack {
             LinearGradient(
                 gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04),
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.04 : 0.015),
                     Color(.systemBackground)
                 ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+                startPoint: .top,
+                endPoint: .bottom
             )
             .ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 16) {
                     typeCard
                     dateCard
                     durationCard
                     if showsDistance { distanceCard }
-                    ratingCard
                     categoriesCard
                     exercisesCard
-                    notesCard
+                    advancedSectionCard
+                    if showingAdvancedFields {
+                        ratingCard
+                        notesCard
+                    }
                     saveButton
                 }
-                .glassEffectContainer(spacing: 20)
+                .glassEffectContainer(spacing: 16)
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 24)
-                .padding(.bottom, 40)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .padding(.bottom, 24)
             }
         }
         .navigationTitle("Edit Workout")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { handleCancelTapped() }
             }
         }
         .sheet(isPresented: $showingCategoryPicker) {
@@ -180,6 +187,12 @@ struct EditWorkoutView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("Each exercise must be linked to a subcategory before saving.")
+        }
+        .alert("Discard changes?", isPresented: $showingDiscardChangesAlert) {
+            Button("Keep Editing", role: .cancel) { }
+            Button("Discard", role: .destructive) { dismiss() }
+        } message: {
+            Text("You have unsaved changes.")
         }
         .onChange(of: type) { _, _ in
             selectedCategories.removeAll()
@@ -242,6 +255,30 @@ struct EditWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
+        .glassCard()
+    }
+
+    private var advancedSectionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showingAdvancedFields.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("More details")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: showingAdvancedFields ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
         .glassCard()
     }
 
@@ -488,8 +525,12 @@ struct EditWorkoutView: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 32)
-                .fill(Color(.systemBackground).opacity(colorScheme == .dark ? 0.9 : 0.96))
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08), radius: 12, x: 0, y: 6)
+                .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.white.opacity(0.62))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 32)
+                        .stroke(Color.white.opacity(colorScheme == .dark ? 0.14 : 0.72), lineWidth: 0.5)
+                )
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.12 : 0.04), radius: 5, x: 0, y: 2)
         )
     }
 
@@ -585,6 +626,32 @@ struct EditWorkoutView: View {
             parts.append(selectedSubcategories.map(\.name).joined(separator: ", "))
         }
         return parts.isEmpty ? "Select Categories" : parts.joined(separator: " · ")
+    }
+
+    private var hasUnsavedChanges: Bool {
+        currentSnapshot != initialSnapshot
+    }
+
+    private var currentSnapshot: EditWorkoutSnapshot {
+        EditWorkoutSnapshot(
+            type: type,
+            date: date,
+            durationMinutes: durationMinutes,
+            distanceKilometers: distanceKilometers,
+            workoutRating: workoutRating,
+            notes: notes,
+            selectedCategoryIDs: selectedCategories.map(\.id),
+            selectedSubcategoryIDs: selectedSubcategories.map(\.id),
+            exerciseSignatures: exerciseEntries.map(EditWorkoutSnapshot.ExerciseSignature.init)
+        )
+    }
+
+    private func handleCancelTapped() {
+        if hasUnsavedChanges {
+            showingDiscardChangesAlert = true
+        } else {
+            dismiss()
+        }
     }
 
     private func hasUnlinkedExercises(_ entries: [ExerciseLogEntry]) -> Bool {
@@ -700,6 +767,86 @@ struct EditWorkoutView: View {
         if modelContext.hasChanges {
             try? modelContext.save()
         }
+    }
+}
+
+private struct EditWorkoutSnapshot: Equatable {
+    struct ExerciseSignature: Equatable {
+        let name: String
+        let sets: Int?
+        let reps: Int?
+        let weight: Double?
+        let subcategoryID: UUID?
+
+        init(_ entry: ExerciseLogEntry) {
+            self.name = entry.trimmedName
+            self.sets = entry.sets
+            self.reps = entry.reps
+            self.weight = entry.weight
+            self.subcategoryID = entry.subcategoryID
+        }
+
+        init(name: String, sets: Int?, reps: Int?, weight: Double?, subcategoryID: UUID?) {
+            self.name = name
+            self.sets = sets
+            self.reps = reps
+            self.weight = weight
+            self.subcategoryID = subcategoryID
+        }
+    }
+
+    let type: WorkoutType
+    let date: Date
+    let durationMinutes: Double
+    let distanceKilometers: Double
+    let workoutRating: Double?
+    let notes: String
+    let selectedCategoryIDs: [UUID]
+    let selectedSubcategoryIDs: [UUID]
+    let exerciseSignatures: [ExerciseSignature]
+
+    init(workout: Workout) {
+        self.type = workout.type
+        self.date = workout.startDate
+        self.durationMinutes = workout.duration / 60
+        self.distanceKilometers = workout.distance ?? 0
+        self.workoutRating = workout.rating
+        self.notes = workout.notes ?? ""
+        self.selectedCategoryIDs = (workout.categories ?? []).map(\.id)
+        self.selectedSubcategoryIDs = (workout.subcategories ?? []).map(\.id)
+        self.exerciseSignatures = (workout.exercises ?? [])
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map {
+                ExerciseSignature(
+                    name: $0.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    sets: $0.sets,
+                    reps: $0.reps,
+                    weight: $0.weight,
+                    subcategoryID: $0.subcategory?.id
+                )
+            }
+    }
+
+    init(
+        type: WorkoutType,
+        date: Date,
+        durationMinutes: Double,
+        distanceKilometers: Double,
+        workoutRating: Double?,
+        notes: String,
+        selectedCategoryIDs: [UUID],
+        selectedSubcategoryIDs: [UUID],
+        exerciseSignatures: [ExerciseSignature]
+    ) {
+        self.type = type
+        self.date = date
+        self.durationMinutes = durationMinutes
+        self.distanceKilometers = distanceKilometers
+        self.workoutRating = workoutRating
+        self.notes = notes
+        self.selectedCategoryIDs = selectedCategoryIDs
+        self.selectedSubcategoryIDs = selectedSubcategoryIDs
+        self.exerciseSignatures = exerciseSignatures
     }
 }
 

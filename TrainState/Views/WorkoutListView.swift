@@ -42,30 +42,39 @@ struct WorkoutListView: View {
         purchaseManager.hasCompletedInitialPremiumCheck && !purchaseManager.hasActiveSubscription
     }
 
+    private var mainBackgroundColor: Color {
+        colorScheme == .dark ? Color(.systemBackground) : Color(.systemGroupedBackground)
+    }
+
+    private var mainBackgroundAccent: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.accentColor.opacity(colorScheme == .dark ? 0.06 : 0.03),
+                .clear
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                mainBackgroundColor
+                    .ignoresSafeArea()
+
+                mainBackgroundAccent.ignoresSafeArea()
 
                 if groupedVisibleWorkouts.isEmpty {
                     ScrollView {
-                        GlassEffectContainerWrapper(spacing: 24) {
-                            VStack(spacing: 24) {
+                        GlassEffectContainerWrapper(spacing: 16) {
+                            VStack(spacing: 16) {
                                 ContentUnavailableView {
                                     Label("No Workouts", systemImage: "figure.run")
                                 } description: {
                                     Text("Tap + to log your first workout.")
                                 }
-                                .padding(.top, 40)
+                                .padding(.top, 32)
 
                                 if showLimitsCard {
                                     limitsCard
@@ -77,12 +86,12 @@ struct WorkoutListView: View {
                             }
                         }
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
+                        .padding(.bottom, 20)
                     }
                 } else {
                     ScrollView {
-                        GlassEffectContainerWrapper(spacing: 16) {
-                            LazyVStack(spacing: 16) {
+                        GlassEffectContainerWrapper(spacing: 14) {
+                            LazyVStack(spacing: 14) {
                                 if showLimitsCard {
                                     limitsCard
                                 }
@@ -90,13 +99,13 @@ struct WorkoutListView: View {
                                     firstSessionChecklistCard
                                 }
                                 ForEach(groupedVisibleWorkouts, id: \.date) { entry in
-                                    VStack(alignment: .leading, spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 6) {
                                         Text(sectionHeaderTitle(for: entry.date))
-                                            .font(.headline)
+                                            .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(.secondary)
                                             .padding(.horizontal, 4)
 
-                                        VStack(spacing: 12) {
+                                        VStack(spacing: 10) {
                                             ForEach(entry.items, id: \.id) { workout in
                                                 NavigationLink {
                                                     WorkoutDetailView(workout: workout)
@@ -113,8 +122,8 @@ struct WorkoutListView: View {
                             }
                         }
                         .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 24)
+                        .padding(.top, 12)
+                        .padding(.bottom, 20)
                     }
                 }
             }
@@ -327,8 +336,8 @@ struct WorkoutListView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(20)
-        .glassCard()
+        .padding(16)
+        .glassCard(prominence: .elevated)
     }
 
     private var rateAppCard: some View {
@@ -357,8 +366,8 @@ struct WorkoutListView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(20)
-        .glassCard()
+        .padding(16)
+        .glassCard(prominence: .elevated)
     }
 
     private var shouldShowFirstSessionChecklist: Bool {
@@ -409,8 +418,8 @@ struct WorkoutListView: View {
                 }
             }
         }
-        .padding(20)
-        .glassCard()
+        .padding(16)
+        .glassCard(prominence: .elevated)
     }
 
     private func checklistRow(title: String, isDone: Bool) -> some View {

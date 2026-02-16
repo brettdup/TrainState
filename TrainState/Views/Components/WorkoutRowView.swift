@@ -31,22 +31,21 @@ struct WorkoutRowView: View {
 
     // MARK: - Standard Layout (Icon left, content middle, stats right)
     private var standardLayout: some View {
-        HStack(spacing: 14) {
-            iconView(size: 48, iconSize: 22, cornerRadius: 14)
+        HStack(spacing: 12) {
+            iconView(size: 42, iconSize: 18, cornerRadius: 12)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(workout.type.rawValue)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.primary)
 
-                    Text(formattedDuration(workout.duration))
-                        .font(.system(size: 15, weight: .medium))
+                    Text("· \(formattedDuration(workout.duration))")
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
 
                 categoriesText
-                subcategoriesText
                 dateText
             }
 
@@ -55,9 +54,9 @@ struct WorkoutRowView: View {
             distanceBadge
             chevron
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
-        .glassCard()
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .glassCard(prominence: .elevated)
     }
 
     // MARK: - Stacked Layout (Header row, then categories, then stats row)
@@ -102,7 +101,7 @@ struct WorkoutRowView: View {
             }
         }
         .padding(16)
-        .glassCard()
+        .glassCard(prominence: .elevated)
     }
 
     // MARK: - Split Layout (Two columns)
@@ -150,7 +149,7 @@ struct WorkoutRowView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .glassCard()
+        .glassCard(prominence: .elevated)
     }
 
     // MARK: - Leading Layout (Duration prominent on left)
@@ -197,7 +196,7 @@ struct WorkoutRowView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .glassCard()
+        .glassCard(prominence: .elevated)
     }
 
     // MARK: - Compact Layout (Single line focus, minimal)
@@ -244,7 +243,7 @@ struct WorkoutRowView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .glassCard()
+        .glassCard(prominence: .elevated)
     }
 
     // MARK: - Shared Components
@@ -262,14 +261,14 @@ struct WorkoutRowView: View {
     private var chevron: some View {
         Image(systemName: "chevron.right")
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.quaternary)
+            .foregroundStyle(.tertiary)
     }
 
     @ViewBuilder
     private var categoriesText: some View {
         if let categories = workout.categories, !categories.isEmpty {
             Text(categories.map(\.name).joined(separator: " · "))
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -287,7 +286,7 @@ struct WorkoutRowView: View {
 
     private var dateText: some View {
         Text(formattedDate)
-            .font(.system(size: 12))
+            .font(.system(size: 11))
             .foregroundStyle(.tertiary)
     }
 
@@ -295,13 +294,13 @@ struct WorkoutRowView: View {
     private var distanceBadge: some View {
         if let distance = workout.distance, distance > 0 {
             Text(String(format: "%.1f km", distance))
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(workout.type.tintColor)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
                 .background(
                     Capsule()
-                        .fill(workout.type.tintColor.opacity(0.12))
+                        .fill(workout.type.tintColor.opacity(0.10))
                 )
         }
     }

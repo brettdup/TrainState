@@ -25,37 +25,50 @@ struct GlassEffectContainerWrapper<Content: View>: View {
 
 /// Reusable modifier for Liquid Glass cards with iOS 26+ fallback.
 /// Use on any card-style view for consistent glass appearance.
+enum GlassCardProminence {
+    case elevated
+    case regular
+}
+
 struct GlassCardModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     var cornerRadius: CGFloat
     var isInteractive: Bool
+    var prominence: GlassCardProminence
 
-    init(cornerRadius: CGFloat = ViewConstants.cardCornerRadius, isInteractive: Bool = false) {
+    init(
+        cornerRadius: CGFloat = ViewConstants.cardCornerRadius,
+        isInteractive: Bool = false,
+        prominence: GlassCardProminence = .elevated
+    ) {
         self.cornerRadius = cornerRadius
         self.isInteractive = isInteractive
+        self.prominence = prominence
     }
 
     func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(colorScheme == .dark
-                        ? Color(.secondarySystemBackground)
-                        : Color(.systemBackground))
+                    .fill(
+                        colorScheme == .dark
+                            ? Color.white.opacity(prominence == .elevated ? 0.14 : 0.08)
+                            : Color.white.opacity(prominence == .elevated ? 0.94 : 0.66)
+                    )
                     .shadow(
-                        color: .black.opacity(colorScheme == .dark ? 0.28 : 0.08),
-                        radius: colorScheme == .dark ? 14 : 10,
+                        color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08),
+                        radius: colorScheme == .dark ? (prominence == .elevated ? 9 : 7) : (prominence == .elevated ? 6 : 4),
                         x: 0,
-                        y: colorScheme == .dark ? 5 : 3
+                        y: colorScheme == .dark ? 3 : (prominence == .elevated ? 3 : 2)
                     )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .strokeBorder(
                         colorScheme == .dark
-                            ? Color.white.opacity(0.12)
-                            : Color.black.opacity(0.04),
-                        lineWidth: 1
+                            ? Color.white.opacity(prominence == .elevated ? 0.18 : 0.14)
+                            : (prominence == .elevated ? Color.black.opacity(0.09) : Color.black.opacity(0.04)),
+                        lineWidth: prominence == .elevated ? 0.8 : 0.6
                     )
             )
     }
@@ -63,8 +76,12 @@ struct GlassCardModifier: ViewModifier {
 
 extension View {
     /// Applies Liquid Glass styling on iOS 26+, material fallback on earlier versions.
-    func glassCard(cornerRadius: CGFloat = ViewConstants.cardCornerRadius, isInteractive: Bool = false) -> some View {
-        modifier(GlassCardModifier(cornerRadius: cornerRadius, isInteractive: isInteractive))
+    func glassCard(
+        cornerRadius: CGFloat = ViewConstants.cardCornerRadius,
+        isInteractive: Bool = false,
+        prominence: GlassCardProminence = .elevated
+    ) -> some View {
+        modifier(GlassCardModifier(cornerRadius: cornerRadius, isInteractive: isInteractive, prominence: prominence))
     }
 
     /// Wraps content in GlassEffectContainer on iOS 26+ to improve glass rendering performance

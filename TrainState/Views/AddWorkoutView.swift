@@ -34,6 +34,8 @@ struct AddWorkoutView: View {
     @State private var showingTemplateLibrary = false
     @State private var showingSaveTemplateAlert = false
     @State private var showingDuplicateTypeAlert = false
+    @State private var showingAdvancedFields = false
+    @State private var showingDiscardChangesAlert = false
     @State private var pendingWorkoutToSave: Workout?
     @State private var pendingTemplateEntries: [ExerciseLogEntry]?
     @State private var newTemplateName = ""
@@ -168,17 +170,17 @@ struct AddWorkoutView: View {
             ZStack {
                 LinearGradient(
                     gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
+                        Color.accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04),
+                        Color.accentColor.opacity(colorScheme == .dark ? 0.04 : 0.015),
                         Color(.systemBackground)
                     ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
                 .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 20) {
+                    VStack(spacing: 16) {
                         quickLogCard
                         typeCard
                         dateCard
@@ -190,28 +192,31 @@ struct AddWorkoutView: View {
                             durationCard
                         }
                         if showsDistance { distanceCard }
-                        ratingCard
                         categoriesCard
                         if !isStrengthSessionType || strengthEntryMode == .manual {
                             exercisesCard
                         } else {
                             liveSessionInfoCard
                         }
-                        notesCard
+                        advancedSectionCard
+                        if showingAdvancedFields {
+                            ratingCard
+                            notesCard
+                        }
                         saveButton
                     }
-                    .glassEffectContainer(spacing: 20)
+                    .glassEffectContainer(spacing: 16)
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
-                    .padding(.bottom, 40)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
+                    .padding(.bottom, 24)
                 }
             }
             .navigationTitle("New Workout")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { handleCancelTapped() }
                 }
             }
         }
@@ -285,6 +290,12 @@ struct AddWorkoutView: View {
             } else {
                 Text("A workout of this type already exists for this day.")
             }
+        }
+        .alert("Discard changes?", isPresented: $showingDiscardChangesAlert) {
+            Button("Keep Editing", role: .cancel) { }
+            Button("Discard", role: .destructive) { dismiss() }
+        } message: {
+            Text("You have unsaved changes.")
         }
         .fullScreenCover(isPresented: $showingLiveStrengthSession) {
             LiveStrengthSessionView(
@@ -373,7 +384,7 @@ struct AddWorkoutView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -406,7 +417,7 @@ struct AddWorkoutView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -421,7 +432,7 @@ struct AddWorkoutView: View {
                 .labelsHidden()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -467,7 +478,7 @@ struct AddWorkoutView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -484,7 +495,7 @@ struct AddWorkoutView: View {
             .pickerStyle(.segmented)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -499,7 +510,7 @@ struct AddWorkoutView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -603,7 +614,7 @@ struct AddWorkoutView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -630,7 +641,7 @@ struct AddWorkoutView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -660,7 +671,7 @@ struct AddWorkoutView: View {
             .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -702,7 +713,7 @@ struct AddWorkoutView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -797,7 +808,7 @@ struct AddWorkoutView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -812,7 +823,32 @@ struct AddWorkoutView: View {
                 .lineLimit(3...6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
+        .glassCard()
+    }
+
+    private var advancedSectionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showingAdvancedFields.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("More details")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: showingAdvancedFields ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
         .glassCard()
     }
 
@@ -921,6 +957,27 @@ struct AddWorkoutView: View {
             parts.append(selectedSubcategories.map(\.name).joined(separator: ", "))
         }
         return parts.isEmpty ? "Select Categories" : parts.joined(separator: " · ")
+    }
+
+    private var hasUnsavedChanges: Bool {
+        let baselineType = suggestedWorkoutType ?? .other
+        return type != baselineType ||
+            abs(date.timeIntervalSinceNow) > 120 ||
+            durationMinutes != 30.0 ||
+            distanceKilometers > 0 ||
+            workoutRating != nil ||
+            !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !selectedCategories.isEmpty ||
+            !selectedSubcategories.isEmpty ||
+            !exerciseEntries.isEmpty
+    }
+
+    private func handleCancelTapped() {
+        if hasUnsavedChanges {
+            showingDiscardChangesAlert = true
+        } else {
+            dismiss()
+        }
     }
 
     private func saveWorkout(_ workout: Workout) {
