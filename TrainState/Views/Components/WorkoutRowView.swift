@@ -7,6 +7,7 @@ enum WorkoutRowStyle: String, CaseIterable {
     case split = "Split"
     case leading = "Leading"
     case compact = "Compact"
+    
 }
 
 struct WorkoutRowView: View {
