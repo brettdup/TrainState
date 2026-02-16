@@ -27,7 +27,7 @@ struct TermsOfUseView: View {
                     }
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard(cornerRadius: 32)
+                    .glassCard()
 
                     termsSection("1. Acceptance of Terms", "By accessing and using TrainState, you agree to be bound by these Terms of Use and all applicable laws and regulations.")
                     termsSection("2. Subscription Terms", "TrainState offers premium features through auto-renewable subscriptions. Subscriptions automatically renew unless auto-renew is turned off at least 24 hours before the end of the current period. You can manage and cancel your subscriptions by going to your App Store account settings after purchase.")
@@ -55,7 +55,7 @@ struct TermsOfUseView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 }
 

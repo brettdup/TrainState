@@ -146,7 +146,7 @@ struct CategoriesManagementView: View {
                                     }
                                 }
                                 .padding(20)
-                                .glassCard(cornerRadius: 32)
+                                .glassCard()
                             }
                         }
                     }
@@ -200,7 +200,7 @@ struct CategoriesManagementView: View {
                         TextField("Subcategory name", text: $newSubcategoryName)
                             .textFieldStyle(.plain)
                             .padding(20)
-                            .glassCard(cornerRadius: 32)
+                            .glassCard()
                         if let cat = subcategoryParentCategory {
                             Label("Will be linked to \(cat.name)", systemImage: "link")
                                 .font(.caption)
@@ -248,7 +248,7 @@ struct CategoriesManagementView: View {
                         TextField("Exercise name", text: $newExerciseTemplateName)
                             .textFieldStyle(.plain)
                             .padding(20)
-                            .glassCard(cornerRadius: 32)
+                            .glassCard()
                         if let subcategory = templateParentSubcategory {
                             Label("Will be linked to \(subcategory.name)", systemImage: "link")
                                 .font(.caption)

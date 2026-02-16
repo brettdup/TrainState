@@ -135,7 +135,7 @@ struct SubcategoryLastLoggedView: View {
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .padding(24)
-                            .glassCard(cornerRadius: 32)
+                            .glassCard()
                     } else {
                         sectionHeader(title: "Strength Subcategories", count: filteredSubcategories.count)
 
@@ -149,7 +149,7 @@ struct SubcategoryLastLoggedView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(20)
-                            .glassCard(cornerRadius: 32)
+                            .glassCard()
                         }
 
                         sectionHeader(title: "Strength Exercises", count: filteredExercises.count)
@@ -171,7 +171,7 @@ struct SubcategoryLastLoggedView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(20)
-                            .glassCard(cornerRadius: 32)
+                            .glassCard()
                         }
                     }
                 }
@@ -199,7 +199,7 @@ struct SubcategoryLastLoggedView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private func sectionHeader(title: String, count: Int) -> some View {

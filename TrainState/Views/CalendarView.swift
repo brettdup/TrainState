@@ -44,7 +44,7 @@ struct CalendarView: View {
                                 }
                                 .padding(16)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .glassCard(cornerRadius: 32)
+                                .glassCard()
                             } else {
                                 VStack(spacing: 12) {
                                     ForEach(dayWorkouts, id: \.id) { workout in
@@ -107,7 +107,7 @@ struct CalendarView: View {
             .disabled(isShowingCurrentWeek)
         }
         .padding(16)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var isShowingCurrentWeek: Bool {
@@ -128,7 +128,7 @@ struct CalendarView: View {
             }
         }
         .padding(16)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var workoutsInDisplayedWeek: [Workout] {
@@ -243,7 +243,7 @@ private struct CalendarWorkoutRow: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var statsLine: String {

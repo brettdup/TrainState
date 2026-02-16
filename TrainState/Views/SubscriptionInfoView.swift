@@ -33,7 +33,7 @@ struct SubscriptionInfoView: View {
                     }
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard(cornerRadius: 32)
+                    .glassCard()
 
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Entitlements")
@@ -52,7 +52,7 @@ struct SubscriptionInfoView: View {
                     }
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard(cornerRadius: 32)
+                    .glassCard()
 
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Details")
@@ -64,7 +64,7 @@ struct SubscriptionInfoView: View {
                     }
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard(cornerRadius: 32)
+                    .glassCard()
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)

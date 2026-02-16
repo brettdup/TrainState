@@ -124,7 +124,7 @@ struct CategoryAndSubcategorySelectionView: View {
                             TextField("Category name", text: $newCategoryName)
                                 .textFieldStyle(.plain)
                                 .padding(20)
-                                .glassCard(cornerRadius: 32)
+                                .glassCard()
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 24)
                         }
@@ -177,7 +177,7 @@ struct CategoryAndSubcategorySelectionView: View {
                         TextField("Subcategory name", text: $newSubcategoryName)
                             .textFieldStyle(.plain)
                             .padding(20)
-                            .glassCard(cornerRadius: 32)
+                            .glassCard()
                         if let cat = subcategoryParentCategory {
                             Label("Will be added to \(cat.name)", systemImage: "link")
                                 .font(.caption)

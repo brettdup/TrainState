@@ -5,7 +5,7 @@ public enum ViewConstants {
     // Corner Radius
     static let cornerRadius: CGFloat = 5
     static let buttonCornerRadius: CGFloat = 10.0
-    static let cardCornerRadius: CGFloat = 16.0
+    static let cardCornerRadius: CGFloat = 32.0
     static let buttonStrokeWidth: CGFloat = 2.0
     
     // Spacing

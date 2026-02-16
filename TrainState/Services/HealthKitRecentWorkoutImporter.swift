@@ -111,17 +111,18 @@ final class HealthKitRecentWorkoutImporter {
     }
 
     /// Attach HealthKit data to an already logged workout instead of creating a new one.
-    /// This keeps manually-entered categories, subcategories, and exercises, and only
-    /// fills in missing metrics (duration, distance, calories, rating, route).
+    /// This keeps manually-entered categories, subcategories, and exercises, while
+    /// syncing timing from HealthKit and filling additional metrics.
     func attachWorkout(_ item: HealthKitRecentWorkoutMenuItem, to workout: Workout, in context: ModelContext) async throws {
         // Link identity back to HealthKit so this workout won't be imported twice.
         workout.hkUUID = item.hkUUID
         workout.hkActivityTypeRaw = item.activityTypeRaw
 
-        // Only fill gaps so we don't unexpectedly overwrite manual edits.
-        if workout.duration <= 0 {
-            workout.duration = item.duration
-        }
+        // Keep attached workout timing aligned to the HealthKit source.
+        workout.startDate = item.startDate
+        workout.duration = item.duration
+
+        // Fill remaining metrics without overriding explicit manual values.
         if (workout.distance ?? 0) <= 0, let distance = item.distanceKilometers, distance > 0 {
             workout.distance = distance
         }

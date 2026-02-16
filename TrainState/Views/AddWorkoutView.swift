@@ -6,6 +6,9 @@ struct AddWorkoutView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.requestReview) private var requestReview
+    @AppStorage("reviewPromptLoggedWorkoutCount") private var reviewPromptLoggedWorkoutCount = 0
+    @AppStorage("hasShownWorkoutReviewPrompt") private var hasShownWorkoutReviewPrompt = false
     @Query private var workouts: [Workout]
     @Query(sort: \WorkoutSubcategory.name) private var allSubcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
@@ -30,9 +33,19 @@ struct AddWorkoutView: View {
     @State private var hasAppliedSuggestedType = false
     @State private var showingTemplateLibrary = false
     @State private var showingSaveTemplateAlert = false
+    @State private var showingDuplicateTypeAlert = false
+    @State private var pendingWorkoutToSave: Workout?
+    @State private var pendingTemplateEntries: [ExerciseLogEntry]?
     @State private var newTemplateName = ""
     @State private var activeTemplateID: UUID?
     @State private var showingExercisePicker = false
+    private let reviewPromptWorkoutThreshold = 3
+    private let quickLogPresets: [(title: String, type: WorkoutType, durationMinutes: Double, distanceKilometers: Double?)] = [
+        ("Strength 45m", .strength, 45, nil),
+        ("Run 30m", .running, 30, 5.0),
+        ("Cycle 45m", .cycling, 45, 18.0),
+        ("Yoga 20m", .yoga, 20, nil)
+    ]
 
     private let quickDurations: [Double] = [15, 30, 45, 60, 90, 120]
     private var durationBinding: Binding<Double> {
@@ -166,6 +179,7 @@ struct AddWorkoutView: View {
 
                 ScrollView {
                     VStack(spacing: 20) {
+                        quickLogCard
                         typeCard
                         dateCard
                         if isStrengthSessionType {
@@ -252,6 +266,25 @@ struct AddWorkoutView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("Each exercise must be linked to a subcategory before saving.")
+        }
+        .alert("Workout Type Already Logged", isPresented: $showingDuplicateTypeAlert) {
+            Button("Cancel", role: .cancel) {
+                pendingWorkoutToSave = nil
+                pendingTemplateEntries = nil
+                isSaving = false
+            }
+            Button("Save Anyway") {
+                guard let workout = pendingWorkoutToSave else { return }
+                performSave(workout, persistTemplatesFrom: pendingTemplateEntries)
+                pendingWorkoutToSave = nil
+                pendingTemplateEntries = nil
+            }
+        } message: {
+            if let pendingWorkoutToSave {
+                Text("A \(pendingWorkoutToSave.type.rawValue) workout already exists for \(pendingWorkoutToSave.startDate.formatted(date: .abbreviated, time: .omitted)).")
+            } else {
+                Text("A workout of this type already exists for this day.")
+            }
         }
         .fullScreenCover(isPresented: $showingLiveStrengthSession) {
             LiveStrengthSessionView(
@@ -341,7 +374,40 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
+    }
+
+    private var quickLogCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Quick Log")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("Save a common workout in one tap.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(quickLogPresets, id: \.title) { preset in
+                    Button {
+                        quickSavePreset(preset)
+                    } label: {
+                        Text(preset.title)
+                            .font(.footnote.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(preset.type.tintColor.opacity(colorScheme == .dark ? 0.28 : 0.18))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSaving || !canAddWorkout)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard()
     }
 
     private var dateCard: some View {
@@ -356,7 +422,7 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var durationCard: some View {
@@ -402,7 +468,7 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var strengthModeCard: some View {
@@ -419,7 +485,7 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var liveSessionInfoCard: some View {
@@ -434,7 +500,7 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var strengthTemplatesCard: some View {
@@ -538,7 +604,7 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var distanceCard: some View {
@@ -565,7 +631,7 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var categoriesCard: some View {
@@ -595,7 +661,7 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var ratingCard: some View {
@@ -637,7 +703,7 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var exercisesCard: some View {
@@ -732,7 +798,7 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var notesCard: some View {
@@ -747,7 +813,7 @@ struct AddWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var saveButton: some View {
@@ -769,8 +835,6 @@ struct AddWorkoutView: View {
                 showingExerciseLinkAlert = true
                 return
             }
-            isSaving = true
-            persistExerciseTemplates(from: exerciseEntries)
             let workout = Workout(
                 type: type,
                 startDate: date,
@@ -797,7 +861,7 @@ struct AddWorkoutView: View {
                         )
                     }
             )
-            saveWorkout(workout)
+            attemptSaveWorkout(workout, persistTemplatesFrom: exerciseEntries)
         } label: {
             HStack(spacing: 12) {
                 if isSaving {
@@ -863,10 +927,46 @@ struct AddWorkoutView: View {
         modelContext.insert(workout)
         do {
             try modelContext.save()
+            handleReviewPromptAfterSuccessfulSave()
+            refreshSmartReminder(with: workout.startDate)
             dismiss()
         } catch {
             isSaving = false
         }
+    }
+
+    private func quickSavePreset(_ preset: (title: String, type: WorkoutType, durationMinutes: Double, distanceKilometers: Double?)) {
+        guard !isSaving else { return }
+        guard canAddWorkout else {
+            Task {
+                await purchaseManager.loadProducts()
+                await purchaseManager.updatePurchasedProducts()
+                showingPaywall = true
+            }
+            return
+        }
+
+        let workout = Workout(
+            type: preset.type,
+            startDate: Date(),
+            duration: preset.durationMinutes * 60,
+            distance: preset.distanceKilometers
+        )
+        attemptSaveWorkout(workout)
+    }
+
+    private func handleReviewPromptAfterSuccessfulSave() {
+        guard !hasShownWorkoutReviewPrompt else { return }
+        reviewPromptLoggedWorkoutCount += 1
+        guard reviewPromptLoggedWorkoutCount >= reviewPromptWorkoutThreshold else { return }
+
+        requestReview()
+        hasShownWorkoutReviewPrompt = true
+    }
+
+    private func refreshSmartReminder(with newWorkoutDate: Date) {
+        let dates = (workouts.map(\.startDate) + [newWorkoutDate]).sorted()
+        NotificationManager.shared.refreshSmartConsistencyReminder(workoutDates: dates)
     }
 
     private func saveStrengthWorkout(startDate: Date, duration: TimeInterval, entries: [ExerciseLogEntry]) {
@@ -875,8 +975,6 @@ struct AddWorkoutView: View {
             return
         }
         guard !isSaving else { return }
-        isSaving = true
-        persistExerciseTemplates(from: entries)
         let workout = Workout(
             type: .strength,
             startDate: startDate,
@@ -901,7 +999,36 @@ struct AddWorkoutView: View {
                 )
             }
         )
+        attemptSaveWorkout(workout, persistTemplatesFrom: entries)
+    }
+
+    private func attemptSaveWorkout(_ workout: Workout, persistTemplatesFrom entries: [ExerciseLogEntry]? = nil) {
+        guard !isSaving else { return }
+        isSaving = true
+
+        if hasExistingWorkoutOfSameTypeOnSameDay(as: workout) {
+            pendingWorkoutToSave = workout
+            pendingTemplateEntries = entries
+            showingDuplicateTypeAlert = true
+            return
+        }
+
+        performSave(workout, persistTemplatesFrom: entries)
+    }
+
+    private func performSave(_ workout: Workout, persistTemplatesFrom entries: [ExerciseLogEntry]? = nil) {
+        if let entries {
+            persistExerciseTemplates(from: entries)
+        }
         saveWorkout(workout)
+    }
+
+    private func hasExistingWorkoutOfSameTypeOnSameDay(as workout: Workout) -> Bool {
+        let calendar = Calendar.current
+        return workouts.contains { existing in
+            existing.type == workout.type &&
+            calendar.isDate(existing.startDate, inSameDayAs: workout.startDate)
+        }
     }
 
     private func hasUnlinkedExercises(_ entries: [ExerciseLogEntry]) -> Bool {

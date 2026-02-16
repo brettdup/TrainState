@@ -58,8 +58,49 @@ struct DeveloperOptionsView: View {
                 }
             }
             .tint(.accentColor)
+
+            Toggle(isOn: Binding(
+                get: { purchaseManager.isDebugPremiumForceDisabled },
+                set: { purchaseManager.setPremiumForceDisabled($0) }
+            )) {
+                HStack(spacing: 12) {
+                    Image(systemName: "xmark.shield.fill")
+                        .foregroundStyle(.red)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Force Premium Off")
+                            .font(.body)
+                        Text("Disable premium even if a real entitlement is active")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .tint(.red)
+
+            if purchaseManager.isDebugPremiumOverrideEnabled {
+                Button(role: .destructive) {
+                    purchaseManager.setPremiumOverride(false)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "xmark.circle")
+                        Text("Turn Premium Override Off")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+            }
             
-            if purchaseManager.hasActiveSubscription {
+            if purchaseManager.isDebugPremiumForceDisabled {
+                HStack(spacing: 8) {
+                    Image(systemName: "nosign")
+                        .foregroundStyle(.red)
+                    Text("Premium is currently forced OFF")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if purchaseManager.hasActiveSubscription {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -68,10 +109,14 @@ struct DeveloperOptionsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Text("Note: Premium Override and Force Premium Off are mutually exclusive debug modes.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
     #endif
     
@@ -105,7 +150,7 @@ struct DeveloperOptionsView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private func seedSampleWorkouts() {

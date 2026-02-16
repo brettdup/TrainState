@@ -57,7 +57,7 @@ struct WorkoutRowView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .glassCard(cornerRadius: 24)
+        .glassCard()
     }
 
     // MARK: - Stacked Layout (Header row, then categories, then stats row)
@@ -102,7 +102,7 @@ struct WorkoutRowView: View {
             }
         }
         .padding(16)
-        .glassCard(cornerRadius: 24)
+        .glassCard()
     }
 
     // MARK: - Split Layout (Two columns)
@@ -150,7 +150,7 @@ struct WorkoutRowView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .glassCard(cornerRadius: 24)
+        .glassCard()
     }
 
     // MARK: - Leading Layout (Duration prominent on left)
@@ -197,7 +197,7 @@ struct WorkoutRowView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .glassCard(cornerRadius: 24)
+        .glassCard()
     }
 
     // MARK: - Compact Layout (Single line focus, minimal)
@@ -244,7 +244,7 @@ struct WorkoutRowView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .glassCard(cornerRadius: 20)
+        .glassCard()
     }
 
     // MARK: - Shared Components

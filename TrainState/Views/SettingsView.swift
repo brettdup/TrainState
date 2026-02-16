@@ -5,6 +5,7 @@ import SwiftData
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
     @AppStorage("themeMode") private var themeModeRaw = AppThemeMode.system.rawValue
     @AppStorage("accentColor") private var accentColorRaw = AppAccentColor.blue.rawValue
@@ -226,7 +227,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var accountCard: some View {
@@ -240,7 +241,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var preferencesCard: some View {
@@ -254,7 +255,7 @@ struct SettingsView: View {
             Toggle("Show Onboarding", isOn: $hasCompletedOnboarding.inverse)
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var appearanceSection: some View {
@@ -374,7 +375,7 @@ struct SettingsView: View {
             .disabled(isResettingWorkouts)
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var premiumCard: some View {
@@ -399,9 +400,16 @@ struct SettingsView: View {
             } label: {
                 SettingsRow(icon: "info.circle", title: "Subscription Info")
             }
+
+            Button {
+                openAppStoreReviewPage()
+            } label: {
+                SettingsRow(icon: "star.bubble", title: "Rate TrainState")
+            }
+            .buttonStyle(.plain)
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var developerCard: some View {
@@ -416,7 +424,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var legalCard: some View {
@@ -431,7 +439,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     @MainActor
@@ -545,6 +553,11 @@ struct SettingsView: View {
         } catch {
             cloudStatusText = "iCloud: Error"
         }
+    }
+
+    private func openAppStoreReviewPage() {
+        guard let url = URL(string: "itms-apps://itunes.apple.com/app/id6747159475?action=write-review") else { return }
+        openURL(url)
     }
 }
 

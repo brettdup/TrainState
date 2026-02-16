@@ -1,5 +1,7 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
+import UIKit
 
 struct AnalyticsView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -8,9 +10,12 @@ struct AnalyticsView: View {
     @Query private var subcategories: [WorkoutSubcategory]
     @AppStorage("weeklyGoalWorkouts") private var weeklyGoalWorkouts: Int = 4
     @AppStorage("weeklyGoalMinutes") private var weeklyGoalMinutes: Int = 180
+    @AppStorage("hasEnabledWorkoutReminders") private var hasEnabledWorkoutReminders = false
 
     @State private var selectedFilter: AnalyticsWorkoutFilter = .all
     @State private var showAllPersonalBests = false
+    @State private var weeklyRecapSharePayload: WeeklyRecapShareImage?
+    @State private var weeklyRecapSharePreview: Image?
 
     var body: some View {
         NavigationStack {
@@ -29,6 +34,7 @@ struct AnalyticsView: View {
                 ScrollView {
                     LazyVStack(spacing: 16) {
                         filterCard
+                        weeklyRecapCard
                         NavigationLink {
                             SubcategoryLastLoggedView()
                         } label: {
@@ -41,6 +47,8 @@ struct AnalyticsView: View {
                         smartPROpportunitiesCard
                         adaptivePlanCard
                         untrainedCategoriesCard
+                        nextSessionGuidanceCard
+                        persistentSurfacesCard
                         summaryCard(title: "All Time", summary: allTimeSummary)
                     }
                     .glassEffectContainer(spacing: 16)
@@ -51,6 +59,9 @@ struct AnalyticsView: View {
             }
             .navigationTitle("Analytics")
             .navigationBarTitleDisplayMode(.large)
+            .task(id: weeklyRecapShareSignature) {
+                refreshWeeklyRecapSharePayload()
+            }
         }
     }
 
@@ -67,8 +78,9 @@ struct AnalyticsView: View {
             }
             .pickerStyle(.segmented)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var weeklyGoalsCard: some View {
@@ -86,14 +98,80 @@ struct AnalyticsView: View {
 
             Divider().opacity(0.2)
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Forecast")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                statRow(label: "Workout pace", value: weeklyWorkoutPaceForecast)
+                statRow(label: "Minutes pace", value: weeklyMinutePaceForecast)
+            }
+
+            Divider().opacity(0.2)
+
             VStack(spacing: 12) {
                 Stepper("Workout Goal: \(weeklyGoalWorkouts)", value: $weeklyGoalWorkouts, in: 1...14)
                 Stepper("Minutes Goal: \(weeklyGoalMinutes)", value: $weeklyGoalMinutes, in: 30...1000, step: 15)
             }
             .font(.subheadline)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
+    }
+
+    private var weeklyRecapCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("Weekly Recap", systemImage: "sparkles")
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.95))
+                Spacer()
+                if let weeklyRecapSharePayload {
+                    ShareLink(
+                        item: weeklyRecapSharePayload,
+                        preview: SharePreview(
+                            "TrainState Weekly Recap",
+                            image: weeklyRecapSharePreview ?? Image(systemName: "chart.bar.fill")
+                        )
+                    ) {
+                        Label("Share Card", systemImage: "square.and.arrow.up")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.white.opacity(0.18), in: Capsule())
+                    }
+                } else {
+                    ProgressView()
+                        .tint(.white)
+                }
+            }
+
+            Text(weeklyRecapHeadline)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                shareMetricPill(icon: "figure.run", text: "\(workoutsThisWeek.count) workouts")
+                shareMetricPill(icon: "clock.fill", text: "\(weeklyMinutes) min")
+                shareMetricPill(icon: "flame.fill", text: "\(currentDailyStreak)d streak")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(
+            LinearGradient(
+                colors: [Color.accentColor, Color.blue],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 32, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .strokeBorder(.white.opacity(0.24), lineWidth: 0.8)
+        )
     }
 
     private var strengthInventoryCard: some View {
@@ -116,8 +194,9 @@ struct AnalyticsView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var streakCard: some View {
@@ -130,8 +209,9 @@ struct AnalyticsView: View {
             statRow(label: "Best Daily Streak", value: "\(bestDailyStreak) days")
             statRow(label: "Weekly Goal Streak", value: "\(weeklyGoalStreak) weeks")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var personalBestsCard: some View {
@@ -173,8 +253,9 @@ struct AnalyticsView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var smartPROpportunitiesCard: some View {
@@ -199,8 +280,9 @@ struct AnalyticsView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var adaptivePlanCard: some View {
@@ -228,8 +310,9 @@ struct AnalyticsView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var untrainedCategoriesCard: some View {
@@ -258,8 +341,83 @@ struct AnalyticsView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
+    }
+
+    private var nextSessionGuidanceCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Next Session Guidance")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            if nextSessionRecommendations.isEmpty {
+                Text("Log a few more workouts to unlock session guidance.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(nextSessionRecommendations, id: \.title) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.title)
+                            .font(.subheadline.weight(.semibold))
+                        Text(item.detail)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard()
+    }
+
+    private var persistentSurfacesCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Always-On Surfaces")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            persistentSurfaceRow(
+                title: "HealthKit integration",
+                status: importedHealthKitWorkoutCount > 0 ? "Connected" : "Not connected",
+                detail: importedHealthKitWorkoutCount > 0
+                    ? "\(importedHealthKitWorkoutCount) workouts linked from Health."
+                    : "Import recent workouts from the Workouts tab Health menu."
+            )
+            persistentSurfaceRow(
+                title: "Workout reminders",
+                status: hasEnabledWorkoutReminders ? "Enabled" : "Disabled",
+                detail: hasEnabledWorkoutReminders
+                    ? "You have routine reminders to return and log."
+                    : "Enable reminders to keep consistency during missed windows."
+            )
+            persistentSurfaceRow(
+                title: "Live sessions",
+                status: liveSessionUsageStatus,
+                detail: liveSessionUsageDetail
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .glassCard()
+    }
+
+    private func persistentSurfaceRow(title: String, status: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(status)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func summaryCard(title: String, summary: (count: Int, duration: String, distance: Double)) -> some View {
@@ -274,8 +432,9 @@ struct AnalyticsView: View {
                 statRow(label: "Distance", value: String(format: "%.1f km", summary.distance))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private func statRow(label: String, value: String) -> some View {
@@ -362,6 +521,48 @@ struct AnalyticsView: View {
 
     private var minuteGoalProgress: Double {
         min(Double(weeklyMinutes) / Double(max(weeklyGoalMinutes, 1)), 1)
+    }
+
+    private var weeklyRecapHeadline: String {
+        if workoutsThisWeek.isEmpty {
+            return "No workouts logged yet this week. Start today and build momentum."
+        }
+        if workoutGoalProgress >= 1 && minuteGoalProgress >= 1 {
+            return "You hit both weekly goals. This is a strong consistency week."
+        }
+        if workoutGoalProgress >= 1 {
+            return "Workout target reached. Add minutes to push the week further."
+        }
+        return "You are \(workoutsRemainingThisWeek) workout\(workoutsRemainingThisWeek == 1 ? "" : "s") away from goal."
+    }
+
+    private var daysRemainingInWeek: Int {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: today),
+              let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else { return 1 }
+        let days = calendar.dateComponents([.day], from: tomorrow, to: weekInterval.end).day ?? 0
+        return max(days, 1)
+    }
+
+    private var workoutsRemainingThisWeek: Int {
+        max(weeklyGoalWorkouts - workoutsThisWeek.count, 0)
+    }
+
+    private var minutesRemainingThisWeek: Int {
+        max(weeklyGoalMinutes - weeklyMinutes, 0)
+    }
+
+    private var weeklyWorkoutPaceForecast: String {
+        let perDay = Double(workoutsRemainingThisWeek) / Double(daysRemainingInWeek)
+        if workoutsRemainingThisWeek == 0 { return "On track: goal reached" }
+        return String(format: "Need %.1f workouts/day for %d day(s)", perDay, daysRemainingInWeek)
+    }
+
+    private var weeklyMinutePaceForecast: String {
+        let perDay = Double(minutesRemainingThisWeek) / Double(daysRemainingInWeek)
+        if minutesRemainingThisWeek == 0 { return "On track: goal reached" }
+        return String(format: "Need %.0f min/day for %d day(s)", perDay, daysRemainingInWeek)
     }
 
     private var currentDailyStreak: Int {
@@ -502,6 +703,140 @@ struct AnalyticsView: View {
             }
     }
 
+    private var importedHealthKitWorkoutCount: Int {
+        filteredWorkouts.filter { ($0.hkUUID ?? "").isEmpty == false }.count
+    }
+
+    private var liveSessionUsageStatus: String {
+        let strengthCount = filteredWorkouts.filter { $0.type == .strength }.count
+        return strengthCount > 0 ? "Active" : "Not used"
+    }
+
+    private var liveSessionUsageDetail: String {
+        let strengthCount = filteredWorkouts.filter { $0.type == .strength }.count
+        if strengthCount > 0 {
+            return "You logged \(strengthCount) strength sessions. Keep using live mode for in-session tracking."
+        }
+        return "Start a live strength session from Add Workout for real-time logging."
+    }
+
+    private var nextSessionRecommendations: [SessionGuidanceItem] {
+        var items: [SessionGuidanceItem] = []
+
+        if let topPR = smartPROpportunities.first {
+            items.append(
+                SessionGuidanceItem(
+                    title: "Push a near-PR lift",
+                    detail: "\(topPR.exerciseName): latest \(String(format: "%.1f", topPR.latestTopSet)) kg, PR \(String(format: "%.1f", topPR.prTopSet)) kg."
+                )
+            )
+        }
+
+        if let firstGap = adaptiveRecommendations.first {
+            items.append(
+                SessionGuidanceItem(
+                    title: "Train a missed area",
+                    detail: "\(firstGap.name): \(firstGap.reason)"
+                )
+            )
+        }
+
+        if workoutsRemainingThisWeek > 0 {
+            items.append(
+                SessionGuidanceItem(
+                    title: "Close your weekly goal gap",
+                    detail: "You need \(workoutsRemainingThisWeek) more workout\(workoutsRemainingThisWeek == 1 ? "" : "s") this week."
+                )
+            )
+        }
+
+        return Array(items.prefix(3))
+    }
+
+    private func recapPill(icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.caption2.weight(.semibold))
+            Text(text)
+                .font(.caption2.weight(.semibold))
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.08), in: Capsule())
+    }
+
+    private func shareMetricPill(icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.caption2.weight(.semibold))
+            Text(text)
+                .font(.caption2.weight(.semibold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.white.opacity(0.15), in: Capsule())
+    }
+
+    private var weeklyRecapShareSignature: String {
+        "\(workoutsThisWeek.count)-\(weeklyMinutes)-\(currentDailyStreak)-\(weeklyRecapHeadline)"
+    }
+
+    @MainActor
+    private func refreshWeeklyRecapSharePayload() {
+        let renderer = ImageRenderer(content: weeklyRecapShareSnapshot)
+        renderer.scale = UIScreen.main.scale
+
+        guard let image = renderer.uiImage, let data = image.pngData() else { return }
+        weeklyRecapSharePayload = WeeklyRecapShareImage(data: data)
+        weeklyRecapSharePreview = Image(uiImage: image)
+    }
+
+    private var weeklyRecapShareSnapshot: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("Weekly Recap", systemImage: "sparkles")
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.95))
+                Spacer()
+                Text(Date.now.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+
+            Text(weeklyRecapHeadline)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                shareMetricPill(icon: "figure.run", text: "\(workoutsThisWeek.count) workouts")
+                shareMetricPill(icon: "clock.fill", text: "\(weeklyMinutes) min")
+                shareMetricPill(icon: "flame.fill", text: "\(currentDailyStreak)d streak")
+            }
+        }
+        .frame(width: shareCardWidth, alignment: .leading)
+        .padding(20)
+        .background(
+            LinearGradient(
+                colors: [Color.accentColor.opacity(0.88), Color.blue.opacity(0.78)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 32, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .strokeBorder(.white.opacity(0.24), lineWidth: 0.8)
+        )
+    }
+
+    private var shareCardWidth: CGFloat {
+        // Match the in-app card width (horizontal padding of 16 on each side).
+        max(UIScreen.main.bounds.width - 32, 280)
+    }
+
     private func formattedDuration(_ duration: TimeInterval) -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute]
@@ -541,6 +876,22 @@ private struct SmartPROpportunity {
 private struct AdaptiveRecommendation {
     let name: String
     let reason: String
+}
+
+private struct SessionGuidanceItem {
+    let title: String
+    let detail: String
+}
+
+private struct WeeklyRecapShareImage: Transferable {
+    let data: Data
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .png) { recap in
+            recap.data
+        }
+        .suggestedFileName("TrainState-Weekly-Recap")
+    }
 }
 
 #Preview {

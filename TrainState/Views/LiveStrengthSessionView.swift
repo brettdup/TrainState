@@ -168,7 +168,7 @@ struct LiveStrengthSessionView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 24, isInteractive: false)
+        .glassCard(isInteractive: false)
     }
 
     private var exercisesCard: some View {
@@ -244,7 +244,7 @@ struct LiveStrengthSessionView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 24, isInteractive: true)
+        .glassCard(isInteractive: true)
     }
 
     private var elapsedDuration: TimeInterval {

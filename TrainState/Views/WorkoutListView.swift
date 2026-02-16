@@ -2,10 +2,12 @@ import SwiftUI
 import SwiftData
 import RevenueCatUI
 import HealthKit
+import UserNotifications
 
 struct WorkoutListView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
     @Query private var categories: [WorkoutCategory]
     @Query private var subcategories: [WorkoutSubcategory]
@@ -13,6 +15,9 @@ struct WorkoutListView: View {
     @State private var showingAddWorkout = false
     @State private var showingPaywall = false
     @State private var selectedFilter: WorkoutFilter = .all
+    @AppStorage("hasSetWeeklyGoal") private var hasSetWeeklyGoal = false
+    @AppStorage("hasEnabledWorkoutReminders") private var hasEnabledWorkoutReminders = false
+    @AppStorage("hasDismissedFirstSessionChecklist") private var hasDismissedFirstSessionChecklist = false
     @AppStorage("healthKitRecentWorkoutsCache") private var healthKitRecentWorkoutsCacheData: Data = Data()
     @State private var recentHealthKitWorkouts: [HealthKitRecentWorkoutMenuItem] = []
     @State private var isLoadingRecentHealthKitWorkouts = false
@@ -23,6 +28,9 @@ struct WorkoutListView: View {
     @State private var pendingHealthKitItem: HealthKitRecentWorkoutMenuItem?
     @State private var pendingAttachItem: HealthKitRecentWorkoutMenuItem?
     @State private var showingHealthKitActionSheet = false
+    @State private var lastKnownWorkoutCount = 0
+    @State private var successBanner: SuccessBannerModel?
+    @State private var bannerDismissTask: Task<Void, Never>?
     private let healthKitImporter = HealthKitRecentWorkoutImporter()
 
     private var canAddWorkout: Bool {
@@ -62,6 +70,10 @@ struct WorkoutListView: View {
                                 if showLimitsCard {
                                     limitsCard
                                 }
+                                if shouldShowFirstSessionChecklist {
+                                    firstSessionChecklistCard
+                                }
+                                rateAppCard
                             }
                         }
                         .padding(.horizontal, 16)
@@ -73,6 +85,9 @@ struct WorkoutListView: View {
                             LazyVStack(spacing: 16) {
                                 if showLimitsCard {
                                     limitsCard
+                                }
+                                if shouldShowFirstSessionChecklist {
+                                    firstSessionChecklistCard
                                 }
                                 ForEach(groupedVisibleWorkouts, id: \.date) { entry in
                                     VStack(alignment: .leading, spacing: 8) {
@@ -94,6 +109,7 @@ struct WorkoutListView: View {
                                         }
                                     }
                                 }
+                                rateAppCard
                             }
                         }
                         .padding(.horizontal, 16)
@@ -104,6 +120,15 @@ struct WorkoutListView: View {
             }
             .navigationTitle("Workouts")
             .navigationBarTitleDisplayMode(.large)
+            .safeAreaInset(edge: .top) {
+                if let successBanner {
+                    postLogSuccessBanner(successBanner)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 6)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.86), value: successBanner)
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Menu {
@@ -242,6 +267,14 @@ struct WorkoutListView: View {
         }
         .onAppear {
             loadCachedRecentHealthKitWorkouts()
+            lastKnownWorkoutCount = workouts.count
+            syncReminderPermissionStatus()
+        }
+        .onChange(of: workouts.count) { _, newCount in
+            if newCount > lastKnownWorkoutCount {
+                presentPostLogSuccessBanner()
+            }
+            lastKnownWorkoutCount = newCount
         }
     }
 
@@ -295,7 +328,100 @@ struct WorkoutListView: View {
             .buttonStyle(.plain)
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
+    }
+
+    private var rateAppCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Enjoying TrainState?")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("Leave a review on the App Store.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                openAppStoreReviewPage()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "star.bubble.fill")
+                    Text("Rate TrainState")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.accentColor)
+                )
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(20)
+        .glassCard()
+    }
+
+    private var shouldShowFirstSessionChecklist: Bool {
+        !hasDismissedFirstSessionChecklist && !isFirstSessionChecklistCompleted
+    }
+
+    private var isFirstSessionChecklistCompleted: Bool {
+        hasLoggedFirstWorkout && hasSetWeeklyGoal && hasEnabledWorkoutReminders
+    }
+
+    private var hasLoggedFirstWorkout: Bool {
+        !workouts.isEmpty
+    }
+
+    private var firstSessionChecklistCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("First Session Checklist")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Hide") {
+                    hasDismissedFirstSessionChecklist = true
+                }
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.plain)
+            }
+
+            checklistRow(
+                title: "Log your first workout",
+                isDone: hasLoggedFirstWorkout
+            )
+            checklistRow(
+                title: "Set your weekly goal",
+                isDone: hasSetWeeklyGoal
+            )
+            HStack(spacing: 8) {
+                checklistRow(
+                    title: "Enable reminders",
+                    isDone: hasEnabledWorkoutReminders
+                )
+                if !hasEnabledWorkoutReminders {
+                    Button("Enable") {
+                        requestReminderPermission()
+                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(20)
+        .glassCard()
+    }
+
+    private func checklistRow(title: String, isDone: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(isDone ? Color.green : Color.secondary)
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+            Spacer()
+        }
     }
 
     private func limitRow(label: String, used: Int, limit: Int) -> some View {
@@ -494,6 +620,125 @@ struct WorkoutListView: View {
             // Ignore cache writes if encoding fails.
         }
     }
+
+    private func openAppStoreReviewPage() {
+        guard let url = URL(string: "itms-apps://itunes.apple.com/app/id6747159475?action=write-review") else { return }
+        openURL(url)
+    }
+
+    private func requestReminderPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                DispatchQueue.main.async {
+                    hasEnabledWorkoutReminders = settings.authorizationStatus == .authorized
+                }
+            }
+        }
+    }
+
+    private func syncReminderPermissionStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                hasEnabledWorkoutReminders = settings.authorizationStatus == .authorized
+            }
+        }
+    }
+
+    private func presentPostLogSuccessBanner() {
+        let weeklyCount = workoutsThisWeekCount
+        let streakDays = workoutDayStreak
+        successBanner = SuccessBannerModel(
+            title: "Workout Logged",
+            subtitle: "Nice work. Keep the momentum going.",
+            weeklyCount: weeklyCount,
+            streakDays: streakDays
+        )
+        bannerDismissTask?.cancel()
+        bannerDismissTask = Task {
+            try? await Task.sleep(for: .seconds(3))
+            if Task.isCancelled { return }
+            await MainActor.run {
+                successBanner = nil
+            }
+        }
+    }
+
+    private func postLogSuccessBanner(_ banner: SuccessBannerModel) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "sparkles.circle.fill")
+                .font(.system(size: 20, weight: .bold))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.yellow, .orange)
+                .symbolEffect(.pulse, options: .nonRepeating)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(banner.title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(banner.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                HStack(spacing: 8) {
+                    metricPill(icon: "calendar", text: "\(banner.weeklyCount) this week")
+                    metricPill(icon: "flame.fill", text: "\(banner.streakDays)-day streak")
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 12, y: 3)
+    }
+
+    private func metricPill(icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.caption2.weight(.semibold))
+            Text(text)
+                .font(.caption2.weight(.semibold))
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.08), in: Capsule())
+    }
+
+    private var workoutsThisWeekCount: Int {
+        let calendar = Calendar.current
+        let now = Date()
+        guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start else {
+            return 0
+        }
+        return workouts.filter { $0.startDate >= weekStart && $0.startDate <= now }.count
+    }
+
+    private var workoutDayStreak: Int {
+        let calendar = Calendar.current
+        let uniqueDays = Set(workouts.map { calendar.startOfDay(for: $0.startDate) })
+        var streak = 0
+        var day = calendar.startOfDay(for: Date())
+
+        while uniqueDays.contains(day) {
+            streak += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: day) else { break }
+            day = previous
+        }
+        return max(streak, 1)
+    }
+}
+
+private struct SuccessBannerModel: Equatable {
+    let title: String
+    let subtitle: String
+    let weeklyCount: Int
+    let streakDays: Int
 }
 
 // MARK: - HealthKit Attach Target Picker

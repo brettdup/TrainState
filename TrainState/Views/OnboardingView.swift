@@ -1,11 +1,21 @@
 import SwiftUI
+import SwiftData
 
 struct OnboardingView: View {
+    @Environment(\.modelContext) private var modelContext
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("onboardingGoalRawValue") private var onboardingGoalRawValue = OnboardingGoal.buildStrength.rawValue
+    @AppStorage("onboardingTrainingStyleRawValue") private var onboardingTrainingStyleRawValue = OnboardingTrainingStyle.balanced.rawValue
+    @AppStorage("hasSetWeeklyGoal") private var hasSetWeeklyGoal = false
+    @AppStorage("weeklyGoalWorkouts") private var weeklyGoalWorkouts: Int = 4
+    @AppStorage("weeklyGoalMinutes") private var weeklyGoalMinutes: Int = 180
     @Environment(\.colorScheme) private var colorScheme
+    @Query(sort: \StrengthWorkoutTemplate.updatedAt, order: .reverse) private var strengthTemplates: [StrengthWorkoutTemplate]
     @State private var currentPage = 0
     @State private var appeared = false
     @State private var showCelebration = false
+    @State private var selectedGoal: OnboardingGoal = .buildStrength
+    @State private var selectedTrainingStyle: OnboardingTrainingStyle = .balanced
 
     private let totalPages = 5
 
@@ -51,6 +61,8 @@ struct OnboardingView: View {
             }
         }
         .onAppear {
+            selectedGoal = OnboardingGoal(rawValue: onboardingGoalRawValue) ?? .buildStrength
+            selectedTrainingStyle = OnboardingTrainingStyle(rawValue: onboardingTrainingStyleRawValue) ?? .balanced
             withAnimation(.easeOut(duration: 0.6)) {
                 appeared = true
             }
@@ -83,6 +95,7 @@ struct OnboardingView: View {
         if currentPage < totalPages - 1 {
             Button {
                 withAnimation(.easeOut(duration: 0.3)) {
+                    persistOnboardingPreferences()
                     hasCompletedOnboarding = true
                 }
             } label: {
@@ -179,15 +192,61 @@ struct OnboardingView: View {
     }
 
     private var getStartedPage: some View {
-        OnboardingPageContent(
-            icon: "checkmark.circle.fill",
-            iconColor: Color.accentColor,
-            title: "You're All Set",
-            subtitle: "Ready to train",
-            description: "Start logging your first workout. Free tier includes 7 workouts, 3 categories, and 2 subcategories per category.",
-            heroContent: { OnboardingIconHero(icon: "checkmark.circle.fill", iconColor: Color.accentColor, appeared: appeared) },
-            appeared: appeared
-        )
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 24) {
+                Spacer(minLength: 40)
+                OnboardingIconHero(icon: "checkmark.circle.fill", iconColor: Color.accentColor, appeared: appeared)
+
+                VStack(spacing: 8) {
+                    Text("READY TO TRAIN")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(1.2)
+
+                    Text("Set Your Starting Plan")
+                        .font(.system(size: 28, weight: .bold))
+                        .multilineTextAlignment(.center)
+
+                    Text("Choose your goal and style. We’ll preload starter templates and goals for your first week.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(4)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Primary Goal")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Picker("Primary Goal", selection: $selectedGoal) {
+                        ForEach(OnboardingGoal.allCases) { goal in
+                            Text(goal.title).tag(goal)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(16)
+                .glassCard()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Training Style")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Picker("Training Style", selection: $selectedTrainingStyle) {
+                        ForEach(OnboardingTrainingStyle.allCases) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(16)
+                .glassCard()
+
+                Spacer(minLength: 20)
+            }
+            .padding(.horizontal, 32)
+        }
     }
 
     // MARK: - Page Indicator
@@ -213,6 +272,7 @@ struct OnboardingView: View {
                 }
             } else {
                 HapticManager.success()
+                persistOnboardingPreferences()
                 showCelebration = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                     withAnimation(.easeOut(duration: 0.3)) {
@@ -237,6 +297,47 @@ struct OnboardingView: View {
             .shadow(color: Color.accentColor.opacity(0.35), radius: 12, x: 0, y: 6)
         }
         .buttonStyle(.plain)
+    }
+
+    private func persistOnboardingPreferences() {
+        onboardingGoalRawValue = selectedGoal.rawValue
+        onboardingTrainingStyleRawValue = selectedTrainingStyle.rawValue
+        applyRecommendedWeeklyGoals(for: selectedGoal)
+        preloadStarterTemplatesIfNeeded()
+    }
+
+    private func applyRecommendedWeeklyGoals(for goal: OnboardingGoal) {
+        switch goal {
+        case .buildStrength:
+            weeklyGoalWorkouts = 4
+            weeklyGoalMinutes = 220
+        case .improveEndurance:
+            weeklyGoalWorkouts = 4
+            weeklyGoalMinutes = 260
+        case .stayConsistent:
+            weeklyGoalWorkouts = 3
+            weeklyGoalMinutes = 150
+        }
+        hasSetWeeklyGoal = true
+    }
+
+    private func preloadStarterTemplatesIfNeeded() {
+        guard strengthTemplates.isEmpty else { return }
+        let starterTemplates = selectedGoal.starterTemplateDefinitions
+
+        for templateDef in starterTemplates {
+            let exercises = templateDef.exercises.enumerated().map { index, name in
+                StrengthWorkoutTemplateExercise(name: name, orderIndex: index)
+            }
+            let template = StrengthWorkoutTemplate(
+                name: templateDef.name,
+                mainCategoryRawValue: WorkoutType.strength.rawValue,
+                exercises: exercises
+            )
+            modelContext.insert(template)
+        }
+
+        try? modelContext.save()
     }
 }
 
@@ -330,7 +431,7 @@ private struct OnboardingPageContent<HeroContent: View>: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .glassCard(cornerRadius: 20)
+                .glassCard()
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 12)
                 .animation(
@@ -375,4 +476,56 @@ private struct OnboardingIconHero: View {
 
 #Preview {
     OnboardingView()
+}
+
+private enum OnboardingGoal: String, CaseIterable, Identifiable {
+    case buildStrength
+    case improveEndurance
+    case stayConsistent
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .buildStrength: return "Strength"
+        case .improveEndurance: return "Endurance"
+        case .stayConsistent: return "Consistency"
+        }
+    }
+
+    var starterTemplateDefinitions: [(name: String, exercises: [String])] {
+        switch self {
+        case .buildStrength:
+            return [
+                ("Push Starter", ["Bench Press", "Overhead Press", "Triceps Pressdown"]),
+                ("Pull Starter", ["Lat Pulldown", "Seated Row", "Biceps Curl"])
+            ]
+        case .improveEndurance:
+            return [
+                ("Full Body Circuit", ["Goblet Squat", "Push-up", "Plank"]),
+                ("Engine Builder", ["Kettlebell Swing", "Step-up", "Burpee"])
+            ]
+        case .stayConsistent:
+            return [
+                ("Simple Full Body", ["Squat", "Chest Press", "Row"]),
+                ("Quick Session", ["Lunge", "Shoulder Press", "Dead Bug"])
+            ]
+        }
+    }
+}
+
+private enum OnboardingTrainingStyle: String, CaseIterable, Identifiable {
+    case balanced
+    case shortSessions
+    case highVolume
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .balanced: return "Balanced"
+        case .shortSessions: return "Short"
+        case .highVolume: return "Volume"
+        }
+    }
 }

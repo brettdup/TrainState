@@ -147,7 +147,7 @@ struct WorkoutDetailView: View {
             Spacer()
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var statsCard: some View {
@@ -172,7 +172,7 @@ struct WorkoutDetailView: View {
             }
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var categoriesCard: some View {
@@ -201,7 +201,7 @@ struct WorkoutDetailView: View {
             .buttonStyle(.plain)
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private func notesCard(_ text: String) -> some View {
@@ -215,7 +215,7 @@ struct WorkoutDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private func routeCard(_ route: [CLLocation]) -> some View {
@@ -233,7 +233,7 @@ struct WorkoutDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     @ViewBuilder
@@ -304,7 +304,7 @@ struct WorkoutDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var categoriesSummary: String {

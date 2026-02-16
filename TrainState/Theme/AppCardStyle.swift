@@ -4,7 +4,7 @@ import SwiftUI
 struct AppCardStyle: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     var padding: CGFloat = 16
-    var cornerRadius: CGFloat = AppTheme.cornerRadius
+    var cornerRadius: CGFloat = ViewConstants.cardCornerRadius
     var shadowOpacity: Double = 0.12
     
     func body(content: Content) -> some View {

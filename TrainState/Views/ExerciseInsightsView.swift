@@ -129,7 +129,7 @@ struct ExerciseInsightsView: View {
             }
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var metricCard: some View {
@@ -153,7 +153,7 @@ struct ExerciseInsightsView: View {
             }
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var chartCard: some View {
@@ -182,7 +182,7 @@ struct ExerciseInsightsView: View {
             }
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var historyCard: some View {
@@ -206,7 +206,7 @@ struct ExerciseInsightsView: View {
             }
         }
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var emptyStateCard: some View {
@@ -219,7 +219,7 @@ struct ExerciseInsightsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private func statRow(label: String, value: String) -> some View {

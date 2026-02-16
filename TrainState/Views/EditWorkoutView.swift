@@ -227,7 +227,7 @@ struct EditWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var dateCard: some View {
@@ -242,7 +242,7 @@ struct EditWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var durationCard: some View {
@@ -288,7 +288,7 @@ struct EditWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var distanceCard: some View {
@@ -315,7 +315,7 @@ struct EditWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var categoriesCard: some View {
@@ -345,7 +345,7 @@ struct EditWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var ratingCard: some View {
@@ -399,7 +399,7 @@ struct EditWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var exercisesCard: some View {
@@ -505,7 +505,7 @@ struct EditWorkoutView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .glassCard(cornerRadius: 32)
+        .glassCard()
     }
 
     private var saveButton: some View {

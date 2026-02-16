@@ -30,7 +30,7 @@ struct GlassCardModifier: ViewModifier {
     var cornerRadius: CGFloat
     var isInteractive: Bool
 
-    init(cornerRadius: CGFloat = 32, isInteractive: Bool = false) {
+    init(cornerRadius: CGFloat = ViewConstants.cardCornerRadius, isInteractive: Bool = false) {
         self.cornerRadius = cornerRadius
         self.isInteractive = isInteractive
     }
@@ -63,7 +63,7 @@ struct GlassCardModifier: ViewModifier {
 
 extension View {
     /// Applies Liquid Glass styling on iOS 26+, material fallback on earlier versions.
-    func glassCard(cornerRadius: CGFloat = 32, isInteractive: Bool = false) -> some View {
+    func glassCard(cornerRadius: CGFloat = ViewConstants.cardCornerRadius, isInteractive: Bool = false) -> some View {
         modifier(GlassCardModifier(cornerRadius: cornerRadius, isInteractive: isInteractive))
     }
 
@@ -81,12 +81,12 @@ extension View {
             .font(.headline)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
-            .glassCard(cornerRadius: 24)
+            .glassCard()
 
         Text("Secondary card")
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
-            .glassCard(cornerRadius: 24, isInteractive: false)
+            .glassCard(isInteractive: false)
     }
     .padding()
     .glassEffectContainer(spacing: 16)

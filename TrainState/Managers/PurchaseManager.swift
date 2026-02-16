@@ -12,6 +12,7 @@ class PurchaseManager: ObservableObject {
     @Published private(set) var purchasedProductIDs = Set<String>()
     #if DEBUG
     @Published private(set) var debugPremiumOverride = false
+    @Published private(set) var debugPremiumForceDisabled = false
     #endif
     @Published private(set) var isProcessingPurchase = false
     @Published private(set) var isLoadingProducts = false
@@ -22,6 +23,7 @@ class PurchaseManager: ObservableObject {
     
     var hasActiveSubscription: Bool {
         #if DEBUG
+        if debugPremiumForceDisabled { return false }
         if debugPremiumOverride { return true }
         #endif
         return customerInfo?.entitlements["Premium"]?.isActive == true
@@ -40,6 +42,7 @@ class PurchaseManager: ObservableObject {
     private let modelContext: ModelContext?
     #if DEBUG
     private let debugPremiumOverrideDefaultsKey = "TrainState.debugPremiumOverrideEnabled"
+    private let debugPremiumForceDisabledDefaultsKey = "TrainState.debugPremiumForceDisabled"
     #endif
     private init() {
         // Avoid creating a separate container; purchases don't require a local store.
@@ -55,6 +58,7 @@ class PurchaseManager: ObservableObject {
         // Restore the developer premium override from UserDefaults so it
         // persists across simulator runs and new debug builds.
         debugPremiumOverride = UserDefaults.standard.bool(forKey: debugPremiumOverrideDefaultsKey)
+        debugPremiumForceDisabled = UserDefaults.standard.bool(forKey: debugPremiumForceDisabledDefaultsKey)
         #endif
         
         Task { [weak self] in
@@ -217,6 +221,10 @@ extension PurchaseManager {
     var isDebugPremiumOverrideEnabled: Bool {
         debugPremiumOverride
     }
+
+    var isDebugPremiumForceDisabled: Bool {
+        debugPremiumForceDisabled
+    }
     
     func forcePremiumForPreview() {
         debugPremiumOverride = true
@@ -231,6 +239,18 @@ extension PurchaseManager {
     func setPremiumOverride(_ enabled: Bool) {
         debugPremiumOverride = enabled
         UserDefaults.standard.set(enabled, forKey: debugPremiumOverrideDefaultsKey)
+        if enabled {
+            setPremiumForceDisabled(false)
+        }
+    }
+
+    func setPremiumForceDisabled(_ disabled: Bool) {
+        debugPremiumForceDisabled = disabled
+        UserDefaults.standard.set(disabled, forKey: debugPremiumForceDisabledDefaultsKey)
+        if disabled, debugPremiumOverride {
+            debugPremiumOverride = false
+            UserDefaults.standard.set(false, forKey: debugPremiumOverrideDefaultsKey)
+        }
     }
 }
 #endif
