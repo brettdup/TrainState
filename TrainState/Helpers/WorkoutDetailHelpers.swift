@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - Workout Type Helper
 struct WorkoutTypeHelper {
     static func iconForType(_ type: WorkoutType) -> String {
-        switch type {
+        return switch type {
         case .strength: "figure.strengthtraining.traditional"
         case .cardio: "heart.fill"
         case .yoga: "figure.yoga"
@@ -16,7 +16,7 @@ struct WorkoutTypeHelper {
     }
 
     static func colorForType(_ type: WorkoutType) -> Color {
-        switch type {
+        return switch type {
         case .strength: .purple
         case .cardio: .red
         case .yoga: .mint
