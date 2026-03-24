@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 import UIKit
+import HealthKit
 
 struct AnalyticsView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -59,6 +60,16 @@ struct AnalyticsView: View {
             }
             .navigationTitle("Analytics")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    NavigationLink {
+                        SubcategoryLastLoggedView()
+                    } label: {
+                        Image(systemName: "calendar.badge.clock")
+                    }
+                    .accessibilityLabel("Open last trained")
+                }
+            }
             .task(id: weeklyRecapShareSignature) {
                 refreshWeeklyRecapSharePayload()
             }
@@ -71,12 +82,34 @@ struct AnalyticsView: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
-            Picker("Workout Filter", selection: $selectedFilter) {
+            Menu {
                 ForEach(AnalyticsWorkoutFilter.allCases) { filter in
-                    Text(filter.title).tag(filter)
+                    Button {
+                        selectedFilter = filter
+                    } label: {
+                        if selectedFilter == filter {
+                            Label(filter.title, systemImage: "checkmark")
+                        } else {
+                            Text(filter.title)
+                        }
+                    }
                 }
+            } label: {
+                HStack {
+                    Text(selectedFilter.title)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(Color.primary.opacity(0.06))
+                )
             }
-            .pickerStyle(.segmented)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
@@ -189,10 +222,6 @@ struct AnalyticsView: View {
             }
 
             Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
@@ -334,7 +363,7 @@ struct AnalyticsView: View {
                         Text(category.name)
                             .font(.subheadline.weight(.semibold))
                         Spacer()
-                        Text(category.workoutType?.rawValue ?? "General")
+                        Text(category.activityDisplayName)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -453,8 +482,8 @@ struct AnalyticsView: View {
         switch selectedFilter {
         case .all:
             return workouts
-        case .strength:
-            return workouts.filter { $0.type == .strength }
+        case .apple(let activityType):
+            return workouts.filter { $0.resolvedAppleWorkoutActivityType == activityType }
         }
     }
 
@@ -462,8 +491,14 @@ struct AnalyticsView: View {
         switch selectedFilter {
         case .all:
             return subcategories
-        case .strength:
-            return subcategories.filter { $0.category?.workoutType == .strength }
+        case .apple(let activityType):
+            return subcategories.filter { subcategory in
+                guard let category = subcategory.category else { return false }
+                return category.matches(
+                    appleWorkoutActivityType: activityType,
+                    fallbackWorkoutType: activityType.mappedWorkoutType
+                )
+            }
         }
     }
 
@@ -471,8 +506,12 @@ struct AnalyticsView: View {
         switch selectedFilter {
         case .all:
             return categories
-        case .strength:
-            return categories.filter { $0.workoutType == .strength }
+        case .apple(let activityType):
+            return WorkoutCategory.categoriesForAppleWorkout(
+                activityType: activityType,
+                fallbackWorkoutType: activityType.mappedWorkoutType,
+                from: categories
+            )
         }
     }
 
@@ -845,16 +884,31 @@ struct AnalyticsView: View {
     }
 }
 
-private enum AnalyticsWorkoutFilter: String, CaseIterable, Identifiable {
+private enum AnalyticsWorkoutFilter: Hashable, Identifiable {
     case all
-    case strength
+    case apple(HKWorkoutActivityType)
 
-    var id: String { rawValue }
+    static var allCases: [AnalyticsWorkoutFilter] {
+        [.all] + HKWorkoutActivityType.allKnownCases
+            .sorted { $0.displayName < $1.displayName }
+            .map { .apple($0) }
+    }
+
+    var id: String {
+        switch self {
+        case .all:
+            return "all"
+        case .apple(let activityType):
+            return "apple-\(activityType.rawValue)"
+        }
+    }
 
     var title: String {
         switch self {
-        case .all: return "All"
-        case .strength: return "Strength"
+        case .all:
+            return "All"
+        case .apple(let activityType):
+            return activityType.displayName
         }
     }
 }

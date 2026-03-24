@@ -1,14 +1,16 @@
 import SwiftUI
 import SwiftData
 import RevenueCatUI
+import HealthKit
 
 struct CategoryAndSubcategorySelectionView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.colorScheme) private var colorScheme
+
     @Binding var selectedCategories: [WorkoutCategory]
     @Binding var selectedSubcategories: [WorkoutSubcategory]
     let workoutType: WorkoutType
+    let appleWorkoutActivityType: HKWorkoutActivityType?
 
     @Query private var allWorkoutCategories: [WorkoutCategory]
     @Query private var allSubcategories: [WorkoutSubcategory]
@@ -32,32 +34,63 @@ struct CategoryAndSubcategorySelectionView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-
             List {
-                Section("Categories") {
-                    ForEach(filteredCategories) { category in
-                        Toggle(category.name, isOn: categoryBinding(category))
-                    }
+                Section {
+                    Text(activityDisplayName)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Workout Type")
                 }
 
-                ForEach(selectedCategories) { category in
+                Section {
+                    if filteredCategories.isEmpty {
+                        ContentUnavailableView(
+                            "No Categories Yet",
+                            systemImage: "tag",
+                            description: Text("Add a category for this workout type to get started.")
+                        )
+                        .listRowBackground(Color.clear)
+                    } else {
+                        ForEach(filteredCategories) { category in
+                            Button {
+                                toggleCategory(category)
+                            } label: {
+                                CategorySelectionRow(
+                                    category: category,
+                                    isSelected: isCategorySelected(category)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } header: {
+                    Text("Categories")
+                } footer: {
+                    Text("Choose one or more categories for this workout.")
+                }
+
+                ForEach(selectedCategories.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { category in
                     Section {
-                        ForEach(subcategoriesFor(category)) { subcategory in
-                            Toggle(isOn: subcategoryBinding(subcategory)) {
-                                SubcategoryRow(subcategory: subcategory, category: category)
+                        let subcategories = subcategoriesFor(category)
+
+                        if subcategories.isEmpty {
+                            Text("No subcategories yet")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(subcategories) { subcategory in
+                                Button {
+                                    toggleSubcategory(subcategory)
+                                } label: {
+                                    SubcategorySelectionRow(
+                                        subcategory: subcategory,
+                                        category: category,
+                                        isSelected: isSubcategorySelected(subcategory)
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
+
                         Button {
                             if canAddSubcategory(to: category) {
                                 subcategoryParentCategory = category
@@ -80,13 +113,14 @@ struct CategoryAndSubcategorySelectionView: View {
                                 .frame(width: 8, height: 8)
                             Text(category.name)
                         }
+                    } footer: {
+                        Text("Pick the more specific subcategories that apply.")
                     }
                 }
             }
             .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            }
             .navigationTitle("Categories")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -109,27 +143,20 @@ struct CategoryAndSubcategorySelectionView: View {
             }
             .sheet(isPresented: $showingAddCategory) {
                 NavigationStack {
-                    ZStack {
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                                Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                                Color(.systemBackground)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        .ignoresSafeArea()
-                        ScrollView {
+                    Form {
+                        Section("Category") {
                             TextField("Category name", text: $newCategoryName)
-                                .textFieldStyle(.plain)
-                                .padding(20)
-                                .glassCard()
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 24)
+                                .textInputAutocapitalization(.words)
+                                .disableAutocorrection(true)
+                        }
+
+                        Section("Workout Type") {
+                            Text(activityDisplayName)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .navigationTitle("New Category")
+                    .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Cancel") {
@@ -147,7 +174,39 @@ struct CategoryAndSubcategorySelectionView: View {
                 }
             }
             .sheet(isPresented: $showingAddSubcategory) {
-                addSubcategorySheet
+                NavigationStack {
+                    Form {
+                        Section("Subcategory") {
+                            TextField("Subcategory name", text: $newSubcategoryName)
+                                .textInputAutocapitalization(.words)
+                                .disableAutocorrection(true)
+                        }
+
+                        if let category = subcategoryParentCategory {
+                            Section("Parent Category") {
+                                Text(category.name)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .navigationTitle("New Subcategory")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                showingAddSubcategory = false
+                                subcategoryParentCategory = nil
+                                newSubcategoryName = ""
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Add") {
+                                addSubcategory()
+                            }
+                            .disabled(newSubcategoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                }
             }
             .sheet(isPresented: $showingPaywall) {
                 if let offering = purchaseManager.offerings?.current {
@@ -159,93 +218,58 @@ struct CategoryAndSubcategorySelectionView: View {
         }
     }
 
-    private var addSubcategorySheet: some View {
-        NavigationStack {
-            ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        TextField("Subcategory name", text: $newSubcategoryName)
-                            .textFieldStyle(.plain)
-                            .padding(20)
-                            .glassCard()
-                        if let cat = subcategoryParentCategory {
-                            Label("Will be added to \(cat.name)", systemImage: "link")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
-                }
-            }
-            .navigationTitle("New Subcategory")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        showingAddSubcategory = false
-                        subcategoryParentCategory = nil
-                        newSubcategoryName = ""
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        addSubcategory()
-                    }
-                    .disabled(newSubcategoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-        }
+    private var activityDisplayName: String {
+        appleWorkoutActivityType?.displayName ?? workoutType.rawValue
     }
 
     private var filteredCategories: [WorkoutCategory] {
-        allWorkoutCategories.filter { $0.workoutType == workoutType }
+        WorkoutCategory.categoriesForAppleWorkout(
+            activityType: appleWorkoutActivityType,
+            fallbackWorkoutType: workoutType,
+            from: allWorkoutCategories
+        )
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private func subcategoriesFor(_ category: WorkoutCategory) -> [WorkoutSubcategory] {
-        allSubcategories.filter { $0.category?.id == category.id }
+        allSubcategories
+            .filter { $0.category?.id == category.id }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private func categoryBinding(_ category: WorkoutCategory) -> Binding<Bool> {
-        Binding(
-            get: { selectedCategories.contains(where: { $0.id == category.id }) },
-            set: { isOn in
-                if isOn {
-                    selectedCategories.append(category)
-                } else {
-                    selectedCategories.removeAll { $0.id == category.id }
-                    selectedSubcategories.removeAll { $0.category?.id == category.id }
-                }
-            }
-        )
+    private func isCategorySelected(_ category: WorkoutCategory) -> Bool {
+        selectedCategories.contains(where: { $0.id == category.id })
     }
 
-    private func subcategoryBinding(_ subcategory: WorkoutSubcategory) -> Binding<Bool> {
-        Binding(
-            get: { selectedSubcategories.contains(where: { $0.id == subcategory.id }) },
-            set: { isOn in
-                if isOn {
-                    selectedSubcategories.append(subcategory)
-                } else {
-                    selectedSubcategories.removeAll { $0.id == subcategory.id }
-                }
-            }
-        )
+    private func isSubcategorySelected(_ subcategory: WorkoutSubcategory) -> Bool {
+        selectedSubcategories.contains(where: { $0.id == subcategory.id })
+    }
+
+    private func toggleCategory(_ category: WorkoutCategory) {
+        if isCategorySelected(category) {
+            selectedCategories.removeAll { $0.id == category.id }
+            selectedSubcategories.removeAll { $0.category?.id == category.id }
+        } else {
+            selectedCategories.append(category)
+        }
+    }
+
+    private func toggleSubcategory(_ subcategory: WorkoutSubcategory) {
+        if isSubcategorySelected(subcategory) {
+            selectedSubcategories.removeAll { $0.id == subcategory.id }
+        } else {
+            selectedSubcategories.append(subcategory)
+        }
     }
 
     private func addCategory() {
         let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
-        let category = WorkoutCategory(name: name, workoutType: workoutType)
+        let category = WorkoutCategory(
+            name: name,
+            workoutType: workoutType,
+            appleWorkoutActivityType: appleWorkoutActivityType
+        )
         modelContext.insert(category)
         try? modelContext.save()
         selectedCategories.append(category)
@@ -267,22 +291,55 @@ struct CategoryAndSubcategorySelectionView: View {
     }
 }
 
-// MARK: - Subcategory Row
-private struct SubcategoryRow: View {
-    let subcategory: WorkoutSubcategory
+private struct CategorySelectionRow: View {
     let category: WorkoutCategory
+    let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "arrow.turn.down.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color(hex: category.color) ?? .secondary)
-            Text(subcategory.name)
+        HStack(spacing: 12) {
+            Circle()
+                .fill(Color(hex: category.color) ?? .gray)
+                .frame(width: 10, height: 10)
+
+            Text(category.name)
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.accentColor)
+            }
         }
     }
 }
 
-#Preview {
+private struct SubcategorySelectionRow: View {
+    let subcategory: WorkoutSubcategory
+    let category: WorkoutCategory
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.turn.down.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color(hex: category.color) ?? .secondary)
+
+            Text(subcategory.name)
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.accentColor)
+            }
+        }
+    }
+}
+
+@MainActor
+private func makeCategorySelectionPreviewData() -> (container: ModelContainer, push: WorkoutCategory) {
     let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
     let container = try! ModelContainer(for: WorkoutCategory.self, WorkoutSubcategory.self, configurations: config)
     let context = container.mainContext
@@ -297,10 +354,17 @@ private struct SubcategoryRow: View {
     let row = WorkoutSubcategory(name: "Row", category: pull)
     context.insert(row)
 
-    return CategoryAndSubcategorySelectionView(
-        selectedCategories: .constant([push]),
+    return (container, push)
+}
+
+#Preview {
+    let preview = makeCategorySelectionPreviewData()
+
+    CategoryAndSubcategorySelectionView(
+        selectedCategories: .constant([preview.push]),
         selectedSubcategories: .constant([]),
-        workoutType: .strength
+        workoutType: .strength,
+        appleWorkoutActivityType: .traditionalStrengthTraining
     )
-    .modelContainer(container)
+    .modelContainer(preview.container)
 }

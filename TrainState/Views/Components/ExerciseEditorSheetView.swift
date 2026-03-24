@@ -80,7 +80,7 @@ struct ExerciseEditorSheetView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            List {
                 Section("Exercise") {
                     if !availableSubcategories.isEmpty {
                         Picker("Subcategory", selection: subcategoryBinding) {
@@ -125,89 +125,61 @@ struct ExerciseEditorSheetView: View {
                 }
 
                 Section {
-                    Button {
-                        HapticManager.lightImpact()
-                        activePickerEditor = .sets
-                    } label: {
-                        HStack {
-                            Text("Sets")
-                            Spacer()
-                            Text("\(entry.effectiveSetCount ?? 0)")
-                                .foregroundStyle(.secondary)
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
+                    HStack {
+                        Text("Sets")
+                        Spacer()
+                        Button {
+                            adjustSetCount(by: -1)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.title3)
                         }
+                        .buttonStyle(.plain)
+
+                        Text("\(entry.effectiveSetCount ?? 0)")
+                            .font(.headline.monospacedDigit())
+                            .frame(minWidth: 24)
+
+                        Button {
+                            adjustSetCount(by: 1)
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 } header: {
                     Text("Details")
                 } footer: {
-                    Text(isReadyToSave ? "Ready to save" : "Add an exercise name to save")
+                    Text(isReadyToSave ? "Changes apply automatically." : "Add an exercise name to keep this entry.")
                 }
 
-                if !entry.setEntries.isEmpty {
-                    Section("Set Plan") {
+                Section("Set Plan") {
+                    if entry.setEntries.isEmpty {
+                        ContentUnavailableView(
+                            "No Set Plan Yet",
+                            systemImage: "list.number",
+                            description: Text("Add sets inline or start with a quick set count.")
+                        )
+                        .listRowBackground(Color.clear)
+
+                        quickSetCountRow
+                    } else {
                         ForEach(Array(entry.setEntries.enumerated()), id: \.element.id) { index, setEntry in
-                            HStack(spacing: 12) {
-                                if mode == .workout {
-                                    Button {
-                                        toggleSetCompletion(setID: setEntry.id)
-                                    } label: {
-                                        Image(systemName: setEntry.isCompleted ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(setEntry.isCompleted ? Color.green : Color.secondary)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-
-                                Text("Set \(index + 1)")
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer(minLength: 8)
-
-                                Button {
-                                    HapticManager.lightImpact()
-                                    activePickerEditor = .reps(setEntry.id)
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Text("Reps")
-                                        Text("\(setEntry.reps)")
-                                            .monospacedDigit()
-                                            .fontWeight(.semibold)
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        Capsule(style: .continuous)
-                                            .fill(Color.primary.opacity(0.08))
-                                    )
-                                }
-                                .buttonStyle(.plain)
-
-                                Button {
-                                    HapticManager.lightImpact()
-                                    activePickerEditor = .weight(setEntry.id)
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Text("Kg")
-                                        Text(displayValue(setEntry.weight))
-                                            .monospacedDigit()
-                                            .fontWeight(.semibold)
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        Capsule(style: .continuous)
-                                            .fill(Color.primary.opacity(0.08))
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
+                            setPlanRow(index: index, setEntry: setEntry)
                         }
-                        if mode == .workout {
-                            Text("\(entry.completedSetCount)/\(entry.setEntries.count) sets completed")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                    }
+
+                    Button {
+                        addSet()
+                    } label: {
+                        Label("Add Set", systemImage: "plus.circle.fill")
+                    }
+
+                    if mode == .workout, !entry.setEntries.isEmpty {
+                        Text("\(entry.completedSetCount)/\(entry.setEntries.count) sets completed")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -220,15 +192,13 @@ struct ExerciseEditorSheetView: View {
                     }
                 }
             }
+            .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(entry.trimmedName.isEmpty ? "New Exercise" : "Edit Exercise")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .disabled(entry.trimmedName.isEmpty && entry.isEmpty)
+                    Button("Close") { dismiss() }
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -239,7 +209,7 @@ struct ExerciseEditorSheetView: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear {
             if entry.subcategoryID == nil, let first = availableSubcategories.first {
@@ -307,6 +277,113 @@ struct ExerciseEditorSheetView: View {
                 }
             }
         )
+    }
+
+    private func setPlanRow(index: Int, setEntry: ExerciseSetEntry) -> some View {
+        HStack(spacing: 12) {
+            if mode == .workout {
+                Button {
+                    toggleSetCompletion(setID: setEntry.id)
+                } label: {
+                    Image(systemName: setEntry.isCompleted ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(setEntry.isCompleted ? Color.green : Color.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("Set \(index + 1)")
+                .font(.subheadline.weight(.semibold))
+            Spacer(minLength: 8)
+
+            Button {
+                HapticManager.lightImpact()
+                activePickerEditor = .reps(setEntry.id)
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Reps")
+                    Text("\(setEntry.reps)")
+                        .monospacedDigit()
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(0.08))
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                HapticManager.lightImpact()
+                activePickerEditor = .weight(setEntry.id)
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Kg")
+                    Text(displayValue(setEntry.weight))
+                        .monospacedDigit()
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(0.08))
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .contentShape(Rectangle())
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button {
+                duplicateSet(setID: setEntry.id)
+            } label: {
+                Label("Duplicate", systemImage: "plus.square.on.square")
+            }
+            .tint(.blue)
+        }
+
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                deleteSet(setEntry.id)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .tint(.red)
+        }
+        .contextMenu {
+            Button {
+                duplicateSet(setID: setEntry.id)
+            } label: {
+                Label("Duplicate", systemImage: "plus.square.on.square")
+            }
+
+            Button(role: .destructive) {
+                deleteSet(setEntry.id)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    private var quickSetCountRow: some View {
+        HStack(spacing: 8) {
+            ForEach([3, 4, 5], id: \.self) { count in
+                Button {
+                    setSetCount(count)
+                } label: {
+                    Text("\(count) Sets")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.primary.opacity(0.08))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     @ViewBuilder
@@ -423,11 +500,7 @@ struct ExerciseEditorSheetView: View {
     private func adjust(editor: PickerEditor, delta: Double) {
         switch editor {
         case .sets:
-            let current = Double(entry.effectiveSetCount ?? 0)
-            let next = max(0, Int(current + delta))
-            entry.sets = next > 0 ? next : nil
-            syncPlannedSetEntriesFromMetrics()
-            syncLegacyMetricsFromFirstSet()
+            adjustSetCount(by: Int(delta))
         case .reps(let setID):
             guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
             let current = Double(entry.setEntries[idx].reps)
@@ -445,8 +518,8 @@ struct ExerciseEditorSheetView: View {
     private func clear(editor: PickerEditor) {
         switch editor {
         case .sets:
+            entry.setEntries = []
             entry.sets = nil
-            syncPlannedSetEntriesFromMetrics()
             syncLegacyMetricsFromFirstSet()
         case .reps(let setID):
             guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
@@ -483,6 +556,63 @@ struct ExerciseEditorSheetView: View {
             )
         }
         entry.setEntries = sets
+    }
+
+    private func setSetCount(_ count: Int) {
+        entry.sets = count > 0 ? count : nil
+        syncPlannedSetEntriesFromMetrics()
+        syncLegacyMetricsFromFirstSet()
+        HapticManager.lightImpact()
+    }
+
+    private func adjustSetCount(by delta: Int) {
+        let next = max((entry.effectiveSetCount ?? 0) + delta, 0)
+        setSetCount(next)
+    }
+
+    private func addSet() {
+        if let last = entry.setEntries.last {
+            entry.setEntries.append(
+                ExerciseSetEntry(
+                    reps: last.reps,
+                    weight: last.weight,
+                    isCompleted: false
+                )
+            )
+        } else {
+            entry.setEntries.append(
+                ExerciseSetEntry(
+                    reps: max(entry.reps ?? 0, 0),
+                    weight: max(entry.weight ?? 0, 0),
+                    isCompleted: false
+                )
+            )
+        }
+        entry.sets = entry.setEntries.count
+        syncLegacyMetricsFromFirstSet()
+        HapticManager.lightImpact()
+    }
+
+    private func deleteSet(_ setID: UUID) {
+        guard let index = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
+        entry.setEntries.remove(at: index)
+        entry.sets = entry.setEntries.isEmpty ? nil : entry.setEntries.count
+        syncLegacyMetricsFromFirstSet()
+        HapticManager.lightImpact()
+    }
+
+    private func duplicateSet(setID: UUID) {
+        guard let index = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
+        let source = entry.setEntries[index]
+        let duplicate = ExerciseSetEntry(
+            reps: source.reps,
+            weight: source.weight,
+            isCompleted: false
+        )
+        entry.setEntries.insert(duplicate, at: index + 1)
+        entry.sets = entry.setEntries.count
+        syncLegacyMetricsFromFirstSet()
+        HapticManager.lightImpact()
     }
 
     private func toggleSetCompletion(setID: UUID) {

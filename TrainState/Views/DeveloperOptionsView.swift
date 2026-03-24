@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import HealthKit
 
 struct DeveloperOptionsView: View {
     @Environment(\.modelContext) private var modelContext
@@ -167,15 +168,25 @@ struct DeveloperOptionsView: View {
         let categories = (try? modelContext.fetch(categoryDescriptor)) ?? []
         let subcategories = (try? modelContext.fetch(subcategoryDescriptor)) ?? []
 
-        func firstCategory(for type: WorkoutType) -> WorkoutCategory? {
-            categories.first { $0.workoutType == type }
+        func firstCategory(for activityType: HKWorkoutActivityType) -> WorkoutCategory? {
+            WorkoutCategory.categoriesForAppleWorkout(
+                activityType: activityType,
+                fallbackWorkoutType: activityType.mappedWorkoutType,
+                from: categories
+            ).first
         }
 
         func firstSubcategory(
-            for type: WorkoutType,
+            for activityType: HKWorkoutActivityType,
             matchingNameContains search: String? = nil
         ) -> WorkoutSubcategory? {
-            let candidates = subcategories.filter { $0.category?.workoutType == type }
+            let candidates = subcategories.filter { subcategory in
+                guard let category = subcategory.category else { return false }
+                return category.matches(
+                    appleWorkoutActivityType: activityType,
+                    fallbackWorkoutType: activityType.mappedWorkoutType
+                )
+            }
             guard !candidates.isEmpty else { return nil }
 
             if let search,
@@ -195,15 +206,22 @@ struct DeveloperOptionsView: View {
                 duration: 45 * 60,
                 distance: 6.2,
                 categories: [runningCategory],
-                subcategories: [tempoSubcategory]
+                subcategories: [tempoSubcategory],
+                hkActivityTypeRaw: Int(HKWorkoutActivityType.running.rawValue)
             )
             modelContext.insert(workout)
         }
 
         // Strength sample (with exercises wired into subcategories so the new
         // exercise flows and insights have real data in the simulator).
-        if let strengthCategory = firstCategory(for: .strength) {
-            let strengthSubcategories = subcategories.filter { $0.category?.workoutType == .strength }
+        if let strengthCategory = firstCategory(for: .traditionalStrengthTraining) {
+            let strengthSubcategories = subcategories.filter { subcategory in
+                guard let category = subcategory.category else { return false }
+                return category.matches(
+                    appleWorkoutActivityType: .traditionalStrengthTraining,
+                    fallbackWorkoutType: .strength
+                )
+            }
             let chest = strengthSubcategories.first { $0.name.localizedCaseInsensitiveContains("chest") }
             let legs = strengthSubcategories.first { $0.name.localizedCaseInsensitiveContains("leg") }
 
@@ -213,7 +231,8 @@ struct DeveloperOptionsView: View {
                 startDate: date,
                 duration: 50 * 60,
                 categories: [strengthCategory],
-                subcategories: [chest, legs].compactMap { $0 }
+                subcategories: [chest, legs].compactMap { $0 },
+                hkActivityTypeRaw: Int(HKWorkoutActivityType.traditionalStrengthTraining.rawValue)
             )
 
             var exercises: [WorkoutExercise] = []
@@ -262,7 +281,8 @@ struct DeveloperOptionsView: View {
                 startDate: date,
                 duration: 30 * 60,
                 categories: [yogaCategory],
-                subcategories: [flowSubcategory]
+                subcategories: [flowSubcategory],
+                hkActivityTypeRaw: Int(HKWorkoutActivityType.yoga.rawValue)
             )
             modelContext.insert(workout)
         }
@@ -277,7 +297,8 @@ struct DeveloperOptionsView: View {
                 duration: 60 * 60,
                 distance: 18.5,
                 categories: [cyclingCategory],
-                subcategories: [roadSubcategory]
+                subcategories: [roadSubcategory],
+                hkActivityTypeRaw: Int(HKWorkoutActivityType.cycling.rawValue)
             )
             modelContext.insert(workout)
         }

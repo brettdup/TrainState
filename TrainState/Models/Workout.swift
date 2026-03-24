@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import CoreLocation
 import SwiftUI
+import HealthKit
 
 @Model
 final class Workout {
@@ -9,7 +10,12 @@ final class Workout {
     var typeRawValue: String = WorkoutType.other.rawValue
     
     var type: WorkoutType {
-        get { WorkoutType(rawValue: typeRawValue) ?? .other }
+        get {
+            if let appleWorkoutActivityType {
+                return appleWorkoutActivityType.mappedWorkoutType
+            }
+            return WorkoutType(rawValue: typeRawValue) ?? .other
+        }
         set { typeRawValue = newValue.rawValue }
     }
     var startDate: Date = Date()
@@ -19,7 +25,51 @@ final class Workout {
     var rating: Double?
     var notes: String?
     var hkActivityTypeRaw: Int?
+    var hkLocationTypeRaw: Int?
     var hkUUID: String?
+
+    var appleWorkoutActivityType: HKWorkoutActivityType? {
+        get {
+            guard let hkActivityTypeRaw else { return nil }
+            return HKWorkoutActivityType(rawValue: UInt(hkActivityTypeRaw))
+        }
+        set {
+            hkActivityTypeRaw = newValue.map { Int($0.rawValue) }
+        }
+    }
+
+    var appleWorkoutActivityDisplayName: String? {
+        appleWorkoutActivityType?.displayName
+    }
+
+    var resolvedAppleWorkoutActivityType: HKWorkoutActivityType {
+        appleWorkoutActivityType ?? (WorkoutType(rawValue: typeRawValue) ?? .other).defaultAppleWorkoutActivityType
+    }
+
+    var primaryWorkoutDisplayName: String {
+        if let appleWorkoutActivityType {
+            return appleWorkoutActivityType.displayName(locationType: appleWorkoutLocationType)
+        }
+        return type.rawValue
+    }
+
+    var primaryWorkoutSystemImage: String {
+        appleWorkoutActivityType?.systemImage ?? type.systemImage
+    }
+
+    var primaryWorkoutTintColor: Color {
+        appleWorkoutActivityType?.mappedWorkoutType.tintColor ?? type.tintColor
+    }
+
+    var appleWorkoutLocationType: HKWorkoutSessionLocationType? {
+        get {
+            guard let hkLocationTypeRaw else { return nil }
+            return HKWorkoutSessionLocationType(rawValue: hkLocationTypeRaw)
+        }
+        set {
+            hkLocationTypeRaw = newValue?.rawValue
+        }
+    }
     
     // SwiftData relationships - CloudKit compatible
     @Relationship(inverse: \WorkoutCategory.workouts)
@@ -42,7 +92,8 @@ final class Workout {
         categories: [WorkoutCategory]? = nil,
         subcategories: [WorkoutSubcategory]? = nil,
         exercises: [WorkoutExercise]? = nil,
-        hkActivityTypeRaw: Int? = nil
+        hkActivityTypeRaw: Int? = nil,
+        hkLocationTypeRaw: Int? = nil
     ) {
         self.id = UUID()
         self.type = type
@@ -56,6 +107,7 @@ final class Workout {
         self.subcategories = subcategories
         self.exercises = exercises
         self.hkActivityTypeRaw = hkActivityTypeRaw
+        self.hkLocationTypeRaw = hkLocationTypeRaw
     }
     
     
@@ -135,42 +187,40 @@ enum WorkoutType: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
-// Filter enum that includes "All" option for UI filtering
-enum WorkoutFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case strength = "Strength Training"
-    case cardio = "Cardio"
-    case yoga = "Yoga"
-    case running = "Running"
-    case cycling = "Cycling"
-    case swimming = "Swimming"
-    case other = "Other"
-    
-    var id: String { rawValue }
-    
-    var systemImage: String {
+enum WorkoutFilter: Hashable, Identifiable {
+    case all
+    case apple(HKWorkoutActivityType)
+
+    static var allCases: [WorkoutFilter] {
+        [.all] + HKWorkoutActivityType.allKnownCases
+            .sorted { $0.displayName < $1.displayName }
+            .map { .apple($0) }
+    }
+
+    var id: String {
         switch self {
-        case .all: return "square.stack.3d.up"
-        case .strength: return "dumbbell.fill"
-        case .cardio: return "heart.fill"
-        case .yoga: return "figure.mind.and.body"
-        case .running: return "figure.run"
-        case .cycling: return "bicycle"
-        case .swimming: return "figure.pool.swim"
-        case .other: return "square.stack.3d.up"
+        case .all:
+            return "all"
+        case .apple(let activityType):
+            return "apple-\(activityType.rawValue)"
         }
     }
-    
-    var workoutType: WorkoutType? {
+
+    var title: String {
         switch self {
-        case .all: return nil
-        case .strength: return .strength
-        case .cardio: return .cardio
-        case .yoga: return .yoga
-        case .running: return .running
-        case .cycling: return .cycling
-        case .swimming: return .swimming
-        case .other: return .other
+        case .all:
+            return "All"
+        case .apple(let activityType):
+            return activityType.displayName
+        }
+    }
+
+    var activityType: HKWorkoutActivityType? {
+        switch self {
+        case .all:
+            return nil
+        case .apple(let activityType):
+            return activityType
         }
     }
 }
@@ -189,6 +239,7 @@ struct WorkoutExport: Codable {
     let rating: Double?
     let notes: String?
     let hkActivityTypeRaw: Int?
+    let hkLocationTypeRaw: Int?
     let hkUUID: String?
     let categoryIds: [UUID]?
     let subcategoryIds: [UUID]?
@@ -203,6 +254,7 @@ struct WorkoutExport: Codable {
         self.rating = workout.rating
         self.notes = workout.notes
         self.hkActivityTypeRaw = workout.hkActivityTypeRaw
+        self.hkLocationTypeRaw = workout.hkLocationTypeRaw
         self.hkUUID = workout.hkUUID
         
         // Safely access relationships with nil checks to avoid SwiftData crashes
@@ -225,12 +277,14 @@ struct WorkoutCategoryExport: Codable {
     let name: String
     let color: String
     let workoutType: WorkoutType?
+    let appleWorkoutActivityTypeRaw: Int?
     
     init(category: WorkoutCategory) {
         self.id = category.id
         self.name = category.name
         self.color = category.color
         self.workoutType = category.workoutType
+        self.appleWorkoutActivityTypeRaw = category.appleWorkoutActivityTypeRaw
     }
 }
 
@@ -288,6 +342,7 @@ struct StrengthWorkoutTemplateExport: Codable {
     let createdAt: Date
     let updatedAt: Date
     let mainCategoryRawValue: String
+    let appleWorkoutActivityTypeRaw: Int?
     let exercises: [StrengthWorkoutTemplateExerciseExport]
 
     enum CodingKeys: String, CodingKey {
@@ -296,6 +351,7 @@ struct StrengthWorkoutTemplateExport: Codable {
         case createdAt
         case updatedAt
         case mainCategoryRawValue
+        case appleWorkoutActivityTypeRaw
         case categoryId // legacy
         case exercises
     }
@@ -306,6 +362,7 @@ struct StrengthWorkoutTemplateExport: Codable {
         self.createdAt = template.createdAt
         self.updatedAt = template.updatedAt
         self.mainCategoryRawValue = template.mainCategoryRawValue
+        self.appleWorkoutActivityTypeRaw = template.appleWorkoutActivityTypeRaw
         self.exercises = (template.exercises ?? [])
             .sorted { $0.orderIndex < $1.orderIndex }
             .map(StrengthWorkoutTemplateExerciseExport.init)
@@ -323,6 +380,7 @@ struct StrengthWorkoutTemplateExport: Codable {
             // Backward compatibility for older backups that only stored categoryId.
             mainCategoryRawValue = WorkoutType.strength.rawValue
         }
+        appleWorkoutActivityTypeRaw = try container.decodeIfPresent(Int.self, forKey: .appleWorkoutActivityTypeRaw)
         exercises = try container.decodeIfPresent([StrengthWorkoutTemplateExerciseExport].self, forKey: .exercises) ?? []
     }
 
@@ -333,6 +391,7 @@ struct StrengthWorkoutTemplateExport: Codable {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(mainCategoryRawValue, forKey: .mainCategoryRawValue)
+        try container.encodeIfPresent(appleWorkoutActivityTypeRaw, forKey: .appleWorkoutActivityTypeRaw)
         try container.encode(exercises, forKey: .exercises)
     }
 }

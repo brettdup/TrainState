@@ -46,7 +46,9 @@ struct ExerciseCardView: View {
                     Text(name.isEmpty ? "Unnamed exercise" : name)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .lineLimit(nil)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     if let subcategoryName, !subcategoryName.isEmpty {
                         Text(subcategoryName.uppercased())
@@ -87,25 +89,6 @@ struct ExerciseCardView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(effectiveColorScheme == .dark
-                    ? Color(.secondarySystemBackground)
-                    : Color(.systemBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(
-                    iconColor.opacity(0.2),
-                    lineWidth: 1.5
-                )
-        )
-        .shadow(
-            color: iconColor.opacity(isDragging ? 0.2 : 0.08),
-            radius: isDragging ? 12 : 4,
-            x: 0,
-            y: isDragging ? 6 : 2
-        )
         .opacity(isDragging ? 0.9 : 1.0)
         .scaleEffect(isDragging ? 1.02 : 1.0)
         .animation(.easeInOut(duration: 0.2), value: isDragging)
@@ -124,7 +107,7 @@ extension ExerciseCardView {
     /// Initialize from an ExerciseLogEntry (for Add/Edit/Live views)
     init(entry: ExerciseLogEntry, subcategoryName: String? = nil, showDragHandle: Bool = false, showChevron: Bool = true, isDragging: Bool = false, colorScheme: ColorScheme? = nil) {
         self.name = entry.trimmedName
-        self.setDetails = entry.setSummaryLines
+        self.setDetails = ExerciseCardView.setDetails(from: entry)
         self.subcategoryName = subcategoryName
         self.showDragHandle = showDragHandle
         self.showChevron = showChevron
@@ -173,6 +156,30 @@ extension ExerciseCardView {
         }
 
         self.setDetails = parsedSetDetails
+    }
+
+    private static func setDetails(from entry: ExerciseLogEntry) -> [String] {
+        if !entry.setSummaryLines.isEmpty {
+            return entry.setSummaryLines
+        }
+
+        let setCount = entry.effectiveSetCount ?? 0
+        let reps = entry.effectiveReps ?? 0
+        let weight = entry.effectiveWeight ?? 0
+
+        guard setCount > 0, reps > 0 || weight > 0 else { return [] }
+
+        return (1...setCount).map { index in
+            var detail = "Set \(index): "
+            if reps > 0 && weight > 0 {
+                detail += "\(reps) reps @ \(ExerciseLogEntry.displayWeight(weight)) kg"
+            } else if reps > 0 {
+                detail += "\(reps) reps"
+            } else {
+                detail += "\(ExerciseLogEntry.displayWeight(weight)) kg"
+            }
+            return detail
+        }
     }
 }
 

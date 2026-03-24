@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# App Store screenshot generator (Next.js)
+app-store-screenshots/
+app-store-screenshots/node_modules/
+app-store-screenshots/.next/
+app-store-screenshots/out/
+app-store-screenshots/*.log
+app-store-screenshots/npm-debug.log*
+app-store-screenshots/yarn-debug.log*
+app-store-screenshots/yarn-error.log*
+app-store-screenshots/pnpm-debug.log*

@@ -16,7 +16,6 @@ struct LiveStrengthSessionView: View {
     @State private var showExerciseLinkAlert = false
     @State private var activeExerciseSelection: ExerciseEditorSelection?
     @State private var didStartLiveActivity = false
-    @State private var showingExercisePicker = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -82,7 +81,7 @@ struct LiveStrengthSessionView: View {
             }
             .sheet(item: $activeExerciseSelection) { selection in
                 if let index = entries.firstIndex(where: { $0.id == selection.id }) {
-                    LiveExerciseLoggerSheetView(
+                    ExerciseEditorSheetView(
                         entry: $entries[index],
                         availableSubcategories: availableSubcategories,
                         availableOptions: quickAddOptions,
@@ -94,34 +93,9 @@ struct LiveStrengthSessionView: View {
                     EmptyView()
                 }
             }
-            .sheet(isPresented: $showingExercisePicker) {
-                UnifiedExercisePickerView(
-                    subcategories: availableSubcategories,
-                    exerciseOptions: quickAddOptions,
-                    existingExerciseNames: Set(entries.map { $0.trimmedName.lowercased() }),
-                    onSelect: { selected in
-                        for option in selected {
-                            addExercise(from: option)
-                        }
-                    },
-                    onCreateCustom: { name, subcategoryID in
-                        var entry = ExerciseLogEntry(name: name, subcategoryID: subcategoryID)
-                        entries.append(entry)
-                        activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
-                    },
-                    tintColor: typeTintColor
-                )
-            }
         }
         .onReceive(timer) { timestamp in
             now = timestamp
-            if didStartLiveActivity {
-                WorkoutLiveActivityManager.shared.update(
-                    elapsedSeconds: Int(elapsedDuration),
-                    exerciseCount: loggedExerciseCount,
-                    currentExercise: activeExerciseName
-                )
-            }
         }
         .onAppear {
             guard !didStartLiveActivity else { return }
@@ -129,6 +103,14 @@ struct LiveStrengthSessionView: View {
             WorkoutLiveActivityManager.shared.start(
                 workoutName: "Strength Workout",
                 startedAt: sessionStart,
+                exerciseCount: loggedExerciseCount,
+                currentExercise: activeExerciseName
+            )
+        }
+        .onChange(of: entries) { _, _ in
+            guard didStartLiveActivity else { return }
+            WorkoutLiveActivityManager.shared.update(
+                elapsedSeconds: Int(elapsedDuration),
                 exerciseCount: loggedExerciseCount,
                 currentExercise: activeExerciseName
             )
@@ -172,79 +154,16 @@ struct LiveStrengthSessionView: View {
     }
 
     private var exercisesCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Exercises")
-                    .font(.headline)
-                Spacer()
-                Button {
-                    showingExercisePicker = true
-                } label: {
-                    Label("Browse All", systemImage: "list.bullet.rectangle.portrait")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(typeTintColor.opacity(0.18))
-                        )
-                }
-                .buttonStyle(.plain)
+        WorkoutExerciseSectionView(
+            entries: $entries,
+            tintColor: typeTintColor,
+            availableSubcategories: availableSubcategories,
+            quickAddOptions: quickAddOptions,
+            allowsReordering: true,
+            onTap: { entry in
+                activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
             }
-
-            if !quickAddOptions.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(quickAddOptions.prefix(10)), id: \.id) { option in
-                            Button {
-                                addExercise(from: option)
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: ExerciseIconMapper.icon(for: option.name))
-                                        .font(.caption)
-                                        .foregroundStyle(ExerciseIconMapper.iconColor(for: option.name))
-                                    Text(option.name)
-                                        .font(.caption.weight(.semibold))
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(
-                                    Capsule()
-                                        .fill(typeTintColor.opacity(0.16))
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-
-            if entries.isEmpty {
-                Text("Start by choosing an exercise like Bench Press, then log each set.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(spacing: 12) {
-                    ForEach(entries) { entry in
-                        Button {
-                            activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
-                        } label: {
-                            ExerciseCardView(entry: entry)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            if quickAddOptions.isEmpty {
-                Text("Select workout subcategories to unlock quick-add exercise chips.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassCard(isInteractive: true)
+        )
     }
 
     private var elapsedDuration: TimeInterval {
@@ -272,53 +191,6 @@ struct LiveStrengthSessionView: View {
     private func hasUnlinkedExercises(_ entries: [ExerciseLogEntry]) -> Bool {
         entries.contains { !$0.trimmedName.isEmpty && $0.subcategoryID == nil }
     }
-
-    private func defaultExerciseEntry() -> ExerciseLogEntry {
-        guard let firstSubcategory = availableSubcategories.first else { return ExerciseLogEntry() }
-        let names = quickAddOptions.filter { $0.subcategoryID == firstSubcategory.id }.map(\.name)
-        return ExerciseLogEntry(
-            name: names.first ?? "",
-            subcategoryID: firstSubcategory.id
-        )
-    }
-
-    private func addAndEditNewExercise() {
-        let newEntry = defaultExerciseEntry()
-        entries.append(newEntry)
-        activeExerciseSelection = ExerciseEditorSelection(id: newEntry.id)
-    }
-
-    private func addExercise(from option: ExerciseQuickAddOption) {
-        var entry = ExerciseLogEntry(name: option.name, subcategoryID: option.subcategoryID)
-        if let lastMatch = entries.last(where: { $0.trimmedName.caseInsensitiveCompare(option.name) == .orderedSame }) {
-            entry.setEntries = lastMatch.setEntries
-            entry.sets = lastMatch.effectiveSetCount
-            entry.reps = lastMatch.effectiveReps
-            entry.weight = lastMatch.effectiveWeight
-        }
-        entries.append(entry)
-        activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
-    }
-
-    private func exerciseSummary(for entry: ExerciseLogEntry) -> String? {
-        let setsText = entry.effectiveSetCount.map { "\($0)x" }
-        let repsText = entry.effectiveReps.map { "\($0)" }
-        let weightText: String? = {
-            guard let w = entry.effectiveWeight, w > 0 else { return nil }
-            return "\(ExerciseLogEntry.displayWeight(w)) kg"
-        }()
-
-        let primary = [setsText, repsText].compactMap { $0 }.joined(separator: " ")
-        let withWeight: String
-        if let weightText {
-            withWeight = primary.isEmpty ? weightText : "\(primary) · \(weightText)"
-        } else {
-            withWeight = primary
-        }
-
-        return withWeight.isEmpty ? nil : withWeight
-    }
-
     private func formattedDuration(_ duration: TimeInterval) -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute, .second]

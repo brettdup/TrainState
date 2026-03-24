@@ -141,53 +141,47 @@ struct UnifiedExercisePickerView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Category filter chips
-                if !subcategories.isEmpty {
-                    CategoryFilterChipsView(
-                        subcategories: subcategories,
-                        selectedID: $filterSubcategoryID,
-                        tintColor: tintColor
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                }
-
-                // Main list
-                List {
-                    if exerciseOptions.isEmpty {
-                        emptyStateSection
-                    } else if filteredOptions.isEmpty && !canCreateCustom {
-                        noResultsSection
-                    } else {
-                        // Recent exercises section (only when no chip selected)
-                        if !recentExercises.isEmpty && searchText.isEmpty && filterSubcategoryID == nil {
-                            recentSection
-                        }
-
-                        // Suggestions section (only when no chip selected)
-                        if !suggestions.isEmpty && filterSubcategoryID == nil {
-                            suggestionsSection
-                        }
-
-                        // Grouped by subcategory
-                        ForEach(groupedBySubcategory, id: \.title) { group in
-                            Section(header: Text(group.title)) {
-                                ForEach(group.items, id: \.id) { option in
-                                    exerciseRow(for: option, showSubcategory: false)
-                                }
-                            }
-                        }
-
-                        // Create custom option
-                        if canCreateCustom {
-                            createCustomSection
-                        }
+            List {
+                if !subcategories.isEmpty, !searchText.isEmpty || filterSubcategoryID != nil {
+                    Section {
+                        filterRow
+                    }
+                } else if !subcategories.isEmpty {
+                    Section {
+                        filterRow
+                    } footer: {
+                        Text("Use search or filter by subcategory.")
                     }
                 }
-                .listStyle(.insetGrouped)
-                .animation(nil, value: selectedIDs)
+
+                if exerciseOptions.isEmpty {
+                    emptyStateSection
+                } else if filteredOptions.isEmpty && !canCreateCustom {
+                    noResultsSection
+                } else {
+                    if !recentExercises.isEmpty && searchText.isEmpty && filterSubcategoryID == nil {
+                        recentSection
+                    }
+
+                    if !suggestions.isEmpty && filterSubcategoryID == nil {
+                        suggestionsSection
+                    }
+
+                    ForEach(groupedBySubcategory, id: \.title) { group in
+                        Section(header: Text(group.title)) {
+                            ForEach(group.items, id: \.id) { option in
+                                exerciseRow(for: option, showSubcategory: false)
+                            }
+                        }
+                    }
+
+                    if canCreateCustom {
+                        createCustomSection
+                    }
+                }
             }
+            .listStyle(.insetGrouped)
+            .animation(nil, value: selectedIDs)
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
@@ -281,8 +275,8 @@ struct UnifiedExercisePickerView: View {
                 showingCustomExerciseSheet = true
             } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 22))
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 20))
                         .foregroundStyle(tintColor)
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -298,6 +292,50 @@ struct UnifiedExercisePickerView: View {
                 }
             }
         }
+    }
+
+    private var filterRow: some View {
+        Menu {
+            Button("All Subcategories") {
+                filterSubcategoryID = nil
+            }
+
+            Divider()
+
+            ForEach(subcategories) { subcategory in
+                Button {
+                    filterSubcategoryID = subcategory.id
+                } label: {
+                    if filterSubcategoryID == subcategory.id {
+                        Label(subcategory.name, systemImage: "checkmark")
+                    } else {
+                        Text(subcategory.name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Subcategory")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(activeFilterTitle)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Row Builder
@@ -379,6 +417,14 @@ struct UnifiedExercisePickerView: View {
     private var addButtonTitle: String {
         guard selectedCount > 0 else { return "Add" }
         return "Add \(selectedCount)"
+    }
+
+    private var activeFilterTitle: String {
+        guard let filterSubcategoryID,
+              let name = subcategoryNameByID[filterSubcategoryID] else {
+            return "All Subcategories"
+        }
+        return name
     }
 }
 

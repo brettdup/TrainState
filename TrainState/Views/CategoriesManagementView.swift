@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import RevenueCatUI
+import HealthKit
 
 struct CategoriesManagementView: View {
     @Environment(\.modelContext) private var modelContext
@@ -20,14 +21,30 @@ struct CategoriesManagementView: View {
     @State private var showingPaywall = false
 
     private var groupedCategories: [(id: String, title: String, categories: [WorkoutCategory])] {
-        let grouped = Dictionary(grouping: categories) { $0.workoutType }
-        var sections: [(id: String, title: String, categories: [WorkoutCategory])] = WorkoutType.allCases.compactMap { type in
-            guard let items = grouped[type], !items.isEmpty else { return nil }
-            return (id: type.rawValue, title: type.rawValue, categories: items.sorted { $0.name < $1.name })
+        let grouped = Dictionary(grouping: categories) { category in
+            category.appleWorkoutActivityType?.rawValue
         }
 
-        if let uncategorized = grouped[nil], !uncategorized.isEmpty {
-            sections.append((id: "unspecified", title: "Unspecified", categories: uncategorized.sorted { $0.name < $1.name }))
+        var sections = grouped.map { rawValue, items in
+            let title: String
+            if let rawValue,
+               let activityType = HKWorkoutActivityType(rawValue: UInt(rawValue)) {
+                title = activityType.displayName
+            } else {
+                title = items.first?.activityDisplayName ?? "Unspecified"
+            }
+
+            return (
+                id: rawValue.map { String($0) } ?? "unspecified",
+                title: title,
+                categories: items.sorted { $0.name < $1.name }
+            )
+        }
+
+        sections.sort { lhs, rhs in
+            if lhs.title == "Unspecified" { return false }
+            if rhs.title == "Unspecified" { return true }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
 
         return sections

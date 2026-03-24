@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import HealthKit
 
 /// Manager responsible for initializing default data when the app is first launched
 class DataInitializationManager {
@@ -13,6 +14,7 @@ class DataInitializationManager {
         let name: String
         let color: String
         let workoutType: WorkoutType
+        let appleWorkoutActivityType: HKWorkoutActivityType
         let subcategories: [String]
     }
 
@@ -22,18 +24,21 @@ class DataInitializationManager {
             name: "Push",
             color: "#FF6B6B",
             workoutType: .strength,
+            appleWorkoutActivityType: .traditionalStrengthTraining,
             subcategories: ["Chest", "Shoulders", "Triceps"]
         ),
         DefaultCategorySeed(
             name: "Pull",
             color: "#4ECDC4",
             workoutType: .strength,
+            appleWorkoutActivityType: .traditionalStrengthTraining,
             subcategories: ["Back", "Biceps", "Rear Delts"]
         ),
         DefaultCategorySeed(
             name: "Legs",
             color: "#45B7D1",
             workoutType: .strength,
+            appleWorkoutActivityType: .traditionalStrengthTraining,
             subcategories: ["Quads", "Hamstrings", "Calves"]
         ),
 
@@ -42,12 +47,14 @@ class DataInitializationManager {
             name: "Intervals",
             color: "#FF8C42",
             workoutType: .cardio,
+            appleWorkoutActivityType: .highIntensityIntervalTraining,
             subcategories: ["HIIT", "Steady State"]
         ),
         DefaultCategorySeed(
             name: "Endurance",
             color: "#45B7D1",
             workoutType: .running,
+            appleWorkoutActivityType: .running,
             subcategories: ["Easy Run", "Tempo"]
         ),
 
@@ -56,18 +63,21 @@ class DataInitializationManager {
             name: "Flow",
             color: "#A66CFF",
             workoutType: .yoga,
+            appleWorkoutActivityType: .yoga,
             subcategories: ["Vinyasa", "Mobility"]
         ),
         DefaultCategorySeed(
             name: "Long Ride",
             color: "#2EC4B6",
             workoutType: .cycling,
+            appleWorkoutActivityType: .cycling,
             subcategories: ["Road", "Indoor"]
         ),
         DefaultCategorySeed(
             name: "Laps",
             color: "#3A86FF",
             workoutType: .swimming,
+            appleWorkoutActivityType: .swimming,
             subcategories: ["Freestyle", "Drills"]
         ),
 
@@ -76,6 +86,7 @@ class DataInitializationManager {
             name: "General Fitness",
             color: "#8D99AE",
             workoutType: .other,
+            appleWorkoutActivityType: .other,
             subcategories: ["Warmup", "Recovery"]
         )
     ]
@@ -213,7 +224,8 @@ class DataInitializationManager {
                     let category = WorkoutCategory(
                         name: seed.name,
                         color: seed.color,
-                        workoutType: seed.workoutType
+                        workoutType: seed.workoutType,
+                        appleWorkoutActivityType: seed.appleWorkoutActivityType
                     )
                     context.insert(category)
 
@@ -314,9 +326,44 @@ class DataInitializationManager {
             print("Error initializing user settings: \(error)")
         }
     }
+
+    func migrateWorkoutTypeBackedDataIfNeeded(context: ModelContext) {
+        do {
+            let workouts = try context.fetch(FetchDescriptor<Workout>())
+            let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
+            let templates = try context.fetch(FetchDescriptor<StrengthWorkoutTemplate>())
+            var didChange = false
+
+            for workout in workouts where workout.hkActivityTypeRaw == nil {
+                workout.appleWorkoutActivityType = workout.resolvedAppleWorkoutActivityType
+                didChange = true
+            }
+
+            for category in categories where category.appleWorkoutActivityTypeRaw == nil {
+                if let workoutType = category.workoutType {
+                    category.appleWorkoutActivityType = workoutType.defaultAppleWorkoutActivityType
+                    didChange = true
+                }
+            }
+
+            for template in templates where template.appleWorkoutActivityTypeRaw == nil {
+                let fallbackType = WorkoutType(rawValue: template.mainCategoryRawValue) ?? .strength
+                template.appleWorkoutActivityType = fallbackType.defaultAppleWorkoutActivityType
+                didChange = true
+            }
+
+            if didChange {
+                try context.save()
+                print("Migrated workout-type-backed category and template data to Apple workout activities")
+            }
+        } catch {
+            print("Error migrating workout type backed data: \(error)")
+        }
+    }
     
     /// Main initialization method that sets up all default data
     func initializeAppData(context: ModelContext) {
+        migrateWorkoutTypeBackedDataIfNeeded(context: context)
         initializeDefaultDataIfNeeded(context: context)
         initializeDefaultExerciseTemplatesIfNeeded(context: context)
         initializeDefaultUserSettingsIfNeeded(context: context)

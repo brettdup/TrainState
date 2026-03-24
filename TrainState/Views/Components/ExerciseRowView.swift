@@ -10,22 +10,21 @@ struct ExerciseRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Selection indicator
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 22))
-                .foregroundStyle(isSelected ? AnyShapeStyle(tintColor) : AnyShapeStyle(.tertiary))
-                .frame(width: 24, height: 24)
-
             // Exercise icon
             Image(systemName: ExerciseIconMapper.icon(for: option.name))
                 .font(.system(size: 16))
                 .foregroundStyle(ExerciseIconMapper.iconColor(for: option.name))
-                .frame(width: 24, height: 24)
+                .frame(width: 28, height: 28)
+                .background(
+                    Circle()
+                        .fill(ExerciseIconMapper.iconColor(for: option.name).opacity(0.12))
+                )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(option.name)
-                    .font(.body)
+                    .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
+                    .lineLimit(2)
 
                 HStack(spacing: 6) {
                     if let subcategoryName {
@@ -48,7 +47,13 @@ struct ExerciseRowView: View {
             }
 
             Spacer()
+
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 22))
+                .foregroundStyle(isSelected ? AnyShapeStyle(tintColor) : AnyShapeStyle(.tertiary))
+                .frame(width: 24, height: 24)
         }
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
     }
 

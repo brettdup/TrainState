@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import HealthKit
 
 struct TemplateSetPlanEntry: Codable, Hashable {
     let reps: Int
@@ -13,6 +14,26 @@ final class StrengthWorkoutTemplate {
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
     var mainCategoryRawValue: String = WorkoutType.strength.rawValue
+    var appleWorkoutActivityTypeRaw: Int?
+
+    var appleWorkoutActivityType: HKWorkoutActivityType {
+        get {
+            if let appleWorkoutActivityTypeRaw,
+               let activityType = HKWorkoutActivityType(rawValue: UInt(appleWorkoutActivityTypeRaw)) {
+                return activityType
+            }
+            let fallbackType = WorkoutType(rawValue: mainCategoryRawValue) ?? .strength
+            return fallbackType.defaultAppleWorkoutActivityType
+        }
+        set {
+            appleWorkoutActivityTypeRaw = Int(newValue.rawValue)
+            mainCategoryRawValue = newValue.mappedWorkoutType.rawValue
+        }
+    }
+
+    var activityDisplayName: String {
+        appleWorkoutActivityType.displayName
+    }
 
     @Relationship(deleteRule: .cascade, inverse: \StrengthWorkoutTemplateExercise.template)
     var exercises: [StrengthWorkoutTemplateExercise]? = []
@@ -20,6 +41,7 @@ final class StrengthWorkoutTemplate {
     init(
         name: String,
         mainCategoryRawValue: String = WorkoutType.strength.rawValue,
+        appleWorkoutActivityType: HKWorkoutActivityType? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         exercises: [StrengthWorkoutTemplateExercise] = []
@@ -27,6 +49,7 @@ final class StrengthWorkoutTemplate {
         self.id = UUID()
         self.name = name
         self.mainCategoryRawValue = mainCategoryRawValue
+        self.appleWorkoutActivityTypeRaw = appleWorkoutActivityType.map { Int($0.rawValue) }
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.exercises = exercises

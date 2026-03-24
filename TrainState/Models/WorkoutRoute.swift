@@ -7,6 +7,8 @@ import CoreLocation
 final class WorkoutRoute {
     var id: UUID = UUID()
     var routeData: Data? // Encoded [CLLocation]
+    @Transient private var cachedDecodedRoute: [CLLocation]?
+    @Transient private var cachedRouteFingerprint: RouteDataFingerprint?
     
     // SwiftData relationship - CloudKit compatible
     var workout: Workout?
@@ -19,54 +21,54 @@ final class WorkoutRoute {
     // Helper to get/set route as [CLLocation]
     var decodedRoute: [CLLocation]? {
         get {
-            print("[WorkoutRoute] Decoding route data: data exists? \(routeData != nil)")
-            if let data = routeData {
-                print("[WorkoutRoute] Data size: \(data.count) bytes")
+            guard let data = routeData else {
+                cachedDecodedRoute = nil
+                cachedRouteFingerprint = nil
+                return nil
             }
-            guard let data = routeData else { return nil }
+
+            let fingerprint = RouteDataFingerprint(data: data)
+            if cachedRouteFingerprint == fingerprint {
+                return cachedDecodedRoute
+            }
+
             do {
                 let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
                 unarchiver.requiresSecureCoding = false
                 let locations = try unarchiver.decodeTopLevelObject(forKey: NSKeyedArchiveRootObjectKey) as? [CLLocation]
                 unarchiver.finishDecoding()
-                print("[WorkoutRoute] Decoded locations count: \(locations?.count ?? 0)")
-                if let locations = locations, !locations.isEmpty {
-                    print("[WorkoutRoute] First location: \(locations.first!)")
-                    print("[WorkoutRoute] Last location: \(locations.last!)")
-                    print("[WorkoutRoute] Sample locations:")
-                    for i in stride(from: 0, to: locations.count, by: max(1, locations.count/10)) {
-                        print("  [\(i)] \(locations[i])")
-                    }
-                }
                 guard let locations = locations, locations.count <= 2000 else {
-                    print("[WorkoutRoute] Invalid location data: too many points or nil data")
+                    cachedDecodedRoute = nil
+                    cachedRouteFingerprint = fingerprint
                     return nil
                 }
+                cachedDecodedRoute = locations
+                cachedRouteFingerprint = fingerprint
                 return locations
             } catch {
-                print("[WorkoutRoute] Error decoding route data: \(error.localizedDescription)")
+                cachedDecodedRoute = nil
+                cachedRouteFingerprint = fingerprint
                 return nil
             }
         }
         set {
-            if let locations = newValue {
-                print("[WorkoutRoute] Encoding locations count: \(locations.count)")
-            } else {
-                print("[WorkoutRoute] Setting decodedRoute to nil")
-            }
             guard let locations = newValue else {
                 routeData = nil
+                cachedDecodedRoute = nil
+                cachedRouteFingerprint = nil
                 return
             }
             // Save all points, no limit
             let limitedLocations = locations
             do {
                 let data = try NSKeyedArchiver.archivedData(withRootObject: limitedLocations, requiringSecureCoding: false)
-                print("[WorkoutRoute] Encoded data size: \(data.count) bytes")
                 routeData = data
+                cachedDecodedRoute = limitedLocations
+                cachedRouteFingerprint = RouteDataFingerprint(data: data)
             } catch {
-                print("[WorkoutRoute] Error encoding route data: \(error.localizedDescription)")
                 routeData = nil
+                cachedDecodedRoute = nil
+                cachedRouteFingerprint = nil
             }
         }
     }
@@ -96,6 +98,18 @@ final class WorkoutRoute {
         }
         
         return totalDistance
+    }
+}
+
+private struct RouteDataFingerprint: Equatable {
+    let count: Int
+    let prefixHash: Int
+    let suffixHash: Int
+
+    init(data: Data) {
+        count = data.count
+        prefixHash = data.prefix(64).hashValue
+        suffixHash = data.suffix(64).hashValue
     }
 }
 

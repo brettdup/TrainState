@@ -40,6 +40,16 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		9E07EA182F445F0800B490F3 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9EDBB3742F3CF41A00B136B2 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -81,6 +91,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		9E07EA0E2F445F0700B490F3 /* TrainStateWatch Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "TrainStateWatch Watch App";
+			sourceTree = "<group>";
+		};
 		9E77B6F92DD1C6A0009B5253 /* TrainState */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -153,6 +168,7 @@
 				9E77B70B2DD1C6A1009B5253 /* TrainStateTests */,
 				9E77B7152DD1C6A1009B5253 /* TrainStateUITests */,
 				9EDBB35F2F3CF41900B136B2 /* TrainStateWidgetExtension */,
+				9E07EA0E2F445F0700B490F3 /* TrainStateWatch Watch App */,
 				9EA946AB2E0149810079B5BC /* Frameworks */,
 				9E77B6F82DD1C6A0009B5253 /* Products */,
 			);
@@ -190,6 +206,7 @@
 				9E77B6F42DD1C6A0009B5253 /* Frameworks */,
 				9E77B6F52DD1C6A0009B5253 /* Resources */,
 				9EDBB3742F3CF41A00B136B2 /* Embed Foundation Extensions */,
+				9E07EA182F445F0800B490F3 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
@@ -417,7 +434,7 @@
 				CODE_SIGN_ENTITLEMENTS = TrainState/TrainState.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = C6GR6GJPAA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -438,7 +455,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.04;
+				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = brettduplessis.TrainState;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -457,7 +474,7 @@
 				CODE_SIGN_ENTITLEMENTS = TrainState/TrainState.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = C6GR6GJPAA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -478,7 +495,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.04;
+				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = brettduplessis.TrainState;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

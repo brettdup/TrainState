@@ -3,7 +3,7 @@ import SwiftUI
 import SwiftData
 
 @MainActor
-class PurchaseManager: ObservableObject {
+class PurchaseManager: NSObject, ObservableObject, PurchasesDelegate {
     static let shared = PurchaseManager()
     
     @Published private(set) var offerings: Offerings?
@@ -15,6 +15,7 @@ class PurchaseManager: ObservableObject {
     @Published private(set) var debugPremiumForceDisabled = false
     #endif
     @Published private(set) var isProcessingPurchase = false
+    @Published private(set) var isRestoringPurchases = false
     @Published private(set) var isLoadingProducts = false
     @Published private(set) var productLoadError: Error?
     @Published private(set) var debugLog: String = ""
@@ -39,14 +40,14 @@ class PurchaseManager: ObservableObject {
     }
     
     // Keep a context reference only if needed later; avoid separate containers.
-    private let modelContext: ModelContext?
+    private let modelContext: ModelContext? = nil
     #if DEBUG
     private let debugPremiumOverrideDefaultsKey = "TrainState.debugPremiumOverrideEnabled"
     private let debugPremiumForceDisabledDefaultsKey = "TrainState.debugPremiumForceDisabled"
     #endif
-    private init() {
-        // Avoid creating a separate container; purchases don't require a local store.
-        self.modelContext = nil
+    private override init() {
+        super.init()
+        Purchases.shared.delegate = self
         
         print("PurchaseManager: Initializing...")
         debugLog += "PurchaseManager: Initializing...\n"
@@ -155,6 +156,7 @@ class PurchaseManager: ObservableObject {
                 } else if let info {
                     self.applyCustomerInfo(info)
                 }
+                self.hasCompletedInitialPremiumCheck = true
                 continuation.resume()
             }
         }
@@ -162,6 +164,13 @@ class PurchaseManager: ObservableObject {
     
     func restorePurchases() async throws {
         print("PurchaseManager: Starting purchase restoration...")
+        guard !isRestoringPurchases else {
+            throw StoreError.purchaseInProgress
+        }
+
+        isRestoringPurchases = true
+        defer { isRestoringPurchases = false }
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Purchases.shared.restorePurchases { [weak self] info, error in
                 guard let self else {
@@ -175,6 +184,7 @@ class PurchaseManager: ObservableObject {
                 if let info {
                     self.applyCustomerInfo(info)
                 }
+                self.hasCompletedInitialPremiumCheck = true
                 continuation.resume()
             }
         }
@@ -191,8 +201,15 @@ class PurchaseManager: ObservableObject {
     private func applyCustomerInfo(_ info: CustomerInfo) {
         customerInfo = info
         purchasedProductIDs = info.activeSubscriptions
+        hasCompletedInitialPremiumCheck = true
         debugLog += "Active subscriptions: \(info.activeSubscriptions)\n"
         debugLog += "Active entitlements: \(info.entitlements.active.keys)\n"
+    }
+
+    nonisolated func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
+        Task { @MainActor [weak self] in
+            self?.applyCustomerInfo(customerInfo)
+        }
     }
 
     private func logLoadedPackageDetails(_ packages: [Package]) {
@@ -267,7 +284,7 @@ enum StoreError: LocalizedError {
         case .unknown:
             return "An unknown error occurred"
         case .purchaseInProgress:
-            return "A purchase is already in progress"
+            return "A purchase or restore is already in progress"
         }
     }
 } 

@@ -2,6 +2,7 @@ import Foundation
 import CloudKit
 import SwiftData
 import UIKit
+import HealthKit
 
 class CloudKitManager {
     static let shared = CloudKitManager()
@@ -388,7 +389,14 @@ private extension CloudKitManager {
 
         var categoryMap: [UUID: WorkoutCategory] = [:]
         for export in payload.categories {
-            let category = WorkoutCategory(name: export.name, color: export.color, workoutType: export.workoutType)
+            let category = WorkoutCategory(
+                name: export.name,
+                color: export.color,
+                workoutType: export.workoutType,
+                appleWorkoutActivityType: export.appleWorkoutActivityTypeRaw.flatMap {
+                    HKWorkoutActivityType(rawValue: UInt($0))
+                }
+            )
             category.id = export.id
             context.insert(category)
             categoryMap[export.id] = category
@@ -414,6 +422,9 @@ private extension CloudKitManager {
             let strengthTemplate = StrengthWorkoutTemplate(
                 name: export.name,
                 mainCategoryRawValue: export.mainCategoryRawValue,
+                appleWorkoutActivityType: export.appleWorkoutActivityTypeRaw.flatMap {
+                    HKWorkoutActivityType(rawValue: UInt($0))
+                },
                 createdAt: export.createdAt,
                 updatedAt: export.updatedAt,
                 exercises: []
@@ -452,7 +463,8 @@ private extension CloudKitManager {
                 notes: export.notes,
                 categories: export.categoryIds?.compactMap { categoryMap[$0] },
                 subcategories: export.subcategoryIds?.compactMap { subcategoryMap[$0] },
-                hkActivityTypeRaw: export.hkActivityTypeRaw
+                hkActivityTypeRaw: export.hkActivityTypeRaw,
+                hkLocationTypeRaw: export.hkLocationTypeRaw
             )
             workout.id = export.id
             workout.hkUUID = export.hkUUID

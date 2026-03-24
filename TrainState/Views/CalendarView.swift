@@ -208,17 +208,17 @@ private struct CalendarWorkoutRow: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            Image(systemName: workout.type.systemImage)
+            Image(systemName: workout.primaryWorkoutSystemImage)
                 .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(workout.type.tintColor)
+                .foregroundStyle(workout.primaryWorkoutTintColor)
                 .frame(width: 44, height: 44)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(workout.type.tintColor.opacity(0.15))
+                        .fill(workout.primaryWorkoutTintColor.opacity(0.15))
                 )
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(workout.type.rawValue)
+                Text(workout.primaryWorkoutDisplayName)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text(workout.startDate.formatted(date: .omitted, time: .shortened))

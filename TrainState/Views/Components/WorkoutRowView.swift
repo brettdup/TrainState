@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import HealthKit
 
 enum WorkoutRowStyle: String, CaseIterable {
     case standard = "Standard"
@@ -13,6 +14,7 @@ enum WorkoutRowStyle: String, CaseIterable {
 struct WorkoutRowView: View {
     let workout: Workout
     var style: WorkoutRowStyle = .standard
+    var showsChevron: Bool = true
 
     var body: some View {
         switch style {
@@ -31,32 +33,38 @@ struct WorkoutRowView: View {
 
     // MARK: - Standard Layout (Icon left, content middle, stats right)
     private var standardLayout: some View {
-        HStack(spacing: 12) {
-            iconView(size: 42, iconSize: 18, cornerRadius: 12)
+        HStack(alignment: .top, spacing: 12) {
+            iconView(size: 40, iconSize: 18, cornerRadius: 10)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(workout.type.rawValue)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(workout.primaryWorkoutDisplayName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
 
-                    Text("· \(formattedDuration(workout.duration))")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
+                if hasCategorySummary {
+                    categorySummaryView
                 }
 
-                categoriesText
-                dateText
+                if hasSubcategorySummary {
+                    subcategorySummaryView
+                }
+
+                if shouldShowDateLabel {
+                    dateLabel
+                }
+
+                metadataWrap
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 12)
 
-            distanceBadge
-            chevron
+            trailingChevron
+                .padding(.top, 6)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .glassCard(prominence: .elevated)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Stacked Layout (Header row, then categories, then stats row)
@@ -67,9 +75,17 @@ struct WorkoutRowView: View {
                 iconView(size: 44, iconSize: 20, cornerRadius: 12)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(workout.type.rawValue)
+                    Text(workout.primaryWorkoutDisplayName)
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.primary)
+
+                    if hasCategorySummary {
+                        categorySummaryView
+                    }
+
+                    if hasSubcategorySummary {
+                        subcategorySummaryView
+                    }
 
                     Text(formattedDate)
                         .font(.system(size: 12))
@@ -78,15 +94,7 @@ struct WorkoutRowView: View {
 
                 Spacer()
 
-                chevron
-            }
-
-            // Categories & subcategories
-            if hasCategories || hasSubcategories {
-                VStack(alignment: .leading, spacing: 4) {
-                    categoriesText
-                    subcategoriesText
-                }
+                trailingChevron
             }
 
             // Bottom row: stats
@@ -112,18 +120,21 @@ struct WorkoutRowView: View {
                 HStack(spacing: 10) {
                     iconView(size: 40, iconSize: 18, cornerRadius: 10)
 
-                    Text(workout.type.rawValue)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.primary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(workout.primaryWorkoutDisplayName)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.primary)
+
+                        if hasCategorySummary {
+                            categorySummaryView
+                        }
+
+                        if hasSubcategorySummary {
+                            subcategorySummaryView
+                        }
+                    }
                 }
 
-                if hasCategories || hasSubcategories {
-                    VStack(alignment: .leading, spacing: 3) {
-                        categoriesText
-                        subcategoriesText
-                    }
-                    .padding(.leading, 50)
-                }
             }
 
             Spacer(minLength: 12)
@@ -137,7 +148,7 @@ struct WorkoutRowView: View {
                 if let distance = workout.distance, distance > 0 {
                     Text(String(format: "%.1f km", distance))
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(workout.type.tintColor)
+                        .foregroundStyle(workout.primaryWorkoutTintColor)
                 }
 
                 Text(formattedDate)
@@ -145,7 +156,7 @@ struct WorkoutRowView: View {
                     .foregroundStyle(.tertiary)
             }
 
-            chevron
+            trailingChevron
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -164,35 +175,43 @@ struct WorkoutRowView: View {
                 if let distance = workout.distance, distance > 0 {
                     Text(String(format: "%.1f km", distance))
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(workout.type.tintColor)
+                        .foregroundStyle(workout.primaryWorkoutTintColor)
                 }
             }
             .frame(width: 60)
 
             Rectangle()
-                .fill(workout.type.tintColor.opacity(0.3))
+                .fill(workout.primaryWorkoutTintColor.opacity(0.3))
                 .frame(width: 2)
                 .padding(.vertical, 4)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Image(systemName: workout.type.systemImage)
+                    Image(systemName: workout.primaryWorkoutSystemImage)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(workout.type.tintColor)
+                        .foregroundStyle(workout.primaryWorkoutTintColor)
 
-                    Text(workout.type.rawValue)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(workout.primaryWorkoutDisplayName)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.primary)
+
+                        if hasCategorySummary {
+                            categorySummaryView
+                        }
+
+                        if hasSubcategorySummary {
+                            subcategorySummaryView
+                        }
+                    }
                 }
 
-                categoriesText
-                subcategoriesText
                 dateText
             }
 
             Spacer(minLength: 8)
 
-            chevron
+            trailingChevron
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -206,18 +225,18 @@ struct WorkoutRowView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(workout.type.rawValue)
+                    Text(workout.primaryWorkoutDisplayName)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.primary)
 
-                    if let categories = workout.categories, !categories.isEmpty {
-                        Text("·")
-                            .foregroundStyle(.quaternary)
-                        Text(categories.map(\.name).joined(separator: ", "))
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                }
+
+                if hasCategorySummary {
+                    categorySummaryView
+                }
+
+                if hasSubcategorySummary {
+                    subcategorySummaryView
                 }
 
                 HStack(spacing: 12) {
@@ -225,11 +244,11 @@ struct WorkoutRowView: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
 
-                    if let distance = workout.distance, distance > 0 {
-                        Text(String(format: "%.1f km", distance))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(workout.type.tintColor)
-                    }
+                if let distance = workout.distance, distance > 0 {
+                    Text(String(format: "%.1f km", distance))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(workout.primaryWorkoutTintColor)
+                }
 
                     Text(shortDate)
                         .font(.system(size: 11))
@@ -239,7 +258,7 @@ struct WorkoutRowView: View {
 
             Spacer(minLength: 8)
 
-            chevron
+            trailingChevron
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -248,39 +267,22 @@ struct WorkoutRowView: View {
 
     // MARK: - Shared Components
     private func iconView(size: CGFloat, iconSize: CGFloat, cornerRadius: CGFloat) -> some View {
-        Image(systemName: workout.type.systemImage)
+        Image(systemName: workout.primaryWorkoutSystemImage)
             .font(.system(size: iconSize, weight: .semibold))
-            .foregroundStyle(workout.type.tintColor)
+            .foregroundStyle(workout.primaryWorkoutTintColor)
             .frame(width: size, height: size)
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(workout.type.tintColor.opacity(0.12))
+                    .fill(workout.primaryWorkoutTintColor.opacity(0.12))
             )
     }
 
-    private var chevron: some View {
-        Image(systemName: "chevron.right")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.tertiary)
-    }
-
     @ViewBuilder
-    private var categoriesText: some View {
-        if let categories = workout.categories, !categories.isEmpty {
-            Text(categories.map(\.name).joined(separator: " · "))
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-    }
-
-    @ViewBuilder
-    private var subcategoriesText: some View {
-        if let subcategories = workout.subcategories, !subcategories.isEmpty {
-            Text(subcategories.map(\.name).joined(separator: ", "))
-                .font(.system(size: 12))
+    private var trailingChevron: some View {
+        if showsChevron {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.tertiary)
-                .lineLimit(1)
         }
     }
 
@@ -290,19 +292,126 @@ struct WorkoutRowView: View {
             .foregroundStyle(.tertiary)
     }
 
+    private var metadataWrap: some View {
+        HStack(spacing: 8) {
+            statChip(icon: "clock", value: formattedDuration(workout.duration))
+            if let distance = workout.distance, distance > 0 {
+                statChip(icon: distanceIconName, value: String(format: "%.1f km", distance), tinted: true)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var hasCategorySummary: Bool {
+        !categorySummary.isEmpty
+    }
+
+    private var hasSubcategorySummary: Bool {
+        !subcategorySummary.isEmpty
+    }
+
+    private var categorySummary: String {
+        let categoryNames = (workout.categories ?? [])
+            .map(\.name)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let ordered = Array(NSOrderedSet(array: categoryNames)) as? [String] ?? []
+        return ordered.prefix(2).joined(separator: " • ")
+    }
+
+    private var subcategorySummary: String {
+        let subcategoryNames = (workout.subcategories ?? [])
+            .map(\.name)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let ordered = Array(NSOrderedSet(array: subcategoryNames)) as? [String] ?? []
+        return ordered.prefix(3).joined(separator: " • ")
+    }
+
+    private var categorySummaryView: some View {
+        Label {
+            Text(categorySummary)
+        } icon: {
+            Image(systemName: "folder")
+        }
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+
+    private var subcategorySummaryView: some View {
+        Label {
+            Text(subcategorySummary)
+        } icon: {
+            Image(systemName: "tag")
+        }
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(.secondary)
+        .lineLimit(2)
+    }
+
+    private var dateLabel: some View {
+        Text(shortDate)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+    }
+
     @ViewBuilder
     private var distanceBadge: some View {
         if let distance = workout.distance, distance > 0 {
             Text(String(format: "%.1f km", distance))
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(workout.type.tintColor)
+                .foregroundStyle(workout.primaryWorkoutTintColor)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .background(
                     Capsule()
-                        .fill(workout.type.tintColor.opacity(0.10))
+                        .fill(workout.primaryWorkoutTintColor.opacity(0.10))
                 )
         }
+    }
+
+    private var distanceIconName: String {
+        switch workout.appleWorkoutActivityType {
+        case .cycling, .handCycling:
+            return "bicycle"
+        case .swimming, .waterFitness, .waterPolo, .waterSports, .underwaterDiving:
+            return "drop.fill"
+        case .rowing:
+            return "figure.rower"
+        default:
+            return "arrow.left.and.right"
+        }
+    }
+
+    private func statChip(icon: String, value: String, tinted: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(tinted ? workout.primaryWorkoutTintColor : .secondary)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(tinted ? workout.primaryWorkoutTintColor : .secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            Capsule()
+                .fill(
+                    tinted
+                        ? workout.primaryWorkoutTintColor.opacity(0.10)
+                        : Color(.tertiarySystemBackground)
+                )
+        )
+        .overlay(
+            Capsule()
+                .stroke(
+                    tinted ? workout.primaryWorkoutTintColor.opacity(0.18) : Color.primary.opacity(0.08),
+                    lineWidth: 0.75
+                )
+        )
     }
 
     private func statPill(icon: String, value: String) -> some View {
@@ -320,14 +429,6 @@ struct WorkoutRowView: View {
             Capsule()
                 .fill(Color(.tertiarySystemBackground))
         )
-    }
-
-    private var hasCategories: Bool {
-        workout.categories?.isEmpty == false
-    }
-
-    private var hasSubcategories: Bool {
-        workout.subcategories?.isEmpty == false
     }
 
     // MARK: - Helpers
@@ -351,6 +452,11 @@ struct WorkoutRowView: View {
         return workout.startDate.formatted(date: .abbreviated, time: .omitted)
     }
 
+    private var shouldShowDateLabel: Bool {
+        let calendar = Calendar.current
+        return !calendar.isDateInToday(workout.startDate) && !calendar.isDateInYesterday(workout.startDate)
+    }
+
     private func formattedDuration(_ duration: TimeInterval) -> String {
         let hours = Int(duration) / 3600
         let minutes = (Int(duration) % 3600) / 60
@@ -363,158 +469,38 @@ struct WorkoutRowView: View {
     }
 }
 
+
 // MARK: - Preview
-#Preview("Workout Row Layouts") {
+#Preview("Workout Row") {
     WorkoutRowPreview()
 }
 
 private struct WorkoutRowPreview: View {
-    @State private var selectedStyle: WorkoutRowStyle = .standard
-
     var body: some View {
         let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, configurations: config)
         let context = container.mainContext
 
-        let push = WorkoutCategory(name: "Push", color: "#FF6B6B", workoutType: .strength)
-        let pull = WorkoutCategory(name: "Pull", color: "#4ECDC4", workoutType: .strength)
-        let legs = WorkoutCategory(name: "Legs", color: "#45B7D1", workoutType: .strength)
-        let core = WorkoutCategory(name: "Core", color: "#96CEB4", workoutType: .strength)
-        context.insert(push)
-        context.insert(pull)
-        context.insert(legs)
-        context.insert(core)
-
-        let benchPress = WorkoutSubcategory(name: "Bench Press", category: push)
-        let shoulderPress = WorkoutSubcategory(name: "Shoulder Press", category: push)
-        let triceps = WorkoutSubcategory(name: "Triceps", category: push)
-        let rows = WorkoutSubcategory(name: "Rows", category: pull)
-        let pullUps = WorkoutSubcategory(name: "Pull Ups", category: pull)
-        let biceps = WorkoutSubcategory(name: "Biceps", category: pull)
-        let squats = WorkoutSubcategory(name: "Squats", category: legs)
-        let deadlifts = WorkoutSubcategory(name: "Deadlifts", category: legs)
-        let lunges = WorkoutSubcategory(name: "Lunges", category: legs)
-        let planks = WorkoutSubcategory(name: "Planks", category: core)
-        context.insert(benchPress)
-        context.insert(shoulderPress)
-        context.insert(triceps)
-        context.insert(rows)
-        context.insert(pullUps)
-        context.insert(biceps)
-        context.insert(squats)
-        context.insert(deadlifts)
-        context.insert(lunges)
-        context.insert(planks)
-
-        let strengthWorkout = Workout(
+        let longNameWorkout = Workout(
             type: .strength,
-            startDate: .now,
-            duration: 3600,
+            startDate: .now.addingTimeInterval(-18000),
+            duration: 4260,
             distance: nil,
-            categories: [push, pull],
-            subcategories: [benchPress, rows]
+            hkActivityTypeRaw: Int(HKWorkoutActivityType.traditionalStrengthTraining.rawValue)
         )
-        context.insert(strengthWorkout)
-
-        let runningWorkout = Workout(
-            type: .running,
-            startDate: .now.addingTimeInterval(-86400),
-            duration: 2700,
-            distance: 6.2
-        )
-        context.insert(runningWorkout)
-
-        let yogaWorkout = Workout(
-            type: .yoga,
-            startDate: .now.addingTimeInterval(-172800),
-            duration: 1800,
-            distance: nil
-        )
-        context.insert(yogaWorkout)
-
-        let cyclingWorkout = Workout(
-            type: .cycling,
-            startDate: .now.addingTimeInterval(-259200),
-            duration: 5400,
-            distance: 32.5
-        )
-        context.insert(cyclingWorkout)
-
-        let cardioWorkout = Workout(
-            type: .cardio,
-            startDate: .now.addingTimeInterval(-345600),
-            duration: 2400,
-            distance: nil,
-            categories: [push]
-        )
-        context.insert(cardioWorkout)
-
-        let minimal = Workout(
-            type: .strength,
-            startDate: .now.addingTimeInterval(-432000),
-            duration: 1800,
-            distance: nil,
-            categories: [push],
-            subcategories: [benchPress]
-        )
-        context.insert(minimal)
-
-        let pushDay = Workout(
-            type: .strength,
-            startDate: .now.addingTimeInterval(-518400),
-            duration: 3000,
-            distance: nil,
-            categories: [push],
-            subcategories: [benchPress, shoulderPress, triceps]
-        )
-        context.insert(pushDay)
-
-        let legDay = Workout(
-            type: .strength,
-            startDate: .now.addingTimeInterval(-604800),
-            duration: 4500,
-            distance: nil,
-            categories: [legs, core],
-            subcategories: [squats, deadlifts, lunges, planks]
-        )
-        context.insert(legDay)
-
-        let fullBody = Workout(
-            type: .strength,
-            startDate: .now.addingTimeInterval(-691200),
-            duration: 5400,
-            distance: nil,
-            categories: [push, pull, legs, core],
-            subcategories: [benchPress, shoulderPress, rows, pullUps, squats, planks]
-        )
-        context.insert(fullBody)
+        context.insert(longNameWorkout)
 
         return NavigationStack {
             ScrollView {
-                VStack(spacing: 12) {
-                    WorkoutRowView(workout: minimal, style: selectedStyle)
-                    WorkoutRowView(workout: pushDay, style: selectedStyle)
-                    WorkoutRowView(workout: strengthWorkout, style: selectedStyle)
-                    WorkoutRowView(workout: legDay, style: selectedStyle)
-                    WorkoutRowView(workout: fullBody, style: selectedStyle)
-                    WorkoutRowView(workout: runningWorkout, style: selectedStyle)
-                    WorkoutRowView(workout: cyclingWorkout, style: selectedStyle)
-                    WorkoutRowView(workout: yogaWorkout, style: selectedStyle)
-                    WorkoutRowView(workout: cardioWorkout, style: selectedStyle)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Traditional Strength Training")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    WorkoutRowView(workout: longNameWorkout)
                 }
                 .padding()
             }
-            .navigationTitle("Workout Rows")
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("Style", selection: $selectedStyle) {
-                        ForEach(WorkoutRowStyle.allCases, id: \.self) { style in
-                            Text(style.rawValue).tag(style)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-            }
+            .navigationTitle("Workout Row")
         }
         .modelContainer(container)
     }

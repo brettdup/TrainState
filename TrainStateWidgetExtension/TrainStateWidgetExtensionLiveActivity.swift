@@ -34,8 +34,7 @@ struct TrainStateWidgetExtensionLiveActivity: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(formattedDuration(context.state.elapsedSeconds))
-                        .font(.headline.monospacedDigit())
+                    elapsedTimerText(startedAt: context.attributes.startedAt, font: .headline)
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
@@ -56,8 +55,7 @@ struct TrainStateWidgetExtensionLiveActivity: Widget {
                 Image(systemName: "bolt.heart.fill")
                     .foregroundStyle(.green)
             } compactTrailing: {
-                Text(shortDuration(context.state.elapsedSeconds))
-                    .font(.caption2.monospacedDigit())
+                elapsedTimerText(startedAt: context.attributes.startedAt, font: .caption2)
             } minimal: {
                 Image(systemName: "bolt.heart.fill")
                     .foregroundStyle(.green)
@@ -67,16 +65,10 @@ struct TrainStateWidgetExtensionLiveActivity: Widget {
         }
     }
 
-    private func formattedDuration(_ elapsedSeconds: Int) -> String {
-        let hours = elapsedSeconds / 3600
-        let minutes = (elapsedSeconds % 3600) / 60
-        let seconds = elapsedSeconds % 60
-        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
-    }
-
-    private func shortDuration(_ elapsedSeconds: Int) -> String {
-        let minutes = elapsedSeconds / 60
-        return "\(minutes)m"
+    @ViewBuilder
+    private func elapsedTimerText(startedAt: Date, font: Font) -> some View {
+        Text(timerInterval: startedAt...Date.distantFuture, countsDown: false)
+            .font(font.monospacedDigit())
     }
 }
 
@@ -98,7 +90,7 @@ private struct LockScreenLiveActivityView: View {
 
                     Spacer(minLength: 0)
 
-                    Text(durationText)
+                    Text(timerInterval: context.attributes.startedAt...Date.distantFuture, countsDown: false)
                         .font(.headline.monospacedDigit())
                 }
 
@@ -115,14 +107,6 @@ private struct LockScreenLiveActivityView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-    }
-
-    private var durationText: String {
-        let elapsedSeconds = context.state.elapsedSeconds
-        let hours = elapsedSeconds / 3600
-        let minutes = (elapsedSeconds % 3600) / 60
-        let seconds = elapsedSeconds % 60
-        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
     }
 }
 

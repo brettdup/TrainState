@@ -3,14 +3,16 @@ import SwiftData
 import RevenueCatUI
 import HealthKit
 import UserNotifications
+import CoreLocation
 
 struct WorkoutListView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
     @Query private var categories: [WorkoutCategory]
     @Query private var subcategories: [WorkoutSubcategory]
+    @Query(sort: \StrengthWorkoutTemplate.updatedAt, order: .reverse) private var strengthTemplates: [StrengthWorkoutTemplate]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var showingAddWorkout = false
     @State private var showingPaywall = false
@@ -23,11 +25,23 @@ struct WorkoutListView: View {
     @State private var isLoadingRecentHealthKitWorkouts = false
     @State private var isImportingHealthKitWorkout = false
     @State private var healthKitImportErrorMessage: String?
-    @State private var healthKitImportSuccessMessage: String?
     @State private var newlyImportedHealthKitUUIDs: Set<String> = []
     @State private var pendingHealthKitItem: HealthKitRecentWorkoutMenuItem?
     @State private var pendingAttachItem: HealthKitRecentWorkoutMenuItem?
     @State private var showingHealthKitActionSheet = false
+    @State private var editingWorkout: Workout?
+    @State private var workoutForRoutePreview: Workout?
+    @State private var workoutForCategoryAssignment: Workout?
+    @State private var workoutForExercisePreview: Workout?
+    @State private var workoutPendingDelete: Workout?
+    @State private var showingWorkoutDeleteConfirmation = false
+    @State private var workoutPendingTemplateSave: Workout?
+    @State private var showingSaveTemplateAlert = false
+    @State private var templateName = ""
+    @State private var selectedCategoriesForAssignment: [WorkoutCategory] = []
+    @State private var selectedSubcategoriesForAssignment: [WorkoutSubcategory] = []
+    @State private var pendingCategoryAssignmentWorkout: Workout?
+    @State private var pendingCategoryAssignmentSaveTask: Task<Void, Never>?
     @State private var lastKnownWorkoutCount = 0
     @State private var successBanner: SuccessBannerModel?
     @State private var bannerDismissTask: Task<Void, Never>?
@@ -42,91 +56,10 @@ struct WorkoutListView: View {
         purchaseManager.hasCompletedInitialPremiumCheck && !purchaseManager.hasActiveSubscription
     }
 
-    private var mainBackgroundColor: Color {
-        colorScheme == .dark ? Color(.systemBackground) : Color(.systemGroupedBackground)
-    }
-
-    private var mainBackgroundAccent: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color.accentColor.opacity(colorScheme == .dark ? 0.06 : 0.03),
-                .clear
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
     var body: some View {
         NavigationStack {
-            ZStack {
-                mainBackgroundColor
-                    .ignoresSafeArea()
-
-                mainBackgroundAccent.ignoresSafeArea()
-
-                if groupedVisibleWorkouts.isEmpty {
-                    ScrollView {
-                        GlassEffectContainerWrapper(spacing: 16) {
-                            VStack(spacing: 16) {
-                                ContentUnavailableView {
-                                    Label("No Workouts", systemImage: "figure.run")
-                                } description: {
-                                    Text("Tap + to log your first workout.")
-                                }
-                                .padding(.top, 32)
-
-                                if showLimitsCard {
-                                    limitsCard
-                                }
-                                if shouldShowFirstSessionChecklist {
-                                    firstSessionChecklistCard
-                                }
-                                rateAppCard
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 20)
-                    }
-                } else {
-                    ScrollView {
-                        GlassEffectContainerWrapper(spacing: 14) {
-                            LazyVStack(spacing: 14) {
-                                if showLimitsCard {
-                                    limitsCard
-                                }
-                                if shouldShowFirstSessionChecklist {
-                                    firstSessionChecklistCard
-                                }
-                                ForEach(groupedVisibleWorkouts, id: \.date) { entry in
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text(sectionHeaderTitle(for: entry.date))
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 4)
-
-                                        VStack(spacing: 10) {
-                                            ForEach(entry.items, id: \.id) { workout in
-                                                NavigationLink {
-                                                    WorkoutDetailView(workout: workout)
-                                                } label: {
-                                                    WorkoutRowView(workout: workout)
-                                                        .contentShape(Rectangle())
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                        }
-                                    }
-                                }
-                                rateAppCard
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .padding(.bottom, 20)
-                    }
-                }
-            }
+            workoutListContent
+            .listStyle(.insetGrouped)
             .navigationTitle("Workouts")
             .navigationBarTitleDisplayMode(.large)
             .safeAreaInset(edge: .top) {
@@ -138,89 +71,26 @@ struct WorkoutListView: View {
                 }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.86), value: successBanner)
-            .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Menu {
-                        ForEach(WorkoutFilter.allCases, id: \.self) { filter in
-                            Button {
-                                selectedFilter = filter
-                            } label: {
-                                if selectedFilter == filter {
-                                    Label(filter.rawValue, systemImage: "checkmark")
-                                } else {
-                                    Text(filter.rawValue)
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                    }
-                    Menu {
-                        Section("HealthKit") {
-                            Button {
-                                Task { await loadRecentHealthKitWorkouts() }
-                            } label: {
-                                Label("Refresh Recent Workouts", systemImage: "arrow.clockwise")
-                            }
-                            .menuActionDismissBehavior(.disabled)
-                        }
-
-                        if isLoadingRecentHealthKitWorkouts {
-                            Section {
-                                Label("Loading...", systemImage: "hourglass")
-                            }
-                        } else if recentHealthKitWorkouts.isEmpty {
-                            Section {
-                                Text("No recent workouts available for import.")
-                            }
-                        } else {
-                            Section("Recent Workouts") {
-                                ForEach(recentHealthKitWorkouts) { candidate in
-                                    let isImported = importedHealthKitUUIDs.contains(candidate.hkUUID) || newlyImportedHealthKitUUIDs.contains(candidate.hkUUID)
-                                    Button {
-                                        pendingHealthKitItem = candidate
-                                        showingHealthKitActionSheet = true
-                                    } label: {
-                                        HStack(alignment: .top, spacing: 10) {
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(healthKitWorkoutTitle(candidate))
-                                                Text(healthKitWorkoutSubtitle(candidate))
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                            Spacer()
-                                            if isImported {
-                                                Label("Imported", systemImage: "checkmark.circle.fill")
-                                                    .font(.caption.weight(.semibold))
-                                                    .foregroundStyle(.green)
-                                            }
-                                        }
-                                    }
-                                    .disabled(isImported)
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "heart.text.square")
-                    }
-                    .disabled(isImportingHealthKitWorkout)
-                    Button {
-                        if canAddWorkout {
-                            showingAddWorkout = true
-                        } else {
-                            Task {
-                                await purchaseManager.loadProducts()
-                                await purchaseManager.updatePurchasedProducts()
-                                showingPaywall = true
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                }
-            }
+            .toolbar(content: workoutToolbarContent)
             .sheet(isPresented: $showingAddWorkout) {
                 AddWorkoutView()
+            }
+            .sheet(item: $editingWorkout) { workout in
+                EditWorkoutView(workout: workout)
+            }
+            .sheet(item: $workoutForRoutePreview) { workout in
+                routePreviewSheet(for: workout)
+            }
+            .sheet(item: $workoutForCategoryAssignment) { workout in
+                CategoryAndSubcategorySelectionView(
+                    selectedCategories: $selectedCategoriesForAssignment,
+                    selectedSubcategories: $selectedSubcategoriesForAssignment,
+                    workoutType: workout.type,
+                    appleWorkoutActivityType: workout.appleWorkoutActivityType
+                )
+            }
+            .sheet(item: $workoutForExercisePreview) { workout in
+                workoutExercisesSheet(for: workout)
             }
             .sheet(isPresented: $showingPaywall) {
                 if let offering = purchaseManager.offerings?.current {
@@ -229,25 +99,41 @@ struct WorkoutListView: View {
                     PaywallPlaceholderView(onDismiss: { showingPaywall = false })
                 }
             }
-            .alert("HealthKit Import", isPresented: Binding(
-                get: { healthKitImportErrorMessage != nil || healthKitImportSuccessMessage != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        healthKitImportErrorMessage = nil
-                        healthKitImportSuccessMessage = nil
-                    }
-                }
-            )) {
+            .alert("HealthKit Import", isPresented: healthKitImportAlertBinding) {
                 Button("OK", role: .cancel) {
                     healthKitImportErrorMessage = nil
-                    healthKitImportSuccessMessage = nil
                 }
             } message: {
                 if let healthKitImportErrorMessage {
                     Text(healthKitImportErrorMessage)
-                } else if let healthKitImportSuccessMessage {
-                    Text(healthKitImportSuccessMessage)
                 }
+            }
+            .alert("Save as Template", isPresented: $showingSaveTemplateAlert) {
+                TextField("Template name", text: $templateName)
+                Button("Cancel", role: .cancel) {
+                    workoutPendingTemplateSave = nil
+                    templateName = ""
+                }
+                Button("Save") {
+                    saveWorkoutAsTemplate()
+                }
+                .disabled(templateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } message: {
+                Text("Save this workout's exercises as a reusable strength template.")
+            }
+            .confirmationDialog(
+                "Delete Workout",
+                isPresented: $showingWorkoutDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    deleteSelectedWorkout()
+                }
+                Button("Cancel", role: .cancel) {
+                    workoutPendingDelete = nil
+                }
+            } message: {
+                Text("This workout will be permanently deleted. This action cannot be undone.")
             }
             .confirmationDialog(
                 "Use this Apple Health workout",
@@ -278,6 +164,7 @@ struct WorkoutListView: View {
             loadCachedRecentHealthKitWorkouts()
             lastKnownWorkoutCount = workouts.count
             syncReminderPermissionStatus()
+            Task { await loadRecentHealthKitWorkouts(showAlerts: false) }
         }
         .onChange(of: workouts.count) { _, newCount in
             if newCount > lastKnownWorkoutCount {
@@ -285,19 +172,297 @@ struct WorkoutListView: View {
             }
             lastKnownWorkoutCount = newCount
         }
+        .onChange(of: workoutForCategoryAssignment) { _, newValue in
+            if newValue == nil, pendingCategoryAssignmentWorkout != nil {
+                pendingCategoryAssignmentSaveTask?.cancel()
+                pendingCategoryAssignmentSaveTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(180))
+                    applyWorkoutCategoryAssignment()
+                }
+            }
+        }
+    }
+
+    private var workoutListContent: some View {
+        List {
+            if groupedVisibleWorkouts.isEmpty {
+                emptyWorkoutsSection
+            }
+
+            if showLimitsCard {
+                Section("Free Tier") {
+                    limitsCard
+                }
+            }
+
+            if shouldShowFirstSessionChecklist {
+                Section("Getting Started") {
+                    firstSessionChecklistCard
+                }
+            }
+
+            ForEach(groupedVisibleWorkouts, id: \.date) { entry in
+                workoutSection(for: entry)
+            }
+
+            Section {
+                rateAppCard
+            }
+        }
+    }
+
+    private var emptyWorkoutsSection: some View {
+        Section {
+            ContentUnavailableView {
+                Label(emptyWorkoutsTitle, systemImage: emptyWorkoutsSystemImage)
+            } description: {
+                Text(emptyWorkoutsDescription)
+            }
+            .frame(maxWidth: .infinity)
+            .listRowBackground(Color.clear)
+        }
+    }
+
+    private var emptyWorkoutsTitle: String {
+        if selectedFilter == .all {
+            return "No Workouts"
+        }
+        return "No \(selectedFilter.title) Workouts"
+    }
+
+    private var emptyWorkoutsDescription: String {
+        if selectedFilter == .all {
+            return "Tap + to log your first workout."
+        }
+        return "No workouts match the current filter."
+    }
+
+    private var emptyWorkoutsSystemImage: String {
+        switch selectedFilter {
+        case .all:
+            return "figure.run"
+        case .apple(let activityType):
+            return activityType.systemImage
+        }
+    }
+
+    private func workoutSection(for entry: (date: Date, items: [Workout])) -> some View {
+        Section(sectionHeaderTitle(for: entry.date)) {
+            ForEach(entry.items, id: \.id) { workout in
+                workoutRow(for: workout)
+            }
+        }
+    }
+
+    private func workoutRow(for workout: Workout) -> some View {
+        NavigationLink {
+            WorkoutDetailView(workout: workout)
+        } label: {
+            WorkoutRowView(workout: workout, showsChevron: false)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                editingWorkout = workout
+            } label: {
+                Label("Edit Workout", systemImage: "pencil")
+            }
+
+            if canSaveAsStrengthTemplate(workout) {
+                Button {
+                    workoutPendingTemplateSave = workout
+                    templateName = defaultTemplateName(for: workout)
+                    showingSaveTemplateAlert = true
+                } label: {
+                    Label("Save as Template", systemImage: "square.and.arrow.down")
+                }
+            }
+
+            if hasRoute(workout) {
+                Button {
+                    workoutForRoutePreview = workout
+                } label: {
+                    Label("View Route", systemImage: "map")
+                }
+            }
+
+            Button {
+                prepareCategoryAssignment(for: workout)
+            } label: {
+                Label("Assign Categories", systemImage: "tag")
+            }
+
+            if hasExercises(workout) {
+                Button {
+                    workoutForExercisePreview = workout
+                } label: {
+                    Label("View Exercises", systemImage: "list.bullet")
+                }
+            }
+
+            Button {
+                openWorkoutInCalendar(workout)
+            } label: {
+                Label("Open in Calendar", systemImage: "calendar")
+            }
+
+            Button(role: .destructive) {
+                workoutPendingDelete = workout
+                showingWorkoutDeleteConfirmation = true
+            } label: {
+                Label("Delete Workout", systemImage: "trash")
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private func workoutToolbarContent() -> some ToolbarContent {
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+            filterMenu
+            healthKitMenu
+            addWorkoutButton
+        }
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            ForEach(WorkoutFilter.allCases, id: \.self) { filter in
+                Button {
+                    selectedFilter = filter
+                } label: {
+                    if selectedFilter == filter {
+                        Label(filter.title, systemImage: "checkmark")
+                    } else {
+                        Text(filter.title)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+        }
+    }
+
+    private var healthKitMenu: some View {
+        Menu {
+            Section("HealthKit") {
+                Button {
+                    Task { await loadRecentHealthKitWorkouts() }
+                } label: {
+                    Label("Refresh Recent Workouts", systemImage: "arrow.clockwise")
+                }
+                .menuActionDismissBehavior(.disabled)
+
+                Button {
+                    Task { await importAllAvailableHealthKitWorkouts() }
+                } label: {
+                    Label(
+                        bulkImportButtonTitle,
+                        systemImage: "square.and.arrow.down.on.square"
+                    )
+                }
+                .disabled(isImportingHealthKitWorkout || availableHealthKitImportCandidates.isEmpty)
+                .menuActionDismissBehavior(.disabled)
+            }
+
+            healthKitRecentWorkoutsSection
+        } label: {
+            Image(systemName: "heart.text.square")
+        }
+        .disabled(isImportingHealthKitWorkout)
+    }
+
+    @ViewBuilder
+    private var healthKitRecentWorkoutsSection: some View {
+        if isLoadingRecentHealthKitWorkouts {
+            Section {
+                Label("Loading...", systemImage: "hourglass")
+            }
+        } else if recentHealthKitWorkouts.isEmpty {
+            Section {
+                Text("No recent workouts available for import.")
+            }
+        } else {
+            Section("Recent Workouts") {
+                ForEach(recentHealthKitWorkouts) { candidate in
+                    healthKitCandidateButton(for: candidate)
+                }
+            }
+        }
+    }
+
+    private func healthKitCandidateButton(for candidate: HealthKitRecentWorkoutMenuItem) -> some View {
+        let isImported = importedHealthKitUUIDs.contains(candidate.hkUUID) || newlyImportedHealthKitUUIDs.contains(candidate.hkUUID)
+
+        return Button {
+            handleHealthKitCandidateSelection(candidate)
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: candidate.activityType.systemImage)
+                    .foregroundStyle(candidate.activityType.mappedWorkoutType.tintColor)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(healthKitWorkoutTitle(candidate))
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(healthKitWorkoutSubtitle(candidate))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                if isImported {
+                    Label("Imported", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
+            }
+        }
+        .disabled(isImported)
+    }
+
+    private func handleHealthKitCandidateSelection(_ candidate: HealthKitRecentWorkoutMenuItem) {
+        let sameDayWorkouts = attachableWorkouts(for: candidate)
+        if sameDayWorkouts.isEmpty {
+            Task { await importHealthKitWorkout(candidate) }
+        } else {
+            pendingHealthKitItem = candidate
+            showingHealthKitActionSheet = true
+        }
+    }
+
+    private var addWorkoutButton: some View {
+        Button {
+            if canAddWorkout {
+                showingAddWorkout = true
+            } else {
+                Task {
+                    await purchaseManager.loadProducts()
+                    await purchaseManager.updatePurchasedProducts()
+                    showingPaywall = true
+                }
+            }
+        } label: {
+            Image(systemName: "plus")
+        }
+    }
+
+    private var healthKitImportAlertBinding: Binding<Bool> {
+        Binding(
+            get: { healthKitImportErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    healthKitImportErrorMessage = nil
+                }
+            }
+        )
     }
 
     private var limitsCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: "crown.fill")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                Text("Free Tier Limits")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-
+        VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 8) {
                 limitRow(
                     label: "Workouts",
@@ -321,53 +486,184 @@ struct WorkoutListView: View {
                     showingPaywall = true
                 }
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "crown.fill")
-                    Text("Upgrade to Premium")
-                        .fontWeight(.semibold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.accentColor)
-                )
-                .foregroundStyle(.white)
+                Label("Upgrade to Premium", systemImage: "crown.fill")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderedProminent)
         }
-        .padding(16)
-        .glassCard(prominence: .elevated)
+    }
+
+    private func deleteSelectedWorkout() {
+        guard let workoutPendingDelete else { return }
+        modelContext.delete(workoutPendingDelete)
+        do {
+            try modelContext.save()
+        } catch {
+            healthKitImportErrorMessage = "Failed to delete workout. Please try again."
+        }
+        self.workoutPendingDelete = nil
+    }
+
+    private func hasRoute(_ workout: Workout) -> Bool {
+        guard let route = workout.route?.decodedRoute else { return false }
+        return !route.isEmpty
+    }
+
+    private func hasExercises(_ workout: Workout) -> Bool {
+        !(workout.exercises?.isEmpty ?? true)
+    }
+
+    private func canSaveAsStrengthTemplate(_ workout: Workout) -> Bool {
+        workout.type == .strength && !(workout.exercises?.isEmpty ?? true)
+    }
+
+    private func prepareCategoryAssignment(for workout: Workout) {
+        pendingCategoryAssignmentSaveTask?.cancel()
+        pendingCategoryAssignmentWorkout = workout
+        selectedCategoriesForAssignment = workout.categories ?? []
+        selectedSubcategoriesForAssignment = workout.subcategories ?? []
+        workoutForCategoryAssignment = workout
+    }
+
+    private func applyWorkoutCategoryAssignment() {
+        guard let workout = pendingCategoryAssignmentWorkout else { return }
+        workout.categories = selectedCategoriesForAssignment
+        workout.subcategories = selectedSubcategoriesForAssignment
+        try? modelContext.save()
+        pendingCategoryAssignmentWorkout = nil
+        workoutForCategoryAssignment = nil
+    }
+
+    private func openWorkoutInCalendar(_ workout: Workout) {
+        let referenceDate = Date(timeIntervalSinceReferenceDate: 0)
+        let timeInterval = workout.startDate.timeIntervalSince(referenceDate)
+        guard let url = URL(string: "calshow:\(timeInterval)") else { return }
+        openURL(url)
+    }
+
+    private func defaultTemplateName(for workout: Workout) -> String {
+        let base = "Strength \(workout.startDate.formatted(date: .abbreviated, time: .omitted))"
+        let existingNames = Set(strengthTemplates.map { $0.name.lowercased() })
+        if !existingNames.contains(base.lowercased()) {
+            return base
+        }
+
+        var suffix = 2
+        while existingNames.contains("\(base) \(suffix)".lowercased()) {
+            suffix += 1
+        }
+        return "\(base) \(suffix)"
+    }
+
+    private func saveWorkoutAsTemplate() {
+        guard let workout = workoutPendingTemplateSave else { return }
+
+        let name = templateName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        let sortedWorkoutExercises = (workout.exercises ?? []).sorted { $0.orderIndex < $1.orderIndex }
+        let templateExercises = sortedWorkoutExercises.enumerated().map { index, exercise in
+            StrengthWorkoutTemplateExercise(
+                name: exercise.name,
+                orderIndex: index,
+                sets: exercise.sets,
+                reps: exercise.reps,
+                weight: exercise.weight,
+                subcategoryID: exercise.subcategory?.id
+            )
+        }
+
+        guard !templateExercises.isEmpty else { return }
+
+        if let existing = strengthTemplates.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            existing.name = name
+            existing.mainCategoryRawValue = workout.type.rawValue
+            existing.appleWorkoutActivityType = workout.appleWorkoutActivityType ?? workout.type.defaultAppleWorkoutActivityType
+            existing.updatedAt = Date()
+            existing.exercises = templateExercises
+        } else {
+            let template = StrengthWorkoutTemplate(
+                name: name,
+                mainCategoryRawValue: workout.type.rawValue,
+                appleWorkoutActivityType: workout.appleWorkoutActivityType ?? workout.type.defaultAppleWorkoutActivityType,
+                exercises: templateExercises
+            )
+            modelContext.insert(template)
+        }
+
+        try? modelContext.save()
+        workoutPendingTemplateSave = nil
+        templateName = ""
+    }
+
+    @ViewBuilder
+    private func routePreviewSheet(for workout: Workout) -> some View {
+        if let route = workout.route?.decodedRoute, !route.isEmpty {
+            RouteMapSheetView(route: route)
+        } else {
+            NavigationStack {
+                ContentUnavailableView("No Route", systemImage: "map", description: Text("This workout does not have route data available."))
+                    .navigationTitle("Workout Route")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                workoutForRoutePreview = nil
+                            }
+                        }
+                    }
+            }
+        }
+    }
+
+    private func workoutExercisesSheet(for workout: Workout) -> some View {
+        let exercises = (workout.exercises ?? []).sorted { $0.orderIndex < $1.orderIndex }
+
+        return NavigationStack {
+            List {
+                if exercises.isEmpty {
+                    ContentUnavailableView("No Exercises", systemImage: "list.bullet", description: Text("This workout does not have any logged exercises."))
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                } else {
+                    ForEach(exercises, id: \.id) { exercise in
+                        ExerciseCardView(exercise: exercise, showChevron: false, colorScheme: colorScheme)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
+            .navigationTitle("Exercises")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        workoutForExercisePreview = nil
+                    }
+                }
+            }
+        }
     }
 
     private var rateAppCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Enjoying TrainState?")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(.headline)
             Text("Leave a review on the App Store.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button {
                 openAppStoreReviewPage()
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "star.bubble.fill")
-                    Text("Rate TrainState")
-                        .fontWeight(.semibold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.accentColor)
-                )
-                .foregroundStyle(.white)
+                Label("Rate TrainState", systemImage: "star.bubble.fill")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.bordered)
         }
-        .padding(16)
-        .glassCard(prominence: .elevated)
     }
 
     private var shouldShowFirstSessionChecklist: Bool {
@@ -386,14 +682,12 @@ struct WorkoutListView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("First Session Checklist")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.headline)
                 Spacer()
                 Button("Hide") {
                     hasDismissedFirstSessionChecklist = true
                 }
-                .font(.caption.weight(.semibold))
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
             }
 
             checklistRow(
@@ -413,13 +707,10 @@ struct WorkoutListView: View {
                     Button("Enable") {
                         requestReminderPermission()
                     }
-                    .font(.caption.weight(.semibold))
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderless)
                 }
             }
         }
-        .padding(16)
-        .glassCard(prominence: .elevated)
     }
 
     private func checklistRow(title: String, isDone: Bool) -> some View {
@@ -449,8 +740,8 @@ struct WorkoutListView: View {
         if selectedFilter == .all {
             return workouts
         }
-        guard let filterType = selectedFilter.workoutType else { return workouts }
-        return workouts.filter { $0.type == filterType }
+        guard let filterActivityType = selectedFilter.activityType else { return workouts }
+        return workouts.filter { $0.resolvedAppleWorkoutActivityType == filterActivityType }
     }
 
     private var groupedVisibleWorkouts: [(date: Date, items: [Workout])] {
@@ -482,22 +773,34 @@ struct WorkoutListView: View {
         Set(workouts.compactMap(\.hkUUID))
     }
 
+    private var availableHealthKitImportCandidates: [HealthKitRecentWorkoutMenuItem] {
+        recentHealthKitWorkouts.filter {
+            !importedHealthKitUUIDs.contains($0.hkUUID) &&
+            !newlyImportedHealthKitUUIDs.contains($0.hkUUID)
+        }
+    }
+
+    private var bulkImportButtonTitle: String {
+        let count = availableHealthKitImportCandidates.count
+        if count == 0 {
+            return "Import All Recent Workouts"
+        }
+        return "Import All (\(count))"
+    }
+
     @MainActor
-    private func loadRecentHealthKitWorkouts() async {
+    private func loadRecentHealthKitWorkouts(showAlerts: Bool = true) async {
         guard !isLoadingRecentHealthKitWorkouts else { return }
         isLoadingRecentHealthKitWorkouts = true
         defer { isLoadingRecentHealthKitWorkouts = false }
 
         do {
-            recentHealthKitWorkouts = try await healthKitImporter.fetchRecentWorkouts(limit: 10)
+            recentHealthKitWorkouts = try await healthKitImporter.fetchRecentWorkouts(limit: 30)
             saveRecentHealthKitWorkoutsCache(recentHealthKitWorkouts)
-            if recentHealthKitWorkouts.isEmpty {
-                healthKitImportSuccessMessage = "No recent workouts were found."
-                healthKitImportErrorMessage = nil
-            }
         } catch {
-            healthKitImportErrorMessage = error.localizedDescription
-            healthKitImportSuccessMessage = nil
+            if showAlerts {
+                healthKitImportErrorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -513,11 +816,26 @@ struct WorkoutListView: View {
         do {
             try await healthKitImporter.importWorkout(candidate, into: modelContext)
             newlyImportedHealthKitUUIDs.insert(candidate.hkUUID)
-            healthKitImportSuccessMessage = "Imported \(healthKitWorkoutTitle(candidate))."
-            healthKitImportErrorMessage = nil
         } catch {
             healthKitImportErrorMessage = "Import failed: \(error.localizedDescription)"
-            healthKitImportSuccessMessage = nil
+        }
+    }
+
+    @MainActor
+    private func importAllAvailableHealthKitWorkouts() async {
+        guard !isImportingHealthKitWorkout else { return }
+
+        let candidates = availableHealthKitImportCandidates
+        guard !candidates.isEmpty else { return }
+
+        isImportingHealthKitWorkout = true
+        defer { isImportingHealthKitWorkout = false }
+
+        do {
+            try healthKitImporter.importWorkoutsBatch(candidates, into: modelContext)
+            newlyImportedHealthKitUUIDs.formUnion(candidates.map(\.hkUUID))
+        } catch {
+            healthKitImportErrorMessage = "Bulk import failed: \(error.localizedDescription)"
         }
     }
 
@@ -533,36 +851,26 @@ struct WorkoutListView: View {
         do {
             try await healthKitImporter.attachWorkout(candidate, to: workout, in: modelContext)
             newlyImportedHealthKitUUIDs.insert(candidate.hkUUID)
-            let workoutTitle = "\(workout.type.rawValue) • \(workout.startDate.formatted(date: .abbreviated, time: .shortened))"
-            healthKitImportSuccessMessage = "Linked \(healthKitWorkoutTitle(candidate)) to \(workoutTitle)."
-            healthKitImportErrorMessage = nil
         } catch {
             healthKitImportErrorMessage = "Attach failed: \(error.localizedDescription)"
-            healthKitImportSuccessMessage = nil
         }
     }
 
     private func attachableWorkouts(for item: HealthKitRecentWorkoutMenuItem) -> [Workout] {
         let calendar = Calendar.current
-        // Prefer workouts logged on the same day as the HealthKit workout.
-        let sameDay = workouts.filter { calendar.isDate($0.startDate, inSameDayAs: item.startDate) }
-        if !sameDay.isEmpty {
-            return sameDay
-        }
-        // Fallback: recent workouts within the last 2 days.
-        let twoDaysAgo = calendar.date(byAdding: .day, value: -2, to: item.startDate) ?? item.startDate
-        return workouts.filter { $0.startDate >= twoDaysAgo && $0.startDate <= Date() }
+        return workouts.filter { calendar.isDate($0.startDate, inSameDayAs: item.startDate) }
     }
 
     private func healthKitWorkoutTitle(_ candidate: HealthKitRecentWorkoutMenuItem) -> String {
-        let type = mappedWorkoutType(from: candidate.activityType)
-        return "\(type.rawValue) • \(formattedDuration(candidate.duration)) • \(relativeDateCompactLabel(for: candidate.startDate))"
+        return [
+            candidate.activityType.displayName(locationType: candidate.locationType),
+            candidate.startDate.formatted(date: .omitted, time: .shortened),
+            relativeDateCompactLabel(for: candidate.startDate)
+        ].joined(separator: "\n")
     }
 
     private func healthKitWorkoutSubtitle(_ candidate: HealthKitRecentWorkoutMenuItem) -> String {
-        var parts: [String] = [
-            relativeWorkoutDateLabel(for: candidate.startDate)
-        ]
+        var parts: [String] = []
         if let distance = candidate.distanceKilometers, distance > 0 {
             parts.append(String(format: "%.1f km", distance))
         }
@@ -570,42 +878,11 @@ struct WorkoutListView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func relativeWorkoutDateLabel(for date: Date) -> String {
-        let calendar = Calendar.current
-        let timeText = date.formatted(date: .omitted, time: .shortened)
-        if calendar.isDateInToday(date) {
-            return "Today at \(timeText)"
-        }
-        if calendar.isDateInYesterday(date) {
-            return "Yesterday at \(timeText)"
-        }
-        return "\(date.formatted(date: .abbreviated, time: .omitted)) at \(timeText)"
-    }
-
     private func relativeDateCompactLabel(for date: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) { return "Today" }
         if calendar.isDateInYesterday(date) { return "Yesterday" }
         return date.formatted(date: .abbreviated, time: .omitted)
-    }
-
-    private func mappedWorkoutType(from activity: HKWorkoutActivityType) -> WorkoutType {
-        switch activity {
-        case .running:
-            return .running
-        case .cycling:
-            return .cycling
-        case .swimming:
-            return .swimming
-        case .yoga:
-            return .yoga
-        case .traditionalStrengthTraining, .functionalStrengthTraining, .coreTraining:
-            return .strength
-        case .walking, .hiking, .elliptical, .rowing, .stairClimbing, .mixedCardio:
-            return .cardio
-        default:
-            return .other
-        }
     }
 
     private func loadCachedRecentHealthKitWorkouts() {
@@ -823,6 +1100,15 @@ struct WorkoutListView_Previews: PreviewProvider {
             let workout = Workout(type: type, startDate: date, duration: durationMinutes * 60, distance: distance, categories: categories.isEmpty ? nil : categories, subcategories: subcategories.isEmpty ? nil : subcategories)
             context.insert(workout)
         }
+
+        let longNameWorkout = Workout(
+            type: .strength,
+            startDate: Date(),
+            duration: 71 * 60,
+            distance: nil,
+            hkActivityTypeRaw: Int(HKWorkoutActivityType.traditionalStrengthTraining.rawValue)
+        )
+        context.insert(longNameWorkout)
 
         addWorkout(type: .running, daysAgo: 0, durationMinutes: 45, distance: 6.2, categories: [endurance], subcategories: [tempo])
         addWorkout(type: .strength, daysAgo: 0, durationMinutes: 60, categories: [push, pull], subcategories: [benchPress])

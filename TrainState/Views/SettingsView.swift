@@ -1,10 +1,10 @@
 import RevenueCatUI
 import SwiftUI
 import SwiftData
+import HealthKit
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
     @AppStorage("themeMode") private var themeModeRaw = AppThemeMode.system.rawValue
@@ -38,33 +38,14 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-
-                ScrollView {
-                    LazyVStack(spacing: 20) {
-                        iCloudBackupCard
-                        accountCard
-                        preferencesCard
-                        dataCard
-                        premiumCard
-                        developerCard
-                        legalCard
-                    }
-                    .glassEffectContainer(spacing: 20)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
-                    .padding(.bottom, 40)
-                }
+            Form {
+                iCloudBackupCard
+                accountCard
+                preferencesCard
+                dataCard
+                premiumCard
+                developerCard
+                legalCard
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
@@ -135,51 +116,30 @@ struct SettingsView: View {
     }
 
     private var iCloudBackupCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("iCloud Backup")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("iCloud Backup") {
             if let statusMessage {
                 Text(statusMessage)
-                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
 
-            Button {
+            actionButton(
+                title: isBackingUp ? "Creating Backup..." : "Backup to iCloud",
+                systemImage: "icloud.and.arrow.up",
+                tint: .accentColor,
+                isLoading: isBackingUp
+            ) {
                 Task { await createBackup() }
-            } label: {
-                HStack {
-                    if isBackingUp {
-                        ProgressView()
-                        Text("Creating Backup...")
-                    } else {
-                        Image(systemName: "icloud.and.arrow.up")
-                        Text("Backup to iCloud")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
             }
-            .buttonStyle(.plain)
             .disabled(isBackingUp)
 
-            Button {
+            actionButton(
+                title: isLoadingBackups ? "Loading Backups..." : "Refresh Backups",
+                systemImage: "arrow.clockwise",
+                tint: .accentColor,
+                isLoading: isLoadingBackups
+            ) {
                 Task { await loadBackups() }
-            } label: {
-                HStack {
-                    if isLoadingBackups {
-                        ProgressView()
-                        Text("Loading Backups...")
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                        Text("Refresh Backups")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
             }
-            .buttonStyle(.plain)
             .disabled(isLoadingBackups)
 
             if !backups.isEmpty {
@@ -216,46 +176,67 @@ struct SettingsView: View {
                             Image(systemName: "ellipsis.circle")
                                 .font(.title3)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
                     }
-                    .padding(.vertical, 8)
                 }
             } else {
                 Text("No backups found.")
-                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(20)
-        .glassCard()
+    }
+
+    @ViewBuilder
+    private func actionButton(
+        title: String,
+        systemImage: String,
+        tint: Color,
+        isLoading: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        let label = HStack {
+            if isLoading {
+                ProgressView()
+            } else {
+                Image(systemName: systemImage)
+            }
+            Text(title)
+                .fontWeight(.semibold)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+
+        if #available(iOS 26, *) {
+            Button(action: action) {
+                label
+            }
+            .buttonStyle(.glassProminent)
+        } else {
+            Button(action: action) {
+                label
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(tint)
+                    )
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private var accountCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Account")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+        Section("Account") {
             Text(cloudStatusText)
-                .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassCard()
     }
 
     private var preferencesCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Preferences")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Preferences") {
             appearanceSection
 
             Toggle("Show Onboarding", isOn: $hasCompletedOnboarding.inverse)
         }
-        .padding(20)
-        .glassCard()
     }
 
     private var appearanceSection: some View {
@@ -340,11 +321,7 @@ struct SettingsView: View {
     }
 
     private var dataCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Data")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Data") {
             NavigationLink {
                 CategoriesManagementView()
             } label: {
@@ -371,19 +348,13 @@ struct SettingsView: View {
                     Text("Reset All Workouts")
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .disabled(isResettingWorkouts)
         }
-        .padding(20)
-        .glassCard()
     }
 
     private var premiumCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Premium")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Premium") {
             Button {
                 Task {
                     await purchaseManager.loadProducts()
@@ -393,7 +364,7 @@ struct SettingsView: View {
             } label: {
                 SettingsRow(icon: "crown", title: "Premium")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
 
             NavigationLink {
                 SubscriptionInfoView()
@@ -406,40 +377,28 @@ struct SettingsView: View {
             } label: {
                 SettingsRow(icon: "star.bubble", title: "Rate TrainState")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
         }
-        .padding(20)
-        .glassCard()
     }
 
     private var developerCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Developer")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+        Section("Developer") {
             NavigationLink {
                 DeveloperOptionsView()
             } label: {
                 SettingsRow(icon: "wrench.and.screwdriver", title: "Developer Options")
             }
         }
-        .padding(20)
-        .glassCard()
     }
 
     private var legalCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Legal")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+        Section("Legal") {
             NavigationLink {
                 TermsOfUseView()
             } label: {
                 SettingsRow(icon: "doc.text", title: "Terms of Use")
             }
         }
-        .padding(20)
-        .glassCard()
     }
 
     @MainActor
@@ -575,9 +534,6 @@ private struct SettingsRow: View {
             Text(title)
                 .font(.body)
             Spacer()
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
@@ -595,6 +551,15 @@ private struct BackupPreviewSheet: View {
 
     private var subcategoryByID: [UUID: WorkoutSubcategoryExport] {
         Dictionary(uniqueKeysWithValues: preview.subcategories.map { ($0.id, $0) })
+    }
+
+    private func workoutDisplayName(_ workout: WorkoutExport) -> String {
+        if let rawValue = workout.hkActivityTypeRaw,
+           let activityType = HKWorkoutActivityType(rawValue: UInt(rawValue)) {
+            let locationType = workout.hkLocationTypeRaw.flatMap(HKWorkoutSessionLocationType.init(rawValue:))
+            return activityType.displayName(locationType: locationType)
+        }
+        return workout.type.rawValue
     }
 
     var body: some View {
@@ -645,7 +610,7 @@ private struct BackupPreviewSheet: View {
                     } else {
                         ForEach(preview.workouts, id: \.id) { workout in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(workout.type.rawValue)
+                                Text(workoutDisplayName(workout))
                                     .font(.headline)
                                 Text(workout.startDate.formatted(date: .abbreviated, time: .shortened))
                                     .font(.subheadline)

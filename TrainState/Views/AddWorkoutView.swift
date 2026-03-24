@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import RevenueCatUI
+import HealthKit
 
 struct AddWorkoutView: View {
     @Environment(\.dismiss) private var dismiss
@@ -15,17 +16,18 @@ struct AddWorkoutView: View {
     @Query(sort: \StrengthWorkoutTemplate.updatedAt, order: .reverse) private var strengthTemplates: [StrengthWorkoutTemplate]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var type: WorkoutType = .other
+    @State private var selectedAppleWorkout = AppleWorkoutSelection(
+        activityType: WorkoutType.other.defaultAppleWorkoutActivityType,
+        locationType: nil
+    )
     @State private var date = Date()
     @State private var durationMinutes = 30.0
     @State private var distanceKilometers = 0.0
     @State private var workoutRating: Double?
     @State private var notes = ""
-    @State private var selectedCategories: [WorkoutCategory] = []
-    @State private var selectedSubcategories: [WorkoutSubcategory] = []
     @State private var exerciseEntries: [ExerciseLogEntry] = []
     @State private var strengthEntryMode: StrengthEntryMode = .live
     @State private var showingLiveStrengthSession = false
-    @State private var showingCategoryPicker = false
     @State private var activeExerciseSelection: ExerciseEditorSelection?
     @State private var showingPaywall = false
     @State private var isSaving = false
@@ -94,19 +96,20 @@ struct AddWorkoutView: View {
     private var showsDistance: Bool {
         [.running, .cycling, .swimming].contains(type)
     }
+    private var appleWorkoutActivityType: HKWorkoutActivityType { selectedAppleWorkout.activityType }
+    private var appleWorkoutLocationType: HKWorkoutSessionLocationType? { selectedAppleWorkout.locationType }
+    private var appleWorkoutActivityOptions: [AppleWorkoutSelection] { WorkoutType.other.appleWorkoutActivityOptions }
     private var isStrengthSessionType: Bool {
         type == .strength
     }
     private var availableExerciseSubcategories: [WorkoutSubcategory] {
-        if !selectedSubcategories.isEmpty { return selectedSubcategories }
-        if !selectedCategories.isEmpty {
-            let selectedIDs = Set(selectedCategories.map(\.id))
-            return allSubcategories.filter { subcategory in
-                guard let categoryID = subcategory.category?.id else { return false }
-                return selectedIDs.contains(categoryID)
-            }
+        allSubcategories.filter { subcategory in
+            guard let category = subcategory.category else { return false }
+            return category.matches(
+                appleWorkoutActivityType: appleWorkoutActivityType,
+                fallbackWorkoutType: type
+            )
         }
-        return allSubcategories.filter { $0.category?.workoutType == type || $0.category?.workoutType == nil }
     }
     private var quickAddOptions: [ExerciseQuickAddOption] {
         var options: [ExerciseQuickAddOption] = []
@@ -167,50 +170,38 @@ struct AddWorkoutView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04),
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.04 : 0.015),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-
-                ScrollView {
-                    VStack(spacing: 16) {
-                        quickLogCard
-                        typeCard
-                        dateCard
-                        if isStrengthSessionType {
-                            strengthModeCard
-                            strengthTemplatesCard
-                        }
-                        if !isStrengthSessionType || strengthEntryMode == .manual {
-                            durationCard
-                        }
-                        if showsDistance { distanceCard }
-                        categoriesCard
-                        if !isStrengthSessionType || strengthEntryMode == .manual {
-                            exercisesCard
-                        } else {
-                            liveSessionInfoCard
-                        }
-                        advancedSectionCard
-                        if showingAdvancedFields {
-                            ratingCard
-                            notesCard
-                        }
-                        saveButton
-                    }
-                    .glassEffectContainer(spacing: 16)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 16)
-                    .padding(.bottom, 24)
+            Form {
+                quickLogCard
+                appleWorkoutTypeCard
+                dateCard
+                if isStrengthSessionType {
+                    strengthModeCard
+                    strengthTemplatesCard
                 }
+                if !isStrengthSessionType || strengthEntryMode == .manual {
+                    durationCard
+                }
+                if showsDistance { distanceCard }
+                if !isStrengthSessionType || strengthEntryMode == .manual {
+                    exercisesCard
+                } else {
+                    liveSessionInfoCard
+                }
+                advancedSectionCard
+                if showingAdvancedFields {
+                    ratingCard
+                    notesCard
+                }
+                Section {
+                    EmptyView()
+                } footer: {
+                    saveButton
+                        .padding(.top, 2)
+                        .padding(.bottom, 2)
+                }
+                .listRowInsets(.init())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
             .navigationTitle("New Workout")
             .navigationBarTitleDisplayMode(.large)
@@ -219,13 +210,6 @@ struct AddWorkoutView: View {
                     Button("Cancel") { handleCancelTapped() }
                 }
             }
-        }
-        .sheet(isPresented: $showingCategoryPicker) {
-            CategoryAndSubcategorySelectionView(
-                selectedCategories: $selectedCategories,
-                selectedSubcategories: $selectedSubcategories,
-                workoutType: type
-            )
         }
         .sheet(isPresented: $showingExercisePicker) {
             UnifiedExercisePickerView(
@@ -286,7 +270,7 @@ struct AddWorkoutView: View {
             }
         } message: {
             if let pendingWorkoutToSave {
-                Text("A \(pendingWorkoutToSave.type.rawValue) workout already exists for \(pendingWorkoutToSave.startDate.formatted(date: .abbreviated, time: .omitted)).")
+                Text("A \(pendingWorkoutToSave.primaryWorkoutDisplayName) workout already exists for \(pendingWorkoutToSave.startDate.formatted(date: .abbreviated, time: .omitted)).")
             } else {
                 Text("A workout of this type already exists for this day.")
             }
@@ -329,8 +313,6 @@ struct AddWorkoutView: View {
             Text("Save your current strength exercise list as a reusable template.")
         }
         .onChange(of: type) { _, _ in
-            selectedCategories.removeAll()
-            selectedSubcategories.removeAll()
             let allowedIDs = Set(availableExerciseSubcategories.map(\.id))
             exerciseEntries = exerciseEntries.map {
                 var entry = $0
@@ -351,8 +333,15 @@ struct AddWorkoutView: View {
                 if let suggestedWorkoutType {
                     type = suggestedWorkoutType
                 }
+                selectedAppleWorkout = AppleWorkoutSelection(
+                    activityType: type.defaultAppleWorkoutActivityType,
+                    locationType: nil
+                )
                 hasAppliedSuggestedType = true
             }
+        }
+        .onChange(of: selectedAppleWorkout) { _, newSelection in
+            type = newSelection.activityType.mappedWorkoutType
         }
         .onChange(of: activeExerciseSelection) { _, newValue in
             // Defer cleanup so we don't mutate the backing array while the
@@ -366,33 +355,22 @@ struct AddWorkoutView: View {
         }
     }
 
-    private var typeCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Workout Type")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                ForEach(WorkoutType.allCases) { workoutType in
-                    TypeOptionButton(
-                        type: workoutType,
-                        isSelected: type == workoutType
-                    ) {
-                        type = workoutType
-                    }
+    private var appleWorkoutTypeCard: some View {
+        Section {
+            Picker("Apple Workout Type", selection: $selectedAppleWorkout) {
+                ForEach(appleWorkoutActivityOptions) { selection in
+                    Text(selection.displayName).tag(selection)
                 }
             }
+        } header: {
+            Text("Apple Workout Type")
+        } footer: {
+            Text("Choose the exact Apple workout activity to store for this workout.")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var quickLogCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Log")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+        Section("Quick Log") {
             Text("Save a common workout in one tap.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -416,32 +394,17 @@ struct AddWorkoutView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var dateCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Date & Time")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            DatePicker("", selection: $date)
+        Section("Date & Time") {
+            DatePicker("Date", selection: $date)
                 .datePickerStyle(.compact)
-                .labelsHidden()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var durationCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Duration")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Duration") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 10)], spacing: 10) {
                 ForEach(quickDurations, id: \.self) { mins in
                     Button {
@@ -461,32 +424,17 @@ struct AddWorkoutView: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                TextField(
-                    "Duration",
-                    value: durationBinding,
-                    format: .number.precision(.fractionLength(0...2))
-                )
-                .keyboardType(.decimalPad)
-                .font(.title3.weight(.semibold))
-
-                Text("min")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-            }
+            TextField(
+                "Minutes",
+                value: durationBinding,
+                format: .number.precision(.fractionLength(0...2))
+            )
+            .keyboardType(.decimalPad)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var strengthModeCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Strength Mode")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+        Section("Strength Mode") {
             Picker("Strength Mode", selection: $strengthEntryMode) {
                 ForEach(StrengthEntryMode.allCases, id: \.self) { mode in
                     Text(mode.title).tag(mode)
@@ -494,24 +442,14 @@ struct AddWorkoutView: View {
             }
             .pickerStyle(.segmented)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var liveSessionInfoCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Live Strength Session")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Live Strength Session") {
             Text("Use a dedicated live screen so the session can't be dismissed by accident. You can leave and return to the app while it runs.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var strengthTemplatesCard: some View {
@@ -619,68 +557,18 @@ struct AddWorkoutView: View {
     }
 
     private var distanceCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Distance")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 8) {
-                TextField(
-                    "Distance",
-                    value: distanceBinding,
-                    format: .number.precision(.fractionLength(0...3))
-                )
-                .keyboardType(.decimalPad)
-                .font(.title3.weight(.semibold))
-
-                Text("km")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-            }
+        Section("Distance") {
+            TextField(
+                "Kilometers",
+                value: distanceBinding,
+                format: .number.precision(.fractionLength(0...3))
+            )
+            .keyboardType(.decimalPad)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
-    }
-
-    private var categoriesCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Categories")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Button {
-                showingCategoryPicker = true
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "tag.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(type.tintColor)
-                    Text(categoriesSummary)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.vertical, 4)
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var ratingCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Workout Rating")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Workout Rating") {
             if workoutRating == nil {
                 Button {
                     workoutRating = 5.0
@@ -712,17 +600,11 @@ struct AddWorkoutView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var exercisesCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        Section("Exercises") {
             HStack {
-                Text("Exercises")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
                 Spacer()
                 Button {
                     showingExercisePicker = true
@@ -807,28 +689,17 @@ struct AddWorkoutView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var notesCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Notes")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Notes") {
             TextField("Add notes (optional)", text: $notes, axis: .vertical)
-                .textFieldStyle(.plain)
                 .lineLimit(3...6)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var advancedSectionCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        Section {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showingAdvancedFields.toggle()
@@ -845,15 +716,12 @@ struct AddWorkoutView: View {
                 }
             }
             .buttonStyle(.plain)
-
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
+    @ViewBuilder
     private var saveButton: some View {
-        Button {
+        let action = {
             guard !isSaving else { return }
             guard canAddWorkout else {
                 Task {
@@ -878,8 +746,8 @@ struct AddWorkoutView: View {
                 distance: showsDistance && distanceKilometers > 0 ? distanceKilometers : nil,
                 rating: workoutRating,
                 notes: notes.isEmpty ? nil : notes,
-                categories: resolvedCategories(for: exerciseEntries),
-                subcategories: resolvedSubcategories(for: exerciseEntries),
+                categories: nil,
+                subcategories: nil,
                 exercises: exerciseEntries
                     .enumerated()
                     .compactMap { index, entry in
@@ -895,31 +763,42 @@ struct AddWorkoutView: View {
                             orderIndex: index,
                             subcategory: linkedSubcategory
                         )
-                    }
+                    },
+                hkActivityTypeRaw: Int(appleWorkoutActivityType.rawValue),
+                hkLocationTypeRaw: appleWorkoutLocationType?.rawValue
             )
             attemptSaveWorkout(workout, persistTemplatesFrom: exerciseEntries)
-        } label: {
-            HStack(spacing: 12) {
+        }
+
+        let label = {
+            HStack(spacing: 10) {
                 if isSaving {
                     ProgressView()
-                        .tint(.white)
                 } else {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(systemName: canAddWorkout ? "checkmark.circle.fill" : "crown.fill")
                         .font(.system(size: 20))
                 }
                 Text(saveButtonTitle)
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 18)
-            .background(
-                RoundedRectangle(cornerRadius: 32)
-                    .fill(type.tintColor)
-            )
-            .foregroundStyle(.white)
+            .padding(.vertical, 16)
         }
-        .buttonStyle(.plain)
-        .disabled(isSaving)
+
+        if #available(iOS 26, *) {
+            Button(action: action, label: label)
+                .buttonStyle(.glassProminent)
+                .disabled(isSaving)
+        } else {
+            Button(action: action, label: label)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(canAddWorkout ? type.tintColor : Color.accentColor)
+                )
+                .foregroundStyle(.white)
+                .buttonStyle(.plain)
+                .disabled(isSaving)
+        }
     }
 
     private var saveButtonTitle: String {
@@ -948,27 +827,18 @@ struct AddWorkoutView: View {
         return "\(base) \(suffix)"
     }
 
-    private var categoriesSummary: String {
-        var parts: [String] = []
-        if !selectedCategories.isEmpty {
-            parts.append(selectedCategories.map(\.name).joined(separator: ", "))
-        }
-        if !selectedSubcategories.isEmpty {
-            parts.append(selectedSubcategories.map(\.name).joined(separator: ", "))
-        }
-        return parts.isEmpty ? "Select Categories" : parts.joined(separator: " · ")
-    }
-
     private var hasUnsavedChanges: Bool {
         let baselineType = suggestedWorkoutType ?? .other
         return type != baselineType ||
+            selectedAppleWorkout != AppleWorkoutSelection(
+                activityType: type.defaultAppleWorkoutActivityType,
+                locationType: nil
+            ) ||
             abs(date.timeIntervalSinceNow) > 120 ||
             durationMinutes != 30.0 ||
             distanceKilometers > 0 ||
             workoutRating != nil ||
             !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            !selectedCategories.isEmpty ||
-            !selectedSubcategories.isEmpty ||
             !exerciseEntries.isEmpty
     }
 
@@ -1007,7 +877,9 @@ struct AddWorkoutView: View {
             type: preset.type,
             startDate: Date(),
             duration: preset.durationMinutes * 60,
-            distance: preset.distanceKilometers
+            distance: preset.distanceKilometers,
+            hkActivityTypeRaw: Int(preset.type.defaultAppleWorkoutActivityType.rawValue),
+            hkLocationTypeRaw: nil
         )
         attemptSaveWorkout(workout)
     }
@@ -1039,8 +911,8 @@ struct AddWorkoutView: View {
             distance: nil,
             rating: workoutRating,
             notes: notes.isEmpty ? nil : notes,
-            categories: resolvedCategories(for: entries),
-            subcategories: resolvedSubcategories(for: entries),
+            categories: nil,
+            subcategories: nil,
             exercises: entries.enumerated().compactMap { index, entry in
                 let name = entry.trimmedName
                 guard !name.isEmpty else { return nil }
@@ -1054,7 +926,9 @@ struct AddWorkoutView: View {
                     orderIndex: index,
                     subcategory: linkedSubcategory
                 )
-            }
+            },
+            hkActivityTypeRaw: Int(appleWorkoutActivityType.rawValue),
+            hkLocationTypeRaw: appleWorkoutLocationType?.rawValue
         )
         attemptSaveWorkout(workout, persistTemplatesFrom: entries)
     }
@@ -1160,35 +1034,6 @@ struct AddWorkoutView: View {
         return lines.joined(separator: "\n")
     }
 
-    private func resolvedSubcategories(for entries: [ExerciseLogEntry]) -> [WorkoutSubcategory] {
-        var merged: [WorkoutSubcategory] = selectedSubcategories
-        var seenIDs = Set(merged.map(\.id))
-
-        for entry in entries {
-            guard let subcategoryID = entry.subcategoryID,
-                  let subcategory = allSubcategories.first(where: { $0.id == subcategoryID }),
-                  !seenIDs.contains(subcategory.id) else { continue }
-            merged.append(subcategory)
-            seenIDs.insert(subcategory.id)
-        }
-
-        return merged
-    }
-
-    private func resolvedCategories(for entries: [ExerciseLogEntry]) -> [WorkoutCategory] {
-        var merged: [WorkoutCategory] = selectedCategories
-        var seenIDs = Set(merged.map(\.id))
-
-        for subcategory in resolvedSubcategories(for: entries) {
-            guard let category = subcategory.category,
-                  !seenIDs.contains(category.id) else { continue }
-            merged.append(category)
-            seenIDs.insert(category.id)
-        }
-
-        return merged
-    }
-
     private func persistExerciseTemplates(from entries: [ExerciseLogEntry]) {
         var insertedKeys: Set<String> = []
         for entry in entries {
@@ -1281,13 +1126,18 @@ struct AddWorkoutView: View {
     private func templateSummary(_ template: StrengthWorkoutTemplate) -> String {
         let count = template.exercises?.count ?? 0
         let updated = template.updatedAt.formatted(date: .abbreviated, time: .omitted)
-        let categoryName = template.mainCategoryRawValue
+        let categoryName = template.activityDisplayName
         return "\(categoryName) • \(count) exercise\(count == 1 ? "" : "s") • Updated \(updated)"
     }
 
     private func applyStrengthTemplate(_ template: StrengthWorkoutTemplate) {
         activeTemplateID = template.id
-        type = WorkoutType(rawValue: template.mainCategoryRawValue) ?? .strength
+        let templateActivity = template.appleWorkoutActivityType
+        selectedAppleWorkout = AppleWorkoutSelection.normalized(
+            activityType: templateActivity,
+            locationType: nil
+        )
+        type = templateActivity.mappedWorkoutType
         let sortedExercises = (template.exercises ?? []).sorted { $0.orderIndex < $1.orderIndex }
         exerciseEntries = sortedExercises.map { item in
             let decodedPlan = item.decodedSetPlan()
@@ -1316,11 +1166,6 @@ struct AddWorkoutView: View {
         if exerciseEntries.isEmpty {
             exerciseEntries = [defaultExerciseEntry()]
         }
-
-        selectedCategories = []
-
-        let entrySubcategoryIDs = Set(exerciseEntries.compactMap(\.subcategoryID))
-        selectedSubcategories = allSubcategories.filter { entrySubcategoryIDs.contains($0.id) }
     }
 
     private func saveStrengthTemplate(named rawName: String, from entries: [ExerciseLogEntry]) {
@@ -1351,12 +1196,14 @@ struct AddWorkoutView: View {
         if let existing = strengthTemplates.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
             existing.name = name
             existing.mainCategoryRawValue = type.rawValue
+            existing.appleWorkoutActivityType = appleWorkoutActivityType
             existing.updatedAt = Date()
             existing.exercises = snapshot
         } else {
             let template = StrengthWorkoutTemplate(
                 name: name,
                 mainCategoryRawValue: type.rawValue,
+                appleWorkoutActivityType: appleWorkoutActivityType,
                 createdAt: Date(),
                 updatedAt: Date(),
                 exercises: snapshot
@@ -1385,38 +1232,6 @@ private enum StrengthEntryMode: String, CaseIterable {
 }
 
 // MARK: - Type Option Button
-private struct TypeOptionButton: View {
-    let type: WorkoutType
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: type.systemImage)
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(isSelected ? type.tintColor : .secondary)
-                    .frame(height: 28)
-                Text(type.rawValue)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.8)
-                    .frame(maxWidth: .infinity, minHeight: 28)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 32)
-                    .fill(isSelected ? type.tintColor.opacity(0.15) : Color.primary.opacity(0.04))
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 #Preview {
     AddWorkoutView()
         .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, SubcategoryExercise.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self], inMemory: true)

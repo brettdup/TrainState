@@ -8,6 +8,7 @@ struct HealthKitRecentWorkoutMenuItem: Identifiable, Hashable, Codable {
     let startDate: Date
     let duration: TimeInterval
     let activityTypeRaw: Int
+    let locationTypeRaw: Int?
     let sourceName: String
     let distanceKilometers: Double?
     let calories: Double?
@@ -19,15 +20,52 @@ struct HealthKitRecentWorkoutMenuItem: Identifiable, Hashable, Codable {
         HKWorkoutActivityType(rawValue: UInt(activityTypeRaw)) ?? .other
     }
 
+    var locationType: HKWorkoutSessionLocationType? {
+        guard let locationTypeRaw else { return nil }
+        return HKWorkoutSessionLocationType(rawValue: locationTypeRaw)
+    }
+
     init(workout: HKWorkout, workoutRating: Double?) {
         self.hkUUID = workout.uuid.uuidString
         self.startDate = workout.startDate
         self.duration = workout.duration
         self.activityTypeRaw = Int(workout.workoutActivityType.rawValue)
+        self.locationTypeRaw = Self.locationTypeRawValue(for: workout)
         self.sourceName = workout.sourceRevision.source.name
         self.distanceKilometers = workout.totalDistance?.doubleValue(for: HKUnit.meterUnit(with: .kilo))
         self.calories = workout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
         self.workoutRating = workoutRating
+    }
+
+    init(
+        hkUUID: String,
+        startDate: Date,
+        duration: TimeInterval,
+        activityTypeRaw: Int,
+        locationTypeRaw: Int?,
+        sourceName: String,
+        distanceKilometers: Double?,
+        calories: Double?,
+        workoutRating: Double?
+    ) {
+        self.hkUUID = hkUUID
+        self.startDate = startDate
+        self.duration = duration
+        self.activityTypeRaw = activityTypeRaw
+        self.locationTypeRaw = locationTypeRaw
+        self.sourceName = sourceName
+        self.distanceKilometers = distanceKilometers
+        self.calories = calories
+        self.workoutRating = workoutRating
+    }
+
+    private static func locationTypeRawValue(for workout: HKWorkout) -> Int? {
+        guard let indoorValue = workout.metadata?[HKMetadataKeyIndoorWorkout] as? NSNumber else {
+            return nil
+        }
+        return indoorValue.boolValue
+            ? HKWorkoutSessionLocationType.indoor.rawValue
+            : HKWorkoutSessionLocationType.outdoor.rawValue
     }
 }
 
@@ -54,7 +92,7 @@ final class HealthKitRecentWorkoutImporter {
     private let workoutType = HKObjectType.workoutType()
     private let workoutRouteType = HKSeriesType.workoutRoute()
 
-    func fetchRecentWorkouts(limit: Int = 10) async throws -> [HealthKitRecentWorkoutMenuItem] {
+    func fetchRecentWorkouts(limit: Int = 30) async throws -> [HealthKitRecentWorkoutMenuItem] {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw HealthKitImportError.unavailable
         }
@@ -82,7 +120,6 @@ final class HealthKitRecentWorkoutImporter {
 
     func importWorkout(_ item: HealthKitRecentWorkoutMenuItem, into context: ModelContext) async throws {
         let workout = Workout(
-            type: mapWorkoutType(item.activityType),
             startDate: item.startDate,
             duration: item.duration,
             calories: item.calories,
@@ -92,7 +129,8 @@ final class HealthKitRecentWorkoutImporter {
             categories: nil,
             subcategories: nil,
             exercises: nil,
-            hkActivityTypeRaw: item.activityTypeRaw
+            hkActivityTypeRaw: item.activityTypeRaw,
+            hkLocationTypeRaw: item.locationTypeRaw
         )
         workout.hkUUID = item.hkUUID
 
@@ -110,6 +148,30 @@ final class HealthKitRecentWorkoutImporter {
         try context.save()
     }
 
+    func importWorkoutsBatch(_ items: [HealthKitRecentWorkoutMenuItem], into context: ModelContext) throws {
+        guard !items.isEmpty else { return }
+
+        for item in items {
+            let workout = Workout(
+                startDate: item.startDate,
+                duration: item.duration,
+                calories: item.calories,
+                distance: item.distanceKilometers,
+                rating: item.workoutRating,
+                notes: "Imported from HealthKit",
+                categories: nil,
+                subcategories: nil,
+                exercises: nil,
+                hkActivityTypeRaw: item.activityTypeRaw,
+                hkLocationTypeRaw: item.locationTypeRaw
+            )
+            workout.hkUUID = item.hkUUID
+            context.insert(workout)
+        }
+
+        try context.save()
+    }
+
     /// Attach HealthKit data to an already logged workout instead of creating a new one.
     /// This keeps manually-entered categories, subcategories, and exercises, while
     /// syncing timing from HealthKit and filling additional metrics.
@@ -117,6 +179,7 @@ final class HealthKitRecentWorkoutImporter {
         // Link identity back to HealthKit so this workout won't be imported twice.
         workout.hkUUID = item.hkUUID
         workout.hkActivityTypeRaw = item.activityTypeRaw
+        workout.hkLocationTypeRaw = item.locationTypeRaw
 
         // Keep attached workout timing aligned to the HealthKit source.
         workout.startDate = item.startDate
@@ -182,25 +245,6 @@ final class HealthKitRecentWorkoutImporter {
             menuItems.append(HealthKitRecentWorkoutMenuItem(workout: workout, workoutRating: rating))
         }
         return menuItems
-    }
-
-    private func mapWorkoutType(_ activity: HKWorkoutActivityType) -> WorkoutType {
-        switch activity {
-        case .running:
-            return .running
-        case .cycling:
-            return .cycling
-        case .swimming:
-            return .swimming
-        case .yoga:
-            return .yoga
-        case .traditionalStrengthTraining, .functionalStrengthTraining, .coreTraining:
-            return .strength
-        case .walking, .hiking, .elliptical, .rowing, .stairClimbing, .mixedCardio:
-            return .cardio
-        default:
-            return .other
-        }
     }
 
     private func isAuthorizationDenied(_ error: Error) -> Bool {

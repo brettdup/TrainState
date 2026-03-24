@@ -47,6 +47,31 @@ struct ExerciseInsightsView: View {
         }
     }
 
+    private var loggedEntries: [LoggedExerciseEntry] {
+        workouts.flatMap { workout in
+            (workout.exercises ?? []).compactMap { exercise in
+                let sameName = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedExerciseName
+                let sameSubcategory = subcategoryID == nil || exercise.subcategory?.id == subcategoryID
+                guard sameName && sameSubcategory else { return nil }
+
+                return LoggedExerciseEntry(
+                    workoutID: workout.id,
+                    date: workout.startDate,
+                    sets: exercise.sets,
+                    reps: exercise.reps,
+                    weight: exercise.weight,
+                    notes: exercise.notes
+                )
+            }
+        }
+        .sorted { lhs, rhs in
+            if lhs.date == rhs.date {
+                return lhs.id.uuidString > rhs.id.uuidString
+            }
+            return lhs.date > rhs.date
+        }
+    }
+
     /// History points sorted in ascending date order to ensure charts and stats use a consistent timeline.
     private var sortedHistoryPoints: [ExerciseHistoryPoint] {
         historyPoints.sorted { $0.date < $1.date }
@@ -62,6 +87,27 @@ struct ExerciseInsightsView: View {
 
     private var latestPoint: ExerciseHistoryPoint? {
         sortedHistoryPoints.last
+    }
+
+    private var maxWeightEntry: LoggedExerciseEntry? {
+        loggedEntries
+            .filter { ($0.weight ?? 0) > 0 }
+            .max { lhs, rhs in
+                let lhsWeight = lhs.weight ?? 0
+                let rhsWeight = rhs.weight ?? 0
+                if lhsWeight == rhsWeight {
+                    return (lhs.reps ?? 0) < (rhs.reps ?? 0)
+                }
+                return lhsWeight < rhsWeight
+            }
+    }
+
+    private var maxRepsAtMaxWeight: Int? {
+        guard let maxWeight = maxWeightEntry?.weight else { return nil }
+        return loggedEntries
+            .filter { ($0.weight ?? 0) == maxWeight }
+            .compactMap(\.reps)
+            .max()
     }
 
     private var trendDelta: Double {
@@ -100,6 +146,7 @@ struct ExerciseInsightsView: View {
                         metricCard
                         chartCard
                         historyCard
+                        individualEntriesCard
                     }
                 }
                 .glassEffectContainer(spacing: 20)
@@ -120,8 +167,10 @@ struct ExerciseInsightsView: View {
             if let latestPoint {
                 statRow(label: "Last Trained", value: latestPoint.date.formatted(date: .abbreviated, time: .omitted))
                 statRow(label: "Sessions Logged", value: "\(historyPoints.count)")
+                statRow(label: "Entries Logged", value: "\(loggedEntries.count)")
                 statRow(label: "Best Top Set", value: metricString(bestTopSet, suffix: "kg"))
                 statRow(label: "Best Est. 1RM", value: metricString(bestEstimatedOneRepMax, suffix: "kg"))
+                statRow(label: "Max Reps @ Max Weight", value: maxRepsAtMaxWeightSummary)
             } else {
                 Text("No logged data for this exercise yet.")
                     .font(.subheadline)
@@ -222,6 +271,35 @@ struct ExerciseInsightsView: View {
         .glassCard()
     }
 
+    private var individualEntriesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Individual Entries")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            ForEach(loggedEntries) { entry in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(entry.date.formatted(date: .abbreviated, time: .shortened))
+                        .font(.subheadline.weight(.semibold))
+
+                    Text(entry.entrySummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if let notes = entry.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(notes)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 6)
+            }
+        }
+        .padding(20)
+        .glassCard()
+    }
+
     private func statRow(label: String, value: String) -> some View {
         HStack {
             Text(label)
@@ -235,6 +313,17 @@ struct ExerciseInsightsView: View {
 
     private func metricString(_ value: Double, suffix: String) -> String {
         "\(ExerciseLogEntry.displayWeight(value)) \(suffix)"
+    }
+
+    private var maxRepsAtMaxWeightSummary: String {
+        guard
+            let maxWeight = maxWeightEntry?.weight,
+            let maxRepsAtMaxWeight
+        else {
+            return "N/A"
+        }
+
+        return "\(maxRepsAtMaxWeight) reps @ \(ExerciseLogEntry.displayWeight(maxWeight)) kg"
     }
 }
 
@@ -275,6 +364,34 @@ private enum ExerciseInsightMetric: CaseIterable {
 
     var suffix: String {
         "kg"
+    }
+}
+
+private struct LoggedExerciseEntry: Identifiable {
+    let id = UUID()
+    let workoutID: UUID
+    let date: Date
+    let sets: Int?
+    let reps: Int?
+    let weight: Double?
+    let notes: String?
+
+    var entrySummary: String {
+        var parts: [String] = []
+
+        if let sets, sets > 0 {
+            parts.append("\(sets) sets")
+        }
+
+        if let reps, reps > 0 {
+            parts.append("\(reps) reps")
+        }
+
+        if let weight, weight > 0 {
+            parts.append("\(ExerciseLogEntry.displayWeight(weight)) kg")
+        }
+
+        return parts.isEmpty ? "Logged entry" : parts.joined(separator: " • ")
     }
 }
 

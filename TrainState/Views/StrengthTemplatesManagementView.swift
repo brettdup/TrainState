@@ -59,14 +59,18 @@ struct StrengthTemplatesManagementView: View {
     private func templateSubtitle(_ template: StrengthWorkoutTemplate) -> String {
         let count = template.exercises?.count ?? 0
         let updated = template.updatedAt.formatted(date: .abbreviated, time: .omitted)
-        let categoryName = template.mainCategoryRawValue
+        let categoryName = template.activityDisplayName
         return "\(categoryName) • \(count) exercise\(count == 1 ? "" : "s") • Updated \(updated)"
     }
 
     private func createTemplate() {
         let trimmed = newTemplateName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let template = StrengthWorkoutTemplate(name: trimmed, mainCategoryRawValue: WorkoutType.strength.rawValue)
+        let template = StrengthWorkoutTemplate(
+            name: trimmed,
+            mainCategoryRawValue: WorkoutType.strength.rawValue,
+            appleWorkoutActivityType: .traditionalStrengthTraining
+        )
         modelContext.insert(template)
         try? modelContext.save()
     }
@@ -97,8 +101,14 @@ private struct StrengthTemplateEditorView: View {
         }
     }
     private var availableSubcategories: [WorkoutSubcategory] {
-        let type = WorkoutType(rawValue: template.mainCategoryRawValue) ?? .strength
-        return subcategories.filter { $0.category?.workoutType == type }
+        let activityType = template.appleWorkoutActivityType
+        return subcategories.filter { subcategory in
+            guard let category = subcategory.category else { return false }
+            return category.matches(
+                appleWorkoutActivityType: activityType,
+                fallbackWorkoutType: activityType.mappedWorkoutType
+            )
+        }
     }
 
     var body: some View {
@@ -155,7 +165,7 @@ private struct StrengthTemplateEditorView: View {
                     saveTemplateName()
                 }
 
-            Text("Main Category: \(template.mainCategoryRawValue)")
+            Text("Main Category: \(template.activityDisplayName)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
