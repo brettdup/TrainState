@@ -304,7 +304,7 @@ private extension CloudKitManager {
 
     func writeTemporaryBackupFile(data: Data, label: String) throws -> URL {
         let fileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("TrainState-Backup-\(UUID().uuidString)-\(label).json")
+            .appendingPathComponent("ExercisePal-Backup-\(UUID().uuidString)-\(label).json")
         try data.write(to: fileURL, options: [.atomic])
         return fileURL
     }

@@ -11,6 +11,7 @@ struct CategoryAndSubcategorySelectionView: View {
     @Binding var selectedSubcategories: [WorkoutSubcategory]
     let workoutType: WorkoutType
     let appleWorkoutActivityType: HKWorkoutActivityType?
+    let lockedSubcategoryIDs: Set<UUID>
 
     @Query private var allWorkoutCategories: [WorkoutCategory]
     @Query private var allSubcategories: [WorkoutSubcategory]
@@ -21,6 +22,21 @@ struct CategoryAndSubcategorySelectionView: View {
     @State private var newSubcategoryName = ""
     @State private var subcategoryParentCategory: WorkoutCategory?
     @State private var showingPaywall = false
+    @State private var selectionWarningMessage: String?
+
+    init(
+        selectedCategories: Binding<[WorkoutCategory]>,
+        selectedSubcategories: Binding<[WorkoutSubcategory]>,
+        workoutType: WorkoutType,
+        appleWorkoutActivityType: HKWorkoutActivityType?,
+        lockedSubcategoryIDs: Set<UUID> = []
+    ) {
+        self._selectedCategories = selectedCategories
+        self._selectedSubcategories = selectedSubcategories
+        self.workoutType = workoutType
+        self.appleWorkoutActivityType = appleWorkoutActivityType
+        self.lockedSubcategoryIDs = lockedSubcategoryIDs
+    }
 
     private var canAddCategory: Bool {
         guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
@@ -104,7 +120,12 @@ struct CategoryAndSubcategorySelectionView: View {
                                 }
                             }
                         } label: {
-                            Label("Add Subcategory", systemImage: "plus.circle")
+                            HStack(spacing: 8) {
+                                Label("Add Subcategory", systemImage: "plus.circle")
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                     } header: {
                         HStack(spacing: 8) {
@@ -215,6 +236,15 @@ struct CategoryAndSubcategorySelectionView: View {
                     PaywallPlaceholderView(onDismiss: { showingPaywall = false })
                 }
             }
+            .alert("Can't Remove Yet", isPresented: selectionWarningBinding) {
+                Button("OK", role: .cancel) {
+                    selectionWarningMessage = nil
+                }
+            } message: {
+                if let selectionWarningMessage {
+                    Text(selectionWarningMessage)
+                }
+            }
         }
     }
 
@@ -245,10 +275,21 @@ struct CategoryAndSubcategorySelectionView: View {
         selectedSubcategories.contains(where: { $0.id == subcategory.id })
     }
 
+    private var selectionWarningBinding: Binding<Bool> {
+        Binding(
+            get: { selectionWarningMessage != nil },
+            set: { if !$0 { selectionWarningMessage = nil } }
+        )
+    }
+
     private func toggleCategory(_ category: WorkoutCategory) {
         if isCategorySelected(category) {
+            let childSelections = selectedSubcategories.filter { $0.category?.id == category.id }
+            if !childSelections.isEmpty {
+                selectionWarningMessage = "Remove the selected subcategories in \(category.name) before removing this category."
+                return
+            }
             selectedCategories.removeAll { $0.id == category.id }
-            selectedSubcategories.removeAll { $0.category?.id == category.id }
         } else {
             selectedCategories.append(category)
         }
@@ -256,6 +297,10 @@ struct CategoryAndSubcategorySelectionView: View {
 
     private func toggleSubcategory(_ subcategory: WorkoutSubcategory) {
         if isSubcategorySelected(subcategory) {
+            if lockedSubcategoryIDs.contains(subcategory.id) {
+                selectionWarningMessage = "This subcategory is still linked to exercises in the workout. Reassign or remove those exercises first."
+                return
+            }
             selectedSubcategories.removeAll { $0.id == subcategory.id }
         } else {
             selectedSubcategories.append(subcategory)
@@ -311,6 +356,8 @@ private struct CategorySelectionRow: View {
                     .foregroundColor(.accentColor)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
@@ -335,6 +382,8 @@ private struct SubcategorySelectionRow: View {
                     .foregroundColor(.accentColor)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 

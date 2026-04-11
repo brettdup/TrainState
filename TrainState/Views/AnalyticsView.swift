@@ -163,7 +163,7 @@ struct AnalyticsView: View {
                     ShareLink(
                         item: weeklyRecapSharePayload,
                         preview: SharePreview(
-                            "TrainState Weekly Recap",
+                            "Exercise Pal Weekly Recap",
                             image: weeklyRecapSharePreview ?? Image(systemName: "chart.bar.fill")
                         )
                     ) {
@@ -944,7 +944,7 @@ private struct WeeklyRecapShareImage: Transferable {
         DataRepresentation(exportedContentType: .png) { recap in
             recap.data
         }
-        .suggestedFileName("TrainState-Weekly-Recap")
+        .suggestedFileName("ExercisePal-Weekly-Recap")
     }
 }
 

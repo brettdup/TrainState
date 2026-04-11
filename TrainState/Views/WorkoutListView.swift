@@ -86,7 +86,8 @@ struct WorkoutListView: View {
                     selectedCategories: $selectedCategoriesForAssignment,
                     selectedSubcategories: $selectedSubcategoriesForAssignment,
                     workoutType: workout.type,
-                    appleWorkoutActivityType: workout.appleWorkoutActivityType
+                    appleWorkoutActivityType: workout.appleWorkoutActivityType,
+                    lockedSubcategoryIDs: Set((workout.exercises ?? []).compactMap { $0.subcategory?.id })
                 )
             }
             .sheet(item: $workoutForExercisePreview) { workout in
@@ -171,6 +172,7 @@ struct WorkoutListView: View {
                 presentPostLogSuccessBanner()
             }
             lastKnownWorkoutCount = newCount
+            normalizeSelectedFilter()
         }
         .onChange(of: workoutForCategoryAssignment) { _, newValue in
             if newValue == nil, pendingCategoryAssignmentWorkout != nil {
@@ -185,6 +187,23 @@ struct WorkoutListView: View {
 
     private var workoutListContent: some View {
         List {
+            if selectedFilter != .all {
+                Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                            .foregroundStyle(Color.accentColor)
+                        Text("Filtered by \(selectedFilter.title)")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Button("Clear") {
+                            selectedFilter = .all
+                        }
+                        .font(.caption.weight(.semibold))
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+
             if groupedVisibleWorkouts.isEmpty {
                 emptyWorkoutsSection
             }
@@ -327,7 +346,7 @@ struct WorkoutListView: View {
 
     private var filterMenu: some View {
         Menu {
-            ForEach(WorkoutFilter.allCases, id: \.self) { filter in
+            ForEach(availableFilters, id: \.self) { filter in
                 Button {
                     selectedFilter = filter
                 } label: {
@@ -339,8 +358,16 @@ struct WorkoutListView: View {
                 }
             }
         } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle")
+            Image(systemName: selectedFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
         }
+    }
+
+    private var availableFilters: [WorkoutFilter] {
+        let savedActivityTypes = Set(workouts.map(\.resolvedAppleWorkoutActivityType))
+        let activityFilters = savedActivityTypes
+            .sorted { $0.displayName < $1.displayName }
+            .map { WorkoutFilter.apple($0) }
+        return [.all] + activityFilters
     }
 
     private var healthKitMenu: some View {
@@ -651,7 +678,7 @@ struct WorkoutListView: View {
 
     private var rateAppCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Enjoying TrainState?")
+            Text("Enjoying Exercise Pal?")
                 .font(.headline)
             Text("Leave a review on the App Store.")
                 .font(.subheadline)
@@ -659,7 +686,7 @@ struct WorkoutListView: View {
             Button {
                 openAppStoreReviewPage()
             } label: {
-                Label("Rate TrainState", systemImage: "star.bubble.fill")
+                Label("Rate Exercise Pal", systemImage: "star.bubble.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -742,6 +769,12 @@ struct WorkoutListView: View {
         }
         guard let filterActivityType = selectedFilter.activityType else { return workouts }
         return workouts.filter { $0.resolvedAppleWorkoutActivityType == filterActivityType }
+    }
+
+    private func normalizeSelectedFilter() {
+        if !availableFilters.contains(selectedFilter) {
+            selectedFilter = .all
+        }
     }
 
     private var groupedVisibleWorkouts: [(date: Date, items: [Workout])] {
@@ -832,7 +865,7 @@ struct WorkoutListView: View {
         defer { isImportingHealthKitWorkout = false }
 
         do {
-            try healthKitImporter.importWorkoutsBatch(candidates, into: modelContext)
+            try await healthKitImporter.importWorkoutsBatch(candidates, into: modelContext)
             newlyImportedHealthKitUUIDs.formUnion(candidates.map(\.hkUUID))
         } catch {
             healthKitImportErrorMessage = "Bulk import failed: \(error.localizedDescription)"

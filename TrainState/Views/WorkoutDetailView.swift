@@ -24,6 +24,7 @@ struct WorkoutDetailView: View {
     @State private var pendingCategoryAssignmentSaveTask: Task<Void, Never>?
     @State private var selectedCategoriesForAssignment: [WorkoutCategory] = []
     @State private var selectedSubcategoriesForAssignment: [WorkoutSubcategory] = []
+    @State private var showingCategoriesManagement = false
 
     var body: some View {
         List {
@@ -40,6 +41,11 @@ struct WorkoutDetailView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
+                        if let headerClassificationSummary {
+                            Text(headerClassificationSummary)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 } icon: {
                     Image(systemName: workout.primaryWorkoutSystemImage)
@@ -47,71 +53,18 @@ struct WorkoutDetailView: View {
                 }
             }
 
-            if workout.duration > 0 || workout.distance ?? 0 > 0 || (workout.calories ?? 0) > 0 || (workout.rating ?? 0) > 0 {
-                Section {
-                    if workout.duration > 0 {
-                        statRow(title: "Duration", value: formattedDuration(workout.duration))
-                    }
-                    if let distance = workout.distance, distance > 0 {
-                        statRow(title: "Distance", value: String(format: "%.1f km", distance))
-                    }
-                    if let calories = workout.calories, calories > 0 {
-                        statRow(title: "Calories", value: "\(Int(calories)) kcal")
-                    }
-                    if let rating = workout.rating, rating > 0 {
-                        statRow(title: "Rating", value: String(format: "%.1f/10", rating))
-                    }
-                } header: {
-                    Text("Stats")
-                }
-            }
-
-            Section {
-                Button {
-                    prepareCategoryAssignment()
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "tag")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(workout.primaryWorkoutTintColor)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(hasClassificationDetails ? "Edit Categories" : "Add Categories")
-                                .font(.subheadline.weight(.semibold))
-                            Text(hasClassificationDetails ? "Update linked categories and subcategories" : "Assign categories to this workout")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.vertical, 4)
-                }
-                .buttonStyle(.plain)
-
-                if !categoryDetails.isEmpty {
-                    classificationGroupHeader("Categories")
-
-                    ForEach(categoryDetails) { item in
-                        classificationRow(item)
-                    }
-                }
-
-                if !subcategoryDetails.isEmpty {
-                    classificationGroupHeader("Subcategories")
-
-                    subcategoryCompactRow
-                }
-
-                if !hasClassificationDetails {
-                    Text("No categories linked yet. Add categories to keep this workout organized and improve exercise suggestions.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Categories")
-            }
+            WorkoutStructureSection(
+                title: "Categories",
+                primaryActionTitle: hasClassificationDetails ? "Edit Categories" : "Add Categories",
+                primaryActionSubtitle: hasClassificationDetails ? "Update linked categories and subcategories" : "Assign categories to this workout",
+                primaryAction: prepareCategoryAssignment,
+                secondaryActionTitle: workout.type == .strength ? "Manage Exercise Library" : nil,
+                secondaryActionSubtitle: workout.type == .strength ? "Edit categories, subcategories, and exercise templates" : nil,
+                secondaryAction: workout.type == .strength ? { showingCategoriesManagement = true } : nil,
+                categoryItems: [],
+                subcategoryItems: [],
+                emptyStateText: ""
+            )
 
             Section {
                 addExercisesButton
@@ -146,10 +99,6 @@ struct WorkoutDetailView: View {
                             }
                         }
                     }
-                } else {
-                    Text("No exercises yet. Tap Add Exercises to log one without leaving this screen.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Exercises")
@@ -283,8 +232,14 @@ struct WorkoutDetailView: View {
                 selectedCategories: $selectedCategoriesForAssignment,
                 selectedSubcategories: $selectedSubcategoriesForAssignment,
                 workoutType: workout.type,
-                appleWorkoutActivityType: workout.appleWorkoutActivityType
+                appleWorkoutActivityType: workout.appleWorkoutActivityType,
+                lockedSubcategoryIDs: Set((workout.exercises ?? []).compactMap { $0.subcategory?.id })
             )
+        }
+        .sheet(isPresented: $showingCategoriesManagement) {
+            NavigationStack {
+                CategoriesManagementView()
+            }
         }
         .onChange(of: exerciseDraftEntry) { _, _ in
             scheduleEditedExercisePersistence()
@@ -377,16 +332,15 @@ struct WorkoutDetailView: View {
             parts.append(String(format: "%.1f km", distance))
         }
 
-        return parts.isEmpty ? nil : parts.joined(separator: " • ")
-    }
-
-    private func statRow(title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.secondary)
+        if let calories = workout.calories, calories > 0 {
+            parts.append("\(Int(calories)) kcal")
         }
+
+        if let rating = workout.rating, rating > 0 {
+            parts.append(String(format: "%.1f/10", rating))
+        }
+
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 
     private func prepareCategoryAssignment() {
@@ -402,11 +356,11 @@ struct WorkoutDetailView: View {
         try? modelContext.save()
     }
 
-    private var categoryDetails: [DetailChipItem] {
-        let items = (workout.categories ?? []).compactMap { category -> DetailChipItem? in
+    private var categoryDetails: [WorkoutStructureSummaryItem] {
+        let items = (workout.categories ?? []).compactMap { category -> WorkoutStructureSummaryItem? in
             let name = category.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return nil }
-            return DetailChipItem(
+            return WorkoutStructureSummaryItem(
                 title: name,
                 tint: Color(hex: category.color) ?? workout.primaryWorkoutTintColor,
                 symbol: "folder.fill"
@@ -415,12 +369,12 @@ struct WorkoutDetailView: View {
         return uniqueClassificationItems(items)
     }
 
-    private var subcategoryDetails: [DetailChipItem] {
-        let items = (workout.subcategories ?? []).compactMap { subcategory -> DetailChipItem? in
+    private var subcategoryDetails: [WorkoutStructureSummaryItem] {
+        let items = (workout.subcategories ?? []).compactMap { subcategory -> WorkoutStructureSummaryItem? in
             let name = subcategory.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return nil }
             let tint = subcategory.category.flatMap { Color(hex: $0.color) } ?? workout.primaryWorkoutTintColor
-            return DetailChipItem(
+            return WorkoutStructureSummaryItem(
                 title: name,
                 tint: tint,
                 symbol: "tag.fill"
@@ -433,41 +387,20 @@ struct WorkoutDetailView: View {
         !categoryDetails.isEmpty || !subcategoryDetails.isEmpty
     }
 
-    private func uniqueClassificationItems(_ items: [DetailChipItem]) -> [DetailChipItem] {
+    private var headerClassificationSummary: String? {
+        let categoryText = categoryDetails.map(\.title).joined(separator: ", ")
+        let subcategoryText = subcategoryDetails.map(\.title).joined(separator: ", ")
+        let parts = [categoryText, subcategoryText].filter { !$0.isEmpty }
+        let summary = parts.joined(separator: " · ")
+        return summary.isEmpty ? nil : summary
+    }
+
+    private func uniqueClassificationItems(_ items: [WorkoutStructureSummaryItem]) -> [WorkoutStructureSummaryItem] {
         var seen = Set<String>()
         return items.filter { item in
             seen.insert(item.id).inserted
         }
         .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-    }
-
-    private func classificationGroupHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .padding(.top, 4)
-    }
-
-    private func classificationRow(_ item: DetailChipItem) -> some View {
-        Label {
-            Text(item.title)
-                .foregroundStyle(.primary)
-        } icon: {
-            Image(systemName: item.symbol)
-                .foregroundStyle(item.tint)
-        }
-    }
-
-    private var subcategoryCompactRow: some View {
-        Label {
-            Text(subcategoryDetails.map(\.title).joined(separator: " • "))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-        } icon: {
-            Image(systemName: "tag")
-                .foregroundStyle(.secondary)
-        }
     }
 
     private func formattedDuration(_ duration: TimeInterval) -> String {
@@ -694,16 +627,6 @@ struct WorkoutDetailView: View {
         }
 
         return ExerciseSetEntry(reps: reps, weight: weight, isCompleted: isCompleted)
-    }
-}
-
-private struct DetailChipItem: Identifiable {
-    let title: String
-    let tint: Color
-    let symbol: String
-
-    var id: String {
-        "\(symbol)-\(title.lowercased())"
     }
 }
 

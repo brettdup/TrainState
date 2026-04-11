@@ -12,7 +12,7 @@
 		9EA946AD2E0149810079B5BC /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EA946AC2E0149810079B5BC /* StoreKit.framework */; };
 		9EDBB35C2F3CF41900B136B2 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EDBB35B2F3CF41900B136B2 /* WidgetKit.framework */; };
 		9EDBB35E2F3CF41900B136B2 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9EDBB35D2F3CF41900B136B2 /* SwiftUI.framework */; };
-		9EDBB36F2F3CF41A00B136B2 /* TrainStateWidgetExtensionExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9EDBB35A2F3CF41900B136B2 /* TrainStateWidgetExtensionExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9EDBB36F2F3CF41A00B136B2 /* Exercise Pal Widget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9EDBB35A2F3CF41900B136B2 /* Exercise Pal Widget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,7 +56,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				9EDBB36F2F3CF41A00B136B2 /* TrainStateWidgetExtensionExtension.appex in Embed Foundation Extensions */,
+				9EDBB36F2F3CF41A00B136B2 /* Exercise Pal Widget.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -64,11 +64,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		9E77B6F72DD1C6A0009B5253 /* TrainState.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TrainState.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9E77B6F72DD1C6A0009B5253 /* Exercise Pal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Exercise Pal.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		9E77B7082DD1C6A1009B5253 /* TrainStateTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TrainStateTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9E77B7122DD1C6A1009B5253 /* TrainStateUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TrainStateUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9EA946AC2E0149810079B5BC /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
-		9EDBB35A2F3CF41900B136B2 /* TrainStateWidgetExtensionExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TrainStateWidgetExtensionExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		9EDBB35A2F3CF41900B136B2 /* Exercise Pal Widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Exercise Pal Widget.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		9EDBB35B2F3CF41900B136B2 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		9EDBB35D2F3CF41900B136B2 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -177,10 +177,10 @@
 		9E77B6F82DD1C6A0009B5253 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				9E77B6F72DD1C6A0009B5253 /* TrainState.app */,
+				9E77B6F72DD1C6A0009B5253 /* Exercise Pal.app */,
 				9E77B7082DD1C6A1009B5253 /* TrainStateTests.xctest */,
 				9E77B7122DD1C6A1009B5253 /* TrainStateUITests.xctest */,
-				9EDBB35A2F3CF41900B136B2 /* TrainStateWidgetExtensionExtension.appex */,
+				9EDBB35A2F3CF41900B136B2 /* Exercise Pal Widget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -222,7 +222,7 @@
 				9E4572812F2CA20200A77E4F /* RevenueCatUI */,
 			);
 			productName = TrainState;
-			productReference = 9E77B6F72DD1C6A0009B5253 /* TrainState.app */;
+			productReference = 9E77B6F72DD1C6A0009B5253 /* Exercise Pal.app */;
 			productType = "com.apple.product-type.application";
 		};
 		9E77B7072DD1C6A1009B5253 /* TrainStateTests */ = {
@@ -290,7 +290,7 @@
 			packageProductDependencies = (
 			);
 			productName = TrainStateWidgetExtensionExtension;
-			productReference = 9EDBB35A2F3CF41900B136B2 /* TrainStateWidgetExtensionExtension.appex */;
+			productReference = 9EDBB35A2F3CF41900B136B2 /* Exercise Pal Widget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -439,10 +439,11 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainState/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Exercise Pal";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "TrainState needs access to your health data to track your sleep, recovery, and stress levels.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "TrainState needs permission to update your health data for tracking sleep, recovery, and stress levels.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Exercise Pal needs access to your health data to track your sleep, recovery, and stress levels.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Exercise Pal needs permission to update your health data for tracking sleep, recovery, and stress levels.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -457,7 +458,7 @@
 				);
 				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = brettduplessis.TrainState;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Exercise Pal";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -479,10 +480,11 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainState/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Exercise Pal";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "TrainState needs access to your health data to track your sleep, recovery, and stress levels.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "TrainState needs permission to update your health data for tracking sleep, recovery, and stress levels.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Exercise Pal needs access to your health data to track your sleep, recovery, and stress levels.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Exercise Pal needs permission to update your health data for tracking sleep, recovery, and stress levels.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -497,7 +499,7 @@
 				);
 				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = brettduplessis.TrainState;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Exercise Pal";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -641,7 +643,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TrainState.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TrainState";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Exercise Pal.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Exercise Pal";
 			};
 			name = Debug;
 		};
@@ -660,7 +662,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TrainState.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TrainState";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Exercise Pal.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Exercise Pal";
 			};
 			name = Release;
 		};
@@ -709,7 +711,7 @@
 				DEVELOPMENT_TEAM = C6GR6GJPAA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainStateWidgetExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = TrainStateWidgetExtension;
+				INFOPLIST_KEY_CFBundleDisplayName = "Exercise Pal";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -719,7 +721,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = brettduplessis.TrainState.TrainStateWidgetExtension;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Exercise Pal Widget";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -741,7 +743,7 @@
 				DEVELOPMENT_TEAM = C6GR6GJPAA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainStateWidgetExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = TrainStateWidgetExtension;
+				INFOPLIST_KEY_CFBundleDisplayName = "Exercise Pal";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -751,7 +753,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = brettduplessis.TrainState.TrainStateWidgetExtension;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Exercise Pal Widget";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

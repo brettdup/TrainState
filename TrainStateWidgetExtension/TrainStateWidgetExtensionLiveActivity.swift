@@ -60,7 +60,7 @@ struct TrainStateWidgetExtensionLiveActivity: Widget {
                 Image(systemName: "bolt.heart.fill")
                     .foregroundStyle(.green)
             }
-            .widgetURL(URL(string: "trainstate://workout/live"))
+            .widgetURL(URL(string: "exercisepal://workout/live"))
             .keylineTint(.green)
         }
     }

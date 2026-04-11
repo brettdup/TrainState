@@ -28,7 +28,7 @@ struct TrainStateApp: App {
             ])
             
             // Use persistent database that preserves all data
-            let storeURL = URL.documentsDirectory.appendingPathComponent("TrainState.store")
+            let storeURL = URL.documentsDirectory.appendingPathComponent("ExercisePalWorkoutTracker.store")
             
             let config = ModelConfiguration(
                 schema: schema,

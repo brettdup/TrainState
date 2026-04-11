@@ -1,6 +1,6 @@
 import Foundation
 
-/// Free tier limits for TrainState. Premium users have unlimited access.
+/// Free tier limits for Exercise Pal. Premium users have unlimited access.
 enum PremiumLimits {
     /// Maximum workouts for free users.
     static let freeWorkoutLimit = 7

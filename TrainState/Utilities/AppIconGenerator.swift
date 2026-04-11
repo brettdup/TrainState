@@ -13,7 +13,7 @@ import UIKit
 struct AppIconGenerator: View {
     var body: some View {
         VStack(spacing: 20) {
-            Text("TrainState App Icon Generator")
+            Text("Exercise Pal App Icon Generator")
                 .font(.title)
                 .fontWeight(.bold)
 
@@ -67,7 +67,7 @@ struct AppIconGenerator: View {
             return
         }
 
-        let outputURL = documentsURL.appendingPathComponent("TrainState-AppIcon-1024.png")
+        let outputURL = documentsURL.appendingPathComponent("ExercisePal-AppIcon-1024.png")
         do {
             try pngData.write(to: outputURL)
             print("Icon saved: \(outputURL.path)")

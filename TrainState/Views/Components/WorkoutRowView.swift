@@ -43,12 +43,11 @@ struct WorkoutRowView: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
-                if hasCategorySummary {
-                    categorySummaryView
-                }
-
-                if hasSubcategorySummary {
-                    subcategorySummaryView
+                if let classificationSummary {
+                    Text(classificationSummary)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
 
                 if shouldShowDateLabel {
@@ -79,12 +78,11 @@ struct WorkoutRowView: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.primary)
 
-                    if hasCategorySummary {
-                        categorySummaryView
-                    }
-
-                    if hasSubcategorySummary {
-                        subcategorySummaryView
+                    if let classificationSummary {
+                        Text(classificationSummary)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
 
                     Text(formattedDate)
@@ -125,12 +123,11 @@ struct WorkoutRowView: View {
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.primary)
 
-                        if hasCategorySummary {
-                            categorySummaryView
-                        }
-
-                        if hasSubcategorySummary {
-                            subcategorySummaryView
+                        if let classificationSummary {
+                            Text(classificationSummary)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
                         }
                     }
                 }
@@ -196,12 +193,11 @@ struct WorkoutRowView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.primary)
 
-                        if hasCategorySummary {
-                            categorySummaryView
-                        }
-
-                        if hasSubcategorySummary {
-                            subcategorySummaryView
+                        if let classificationSummary {
+                            Text(classificationSummary)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
                         }
                     }
                 }
@@ -231,12 +227,11 @@ struct WorkoutRowView: View {
 
                 }
 
-                if hasCategorySummary {
-                    categorySummaryView
-                }
-
-                if hasSubcategorySummary {
-                    subcategorySummaryView
+                if let classificationSummary {
+                    Text(classificationSummary)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
 
                 HStack(spacing: 12) {
@@ -303,52 +298,34 @@ struct WorkoutRowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var hasCategorySummary: Bool {
-        !categorySummary.isEmpty
-    }
-
-    private var hasSubcategorySummary: Bool {
-        !subcategorySummary.isEmpty
-    }
-
-    private var categorySummary: String {
-        let categoryNames = (workout.categories ?? [])
+    private var categoryNames: [String] {
+        let names = (workout.categories ?? [])
             .map(\.name)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let ordered = Array(NSOrderedSet(array: categoryNames)) as? [String] ?? []
-        return ordered.prefix(2).joined(separator: " • ")
+        return Array(NSOrderedSet(array: names)) as? [String] ?? []
     }
 
-    private var subcategorySummary: String {
-        let subcategoryNames = (workout.subcategories ?? [])
+    private var subcategoryNames: [String] {
+        let names = (workout.subcategories ?? [])
             .map(\.name)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let ordered = Array(NSOrderedSet(array: subcategoryNames)) as? [String] ?? []
-        return ordered.prefix(3).joined(separator: " • ")
+        return Array(NSOrderedSet(array: names)) as? [String] ?? []
     }
 
-    private var categorySummaryView: some View {
-        Label {
-            Text(categorySummary)
-        } icon: {
-            Image(systemName: "folder")
-        }
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
+    private var categorySummaryText: String {
+        summarizedText(from: categoryNames, limit: 2)
     }
 
-    private var subcategorySummaryView: some View {
-        Label {
-            Text(subcategorySummary)
-        } icon: {
-            Image(systemName: "tag")
-        }
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(.secondary)
-        .lineLimit(2)
+    private var subcategorySummaryText: String {
+        summarizedText(from: subcategoryNames, limit: 3)
+    }
+
+    private var classificationSummary: String? {
+        let parts = [categorySummaryText, subcategorySummaryText].filter { !$0.isEmpty }
+        let summary = parts.joined(separator: " · ")
+        return summary.isEmpty ? nil : summary
     }
 
     private var dateLabel: some View {
@@ -412,6 +389,16 @@ struct WorkoutRowView: View {
                     lineWidth: 0.75
                 )
         )
+    }
+
+    private func summarizedText(from names: [String], limit: Int) -> String {
+        let visible = Array(names.prefix(limit))
+        let overflow = max(names.count - visible.count, 0)
+        var parts = visible
+        if overflow > 0 {
+            parts.append("+\(overflow)")
+        }
+        return parts.joined(separator: ", ")
     }
 
     private func statPill(icon: String, value: String) -> some View {

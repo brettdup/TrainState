@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "9E77B6F62DD1C6A0009B5253"
-               BuildableName = "TrainState.app"
+               BuildableName = "Exercise Pal.app"
                BlueprintName = "TrainState"
                ReferencedContainer = "container:TrainState.xcodeproj">
             </BuildableReference>
@@ -70,7 +70,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "9E77B6F62DD1C6A0009B5253"
-            BuildableName = "TrainState.app"
+            BuildableName = "Exercise Pal.app"
             BlueprintName = "TrainState"
             ReferencedContainer = "container:TrainState.xcodeproj">
          </BuildableReference>
@@ -94,7 +94,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "9E77B6F62DD1C6A0009B5253"
-            BuildableName = "TrainState.app"
+            BuildableName = "Exercise Pal.app"
             BlueprintName = "TrainState"
             ReferencedContainer = "container:TrainState.xcodeproj">
          </BuildableReference>

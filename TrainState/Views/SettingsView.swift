@@ -375,7 +375,7 @@ struct SettingsView: View {
             Button {
                 openAppStoreReviewPage()
             } label: {
-                SettingsRow(icon: "star.bubble", title: "Rate TrainState")
+                SettingsRow(icon: "star.bubble", title: "Rate Exercise Pal")
             }
             .buttonStyle(.borderless)
         }

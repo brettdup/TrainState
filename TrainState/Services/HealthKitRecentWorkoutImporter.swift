@@ -148,7 +148,7 @@ final class HealthKitRecentWorkoutImporter {
         try context.save()
     }
 
-    func importWorkoutsBatch(_ items: [HealthKitRecentWorkoutMenuItem], into context: ModelContext) throws {
+    func importWorkoutsBatch(_ items: [HealthKitRecentWorkoutMenuItem], into context: ModelContext) async throws {
         guard !items.isEmpty else { return }
 
         for item in items {
@@ -166,6 +166,17 @@ final class HealthKitRecentWorkoutImporter {
                 hkLocationTypeRaw: item.locationTypeRaw
             )
             workout.hkUUID = item.hkUUID
+
+            if let sourceWorkout = try await findWorkout(uuidString: item.hkUUID),
+               let importedRoute = try await fetchRouteLocations(for: sourceWorkout),
+               !importedRoute.isEmpty {
+                let route = WorkoutRoute()
+                route.decodedRoute = downsampleLocations(importedRoute, maxPoints: 2000)
+                route.workout = workout
+                workout.route = route
+                context.insert(route)
+            }
+
             context.insert(workout)
         }
 

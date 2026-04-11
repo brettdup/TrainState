@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct WorkoutExerciseSectionView: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     @Binding var entries: [ExerciseLogEntry]
 
     let tintColor: Color
@@ -14,19 +12,7 @@ struct WorkoutExerciseSectionView: View {
     @State private var showingExercisePicker = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Exercises")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if allowsReordering && !entries.isEmpty {
-                    Text("Drag to reorder")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-
+        Section {
             Button {
                 showingExercisePicker = true
             } label: {
@@ -37,6 +23,7 @@ struct WorkoutExerciseSectionView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Add Exercises")
                             .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
                         Text("Search and select from your library")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -46,34 +33,28 @@ struct WorkoutExerciseSectionView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.tertiary)
                 }
-                .padding(.vertical, 4)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             if entries.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("No exercises yet")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Tap \"Add Exercises\" to search and select from your library.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            } else if allowsReordering {
-                ReorderableExerciseList(
-                    entries: $entries,
-                    colorScheme: colorScheme,
-                    onTap: onTap
+                ContentUnavailableView(
+                    "No Exercises Yet",
+                    systemImage: "dumbbell",
+                    description: Text("Tap “Add Exercises” to search and select from your library.")
                 )
+                .frame(maxWidth: .infinity)
+                .listRowBackground(Color.clear)
+            } else if allowsReordering {
+                ReorderableExerciseList(entries: $entries, onTap: onTap)
             } else {
-                VStack(spacing: 12) {
-                    ForEach(entries) { entry in
-                        Button {
-                            onTap(entry)
-                        } label: {
-                            ExerciseCardView(entry: entry)
-                        }
-                        .buttonStyle(.plain)
+                ForEach(entries) { entry in
+                    Button {
+                        onTap(entry)
+                    } label: {
+                        ExerciseCardView(entry: entry)
                     }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -82,10 +63,17 @@ struct WorkoutExerciseSectionView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        } header: {
+            HStack {
+                Text("Exercises")
+                Spacer()
+                if allowsReordering && !entries.isEmpty {
+                    Text("Drag to reorder")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(cardBackground)
         .sheet(isPresented: $showingExercisePicker) {
             UnifiedExercisePickerView(
                 subcategories: availableSubcategories,
@@ -106,16 +94,6 @@ struct WorkoutExerciseSectionView: View {
         }
     }
 
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 32)
-            .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.white.opacity(0.62))
-            .overlay(
-                RoundedRectangle(cornerRadius: 32)
-                    .stroke(Color.white.opacity(colorScheme == .dark ? 0.14 : 0.72), lineWidth: 0.5)
-            )
-            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.12 : 0.04), radius: 5, x: 0, y: 2)
-    }
-
     private func addExercise(from option: ExerciseQuickAddOption) {
         var entry = ExerciseLogEntry(name: option.name, subcategoryID: option.subcategoryID)
         if let lastMatch = entries.last(where: { $0.trimmedName.caseInsensitiveCompare(option.name) == .orderedSame }) {
@@ -131,7 +109,6 @@ struct WorkoutExerciseSectionView: View {
 
 private struct ReorderableExerciseList: View {
     @Binding var entries: [ExerciseLogEntry]
-    let colorScheme: ColorScheme
     let onTap: (ExerciseLogEntry) -> Void
 
     @State private var draggingItem: ExerciseLogEntry?
@@ -145,8 +122,7 @@ private struct ReorderableExerciseList: View {
                     ExerciseCardView(
                         entry: entry,
                         showDragHandle: true,
-                        isDragging: draggingItem?.id == entry.id,
-                        colorScheme: colorScheme
+                        isDragging: draggingItem?.id == entry.id
                     )
                 }
                 .buttonStyle(.plain)

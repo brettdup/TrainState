@@ -5,13 +5,12 @@ import HealthKit
 
 struct CategoriesManagementView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \WorkoutCategory.name) private var categories: [WorkoutCategory]
     @Query(sort: \WorkoutSubcategory.name) private var subcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var expandedCategoryId: UUID?
-    @State private var expandedSubcategoryId: UUID?
+    @State private var selectedSubcategory: WorkoutSubcategory?
     @State private var showingAddSubcategory = false
     @State private var newSubcategoryName = ""
     @State private var subcategoryParentCategory: WorkoutCategory?
@@ -19,6 +18,8 @@ struct CategoriesManagementView: View {
     @State private var newExerciseTemplateName = ""
     @State private var templateParentSubcategory: WorkoutSubcategory?
     @State private var showingPaywall = false
+    @State private var categoryPendingDelete: WorkoutCategory?
+    @State private var subcategoryPendingDelete: WorkoutSubcategory?
 
     private var groupedCategories: [(id: String, title: String, categories: [WorkoutCategory])] {
         let grouped = Dictionary(grouping: categories) { category in
@@ -56,122 +57,36 @@ struct CategoriesManagementView: View {
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                    Color(.systemBackground)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+        List {
+            Section {
+                LabeledContent("Categories", value: "\(categories.count)")
+                LabeledContent("Subcategories", value: "\(subcategories.count)")
+                LabeledContent("Exercises", value: "\(exerciseTemplates.count)")
+            } footer: {
+                Text("Expand a category to manage its subcategories, then expand a subcategory to manage its exercise library.")
+            }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("Subcategories are linked to their parent category. Expand a subcategory to manage its exercises.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    ForEach(groupedCategories, id: \.id) { section in
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(section.title)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 4)
-
-                            ForEach(section.categories) { category in
-                                DisclosureGroup(isExpanded: Binding(
-                                    get: { expandedCategoryId == category.id },
-                                    set: { expandedCategoryId = $0 ? category.id : nil }
-                                )) {
-                                    ForEach(subcategoriesFor(category)) { sub in
-                                        DisclosureGroup(isExpanded: Binding(
-                                            get: { expandedSubcategoryId == sub.id },
-                                            set: { expandedSubcategoryId = $0 ? sub.id : nil }
-                                        )) {
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                ForEach(exerciseTemplatesFor(sub)) { template in
-                                                    HStack(spacing: 8) {
-                                                        Image(systemName: "dumbbell.fill")
-                                                            .font(.caption2)
-                                                            .foregroundStyle(.tertiary)
-                                                        Text(template.name)
-                                                            .font(.subheadline)
-                                                        Spacer()
-                                                        Button(role: .destructive) {
-                                                            modelContext.delete(template)
-                                                            try? modelContext.save()
-                                                        } label: {
-                                                            Image(systemName: "trash")
-                                                                .font(.caption)
-                                                        }
-                                                        .buttonStyle(.plain)
-                                                    }
-                                                }
-                                                Button {
-                                                    templateParentSubcategory = sub
-                                                    newExerciseTemplateName = ""
-                                                    showingAddExerciseTemplate = true
-                                                } label: {
-                                                    Label("Add Exercise", systemImage: "plus.circle")
-                                                        .font(.subheadline)
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                            .padding(.top, 4)
-                                        } label: {
-                                            HStack(spacing: 8) {
-                                                Image(systemName: "arrow.turn.down.right")
-                                                    .font(.caption2)
-                                                    .foregroundStyle(.tertiary)
-                                                Text(sub.name)
-                                                    .font(.subheadline)
-                                                Spacer()
-                                                Text("\(exerciseTemplatesFor(sub).count)")
-                                                    .font(.caption.weight(.semibold))
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                        .padding(.vertical, 4)
-                                    }
-                                    Button {
-                                        if canAddSubcategory(to: category) {
-                                            subcategoryParentCategory = category
-                                            newSubcategoryName = ""
-                                            showingAddSubcategory = true
-                                        } else {
-                                            Task {
-                                                await purchaseManager.loadProducts()
-                                                await purchaseManager.updatePurchasedProducts()
-                                                showingPaywall = true
-                                            }
-                                        }
-                                    } label: {
-                                        Label("Add Subcategory", systemImage: "plus.circle")
-                                            .font(.subheadline)
-                                    }
-                                    .buttonStyle(.plain)
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(Color(hex: category.color) ?? .gray)
-                                            .frame(width: 10, height: 10)
-                                        Text(category.name)
-                                            .font(.headline)
-                                    }
-                                }
-                                .padding(20)
-                                .glassCard()
-                            }
+            if groupedCategories.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "No Categories Yet",
+                        systemImage: "square.grid.2x2",
+                        description: Text("Create a category from the workout flow first, then manage its subcategories and exercises here.")
+                    )
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
+                }
+            } else {
+                ForEach(groupedCategories, id: \.id) { section in
+                    Section(section.title) {
+                        ForEach(section.categories) { category in
+                            categoryDisclosure(for: category)
                         }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 24)
             }
         }
+        .listStyle(.insetGrouped)
         .navigationTitle("Categories")
         .sheet(isPresented: $showingAddSubcategory) {
             addSubcategorySheet
@@ -179,12 +94,45 @@ struct CategoriesManagementView: View {
         .sheet(isPresented: $showingAddExerciseTemplate) {
             addExerciseTemplateSheet
         }
+        .sheet(item: $selectedSubcategory) { subcategory in
+            subcategorySheet(for: subcategory)
+        }
         .sheet(isPresented: $showingPaywall) {
             if let offering = purchaseManager.offerings?.current {
                 PaywallView(offering: offering)
             } else {
                 PaywallPlaceholderView(onDismiss: { showingPaywall = false })
             }
+        }
+        .confirmationDialog(
+            "Delete Category",
+            isPresented: categoryDeleteConfirmationBinding,
+            titleVisibility: .visible,
+            presenting: categoryPendingDelete
+        ) { category in
+            Button("Delete Category", role: .destructive) {
+                deleteCategory(category)
+            }
+            Button("Cancel", role: .cancel) {
+                categoryPendingDelete = nil
+            }
+        } message: { category in
+            Text(categoryDeleteMessage(for: category))
+        }
+        .confirmationDialog(
+            "Delete Subcategory",
+            isPresented: subcategoryDeleteConfirmationBinding,
+            titleVisibility: .visible,
+            presenting: subcategoryPendingDelete
+        ) { subcategory in
+            Button("Delete Subcategory", role: .destructive) {
+                deleteSubcategory(subcategory)
+            }
+            Button("Cancel", role: .cancel) {
+                subcategoryPendingDelete = nil
+            }
+        } message: { subcategory in
+            Text(subcategoryDeleteMessage(for: subcategory))
         }
     }
 
@@ -198,42 +146,271 @@ struct CategoriesManagementView: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private var addSubcategorySheet: some View {
-        NavigationStack {
-            ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+    private var categoryDeleteConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { categoryPendingDelete != nil },
+            set: { if !$0 { categoryPendingDelete = nil } }
+        )
+    }
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        TextField("Subcategory name", text: $newSubcategoryName)
-                            .textFieldStyle(.plain)
-                            .padding(20)
-                            .glassCard()
-                        if let cat = subcategoryParentCategory {
-                            Label("Will be linked to \(cat.name)", systemImage: "link")
+    private var subcategoryDeleteConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { subcategoryPendingDelete != nil },
+            set: { if !$0 { subcategoryPendingDelete = nil } }
+        )
+    }
+
+    private func categoryDisclosure(for category: WorkoutCategory) -> some View {
+        DisclosureGroup(
+            isExpanded: Binding(
+                get: { expandedCategoryId == category.id },
+                set: { expandedCategoryId = $0 ? category.id : nil }
+            )
+        ) {
+            let categorySubcategories = subcategoriesFor(category)
+
+            if categorySubcategories.isEmpty {
+                ContentUnavailableView(
+                    "No Subcategories",
+                    systemImage: "tag",
+                    description: Text("Add a subcategory to start organizing exercises under \(category.name).")
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            } else {
+                ForEach(categorySubcategories) { subcategory in
+                    Button {
+                        selectedSubcategory = subcategory
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "tag.fill")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .frame(width: 16)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(subcategory.name)
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                Text("\(exerciseTemplatesFor(subcategory).count) exercises")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            subcategoryPendingDelete = subcategory
+                        } label: {
+                            Label("Delete", systemImage: "trash")
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
+                }
+            }
+
+            Button {
+                if canAddSubcategory(to: category) {
+                    subcategoryParentCategory = category
+                    newSubcategoryName = ""
+                    showingAddSubcategory = true
+                } else {
+                    Task {
+                        await purchaseManager.loadProducts()
+                        await purchaseManager.updatePurchasedProducts()
+                        showingPaywall = true
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Label("Add Subcategory", systemImage: "plus.circle")
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, categorySubcategories.isEmpty ? 8 : 4)
+        } label: {
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(Color(hex: category.color) ?? .gray)
+                    .frame(width: 10, height: 10)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(category.name)
+                        .font(.headline)
+                    Text("\(subcategoriesFor(category).count) subcategories")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                categoryPendingDelete = category
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    private func subcategorySheet(for subcategory: WorkoutSubcategory) -> some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Parent Category", value: subcategory.category?.name ?? "Unlinked")
+                    LabeledContent("Exercises", value: "\(exerciseTemplatesFor(subcategory).count)")
+                }
+
+                Section("Exercises") {
+                    let templates = exerciseTemplatesFor(subcategory)
+
+                    if templates.isEmpty {
+                        ContentUnavailableView(
+                            "No Exercises",
+                            systemImage: "dumbbell",
+                            description: Text("Add an exercise template to build out \(subcategory.name).")
+                        )
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                    } else {
+                        ForEach(templates) { template in
+                            HStack(spacing: 12) {
+                                Image(systemName: "dumbbell.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 16)
+
+                                Text(template.name)
+                                    .font(.subheadline)
+
+                                Spacer()
+
+                                Button(role: .destructive) {
+                                    modelContext.delete(template)
+                                    try? modelContext.save()
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+
+                Section {
+                    Button {
+                        templateParentSubcategory = subcategory
+                        newExerciseTemplateName = ""
+                        showingAddExerciseTemplate = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Label("Add Exercise", systemImage: "plus.circle")
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle(subcategory.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        selectedSubcategory = nil
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .destructive) {
+                        subcategoryPendingDelete = subcategory
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                }
+            }
+        }
+    }
+
+    private func categoryDeleteMessage(for category: WorkoutCategory) -> String {
+        let linkedSubcategories = subcategoriesFor(category).count
+        let linkedTemplates = subcategoriesFor(category).reduce(0) { $0 + exerciseTemplatesFor($1).count }
+        let linkedWorkouts = category.workouts?.count ?? 0
+
+        return "\(category.name) will be permanently deleted. This will also delete \(linkedSubcategories) subcategories and \(linkedTemplates) exercise templates. \(linkedWorkouts == 0 ? "No workouts are currently linked." : "\(linkedWorkouts) linked workouts will remain, but this category and its subcategory links will be removed from them.")"
+    }
+
+    private func subcategoryDeleteMessage(for subcategory: WorkoutSubcategory) -> String {
+        let linkedTemplates = exerciseTemplatesFor(subcategory).count
+        let linkedWorkouts = subcategory.workouts?.count ?? 0
+        let linkedLoggedExercises = subcategory.exercises?.count ?? 0
+
+        return "\(subcategory.name) will be permanently deleted. This will also delete \(linkedTemplates) exercise templates. \(linkedWorkouts == 0 && linkedLoggedExercises == 0 ? "No workouts or logged exercises are currently linked." : "\(linkedWorkouts) linked workouts and \(linkedLoggedExercises) logged exercises will remain, but their subcategory link will be removed.")"
+    }
+
+    private func deleteCategory(_ category: WorkoutCategory) {
+        if expandedCategoryId == category.id {
+            expandedCategoryId = nil
+        }
+        if subcategoryParentCategory?.id == category.id {
+            subcategoryParentCategory = nil
+        }
+        modelContext.delete(category)
+        try? modelContext.save()
+        categoryPendingDelete = nil
+    }
+
+    private func deleteSubcategory(_ subcategory: WorkoutSubcategory) {
+        if selectedSubcategory?.id == subcategory.id {
+            selectedSubcategory = nil
+        }
+        if templateParentSubcategory?.id == subcategory.id {
+            templateParentSubcategory = nil
+            showingAddExerciseTemplate = false
+            newExerciseTemplateName = ""
+        }
+        modelContext.delete(subcategory)
+        try? modelContext.save()
+        subcategoryPendingDelete = nil
+    }
+
+    private var addSubcategorySheet: some View {
+        NavigationStack {
+            Form {
+                Section("Subcategory") {
+                    TextField("Subcategory name", text: $newSubcategoryName)
+                        .textInputAutocapitalization(.words)
+                        .disableAutocorrection(true)
+                }
+
+                if let cat = subcategoryParentCategory {
+                    Section("Parent Category") {
+                        Text(cat.name)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .navigationTitle("New Subcategory")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         showingAddSubcategory = false
                         subcategoryParentCategory = nil
+                        newSubcategoryName = ""
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -248,35 +425,22 @@ struct CategoriesManagementView: View {
 
     private var addExerciseTemplateSheet: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+            Form {
+                Section("Exercise") {
+                    TextField("Exercise name", text: $newExerciseTemplateName)
+                        .textInputAutocapitalization(.words)
+                        .disableAutocorrection(true)
+                }
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        TextField("Exercise name", text: $newExerciseTemplateName)
-                            .textFieldStyle(.plain)
-                            .padding(20)
-                            .glassCard()
-                        if let subcategory = templateParentSubcategory {
-                            Label("Will be linked to \(subcategory.name)", systemImage: "link")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                if let subcategory = templateParentSubcategory {
+                    Section("Parent Subcategory") {
+                        Text(subcategory.name)
+                            .foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
                 }
             }
             .navigationTitle("New Exercise")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

@@ -453,30 +453,25 @@ struct AddWorkoutView: View {
     }
 
     private var strengthTemplatesCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Strength Templates")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("\(strengthTemplates.count) saved")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-
+        Section {
             if let activeTemplateName {
-                Text("Current plan: \(activeTemplateName)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(type.tintColor)
-                if totalPlannedSets > 0 {
-                    Text("Progress: \(totalCompletedSets)/\(totalPlannedSets) sets done")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(activeTemplateName)
+                        .font(.body.weight(.semibold))
+                    if totalPlannedSets > 0 {
+                        Text("\(totalCompletedSets) of \(totalPlannedSets) sets completed")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             } else if let latest = strengthTemplates.first {
-                Text("Last updated: \(latest.name)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Last used")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(latest.name)
+                        .font(.body.weight(.semibold))
+                }
             } else {
                 Text("Save a common routine once, then load it instantly.")
                     .font(.subheadline)
@@ -484,76 +479,53 @@ struct AddWorkoutView: View {
             }
 
             if !quickTemplateCandidates.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Quick start")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    ForEach(quickTemplateCandidates) { template in
-                        Button {
-                            applyStrengthTemplate(template)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(template.name)
-                                        .font(.subheadline.weight(.semibold))
-                                    Text(templateSummary(template))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if activeTemplateID == template.id {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(type.tintColor)
-                                }
+                ForEach(quickTemplateCandidates) { template in
+                    Button {
+                        applyStrengthTemplate(template)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(template.name)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                Text(templateSummary(template))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.primary.opacity(0.06))
-                            )
+                            Spacer()
+                            if activeTemplateID == template.id {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(type.tintColor)
+                            }
                         }
-                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
             }
 
-            HStack(spacing: 10) {
-                Button {
-                    showingTemplateLibrary = true
-                } label: {
-                    Label("Choose Template", systemImage: "square.stack.3d.up")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(type.tintColor.opacity(0.18))
-                        )
-                }
-                .buttonStyle(.plain)
+            Button {
+                showingTemplateLibrary = true
+            } label: {
+                Label("Choose Template", systemImage: "square.stack.3d.up")
+            }
 
-                Button {
-                    newTemplateName = suggestedTemplateName
-                    showingSaveTemplateAlert = true
-                } label: {
-                    Label("Save Current", systemImage: "square.and.arrow.down")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color.primary.opacity(0.08))
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSaveCurrentEntriesAsTemplate)
-                .opacity(canSaveCurrentEntriesAsTemplate ? 1 : 0.5)
+            Button {
+                newTemplateName = suggestedTemplateName
+                showingSaveTemplateAlert = true
+            } label: {
+                Label("Save Current as Template", systemImage: "square.and.arrow.down")
+            }
+            .disabled(!canSaveCurrentEntriesAsTemplate)
+        } header: {
+            HStack {
+                Text("Strength Templates")
+                Spacer()
+                Text("\(strengthTemplates.count) saved")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var distanceCard: some View {
@@ -605,23 +577,6 @@ struct AddWorkoutView: View {
     private var exercisesCard: some View {
         Section("Exercises") {
             HStack {
-                Spacer()
-                Button {
-                    showingExercisePicker = true
-                } label: {
-                    Label("Add Exercises", systemImage: "plus.circle.fill")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(type.tintColor.opacity(0.18))
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-
-            HStack {
                 Text("\(trackedExerciseCount) exercise\(trackedExerciseCount == 1 ? "" : "s") logged")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -636,57 +591,96 @@ struct AddWorkoutView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                VStack(spacing: 12) {
+                VStack(spacing: 0) {
                     ForEach(exerciseEntries) { entry in
-                        HStack(alignment: .top, spacing: 12) {
-                            // Exercise icon
-                            Image(systemName: ExerciseIconMapper.icon(for: entry.trimmedName))
-                                .font(.system(size: 18))
-                                .foregroundStyle(ExerciseIconMapper.iconColor(for: entry.trimmedName))
-                                .frame(width: 24)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
-                                    .font(.body.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-
-                                // Show set details if available
-                                if !entry.setSummaryLines.isEmpty {
-                                    Text(entry.setSummaryLines.joined(separator: "\n"))
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .multilineTextAlignment(.leading)
-                                }
-                            }
-
-                            Spacer()
-
-                            HStack(spacing: 10) {
-                                if let completionLabel = nextSetCompletionLabel(for: entry) {
-                                    Button(completionLabel) {
-                                        markNextSetDone(for: entry.id)
-                                    }
-                                    .font(.caption.weight(.semibold))
-                                    .buttonStyle(.bordered)
-                                }
-
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
+                        let subcategoryName = allSubcategories.first(where: { $0.id == entry.subcategoryID })?.name
+                        Button {
                             activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: ExerciseIconMapper.icon(for: entry.trimmedName))
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(ExerciseIconMapper.iconColor(for: entry.trimmedName))
+                                    .frame(width: 24)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+
+                                    if let subcategoryName, !subcategoryName.isEmpty {
+                                        Text(subcategoryName)
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    if !entry.setSummaryLines.isEmpty {
+                                        Text(entry.setSummaryLines.joined(separator: "\n"))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+
+                                Spacer()
+
+                                HStack(spacing: 10) {
+                                    if let completionLabel = nextSetCompletionLabel(for: entry) {
+                                        Button(completionLabel) {
+                                            markNextSetDone(for: entry.id)
+                                        }
+                                        .font(.caption.weight(.semibold))
+                                        .buttonStyle(.bordered)
+                                    }
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .padding(.vertical, 10)
                         }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.04))
-                        )
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                exerciseEntries.removeAll { $0.id == entry.id }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+
+                        if entry.id != exerciseEntries.last?.id {
+                            Divider()
+                                .padding(.leading, 36)
+                        }
                     }
                 }
+            }
+
+            Button {
+                showingExercisePicker = true
+            } label: {
+                HStack {
+                    Label("Add Exercises", systemImage: "plus.circle.fill")
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if !exerciseEntries.isEmpty {
+                Button {
+                    addAndEditNewExercise()
+                } label: {
+                    HStack {
+                        Label("Add Custom Exercise", systemImage: "square.and.pencil")
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
     }

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSHealthShareUsageDescription</key>
-	<string>TrainState reads your recent Health workouts so you can import them on demand.</string>
+	<string>Exercise Pal reads your recent Health workouts so you can import them on demand.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

@@ -5,7 +5,6 @@ import HealthKit
 struct EditWorkoutView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \WorkoutSubcategory.name) private var allSubcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
     @Bindable var workout: Workout
@@ -21,6 +20,10 @@ struct EditWorkoutView: View {
     @State private var activeExerciseSelection: ExerciseEditorSelection?
     @State private var showingAdvancedFields = false
     @State private var lastPersistedSnapshot: EditWorkoutSnapshot
+    @State private var showingCategoryAssignment = false
+    @State private var selectedCategoriesForAssignment: [WorkoutCategory]
+    @State private var selectedSubcategoriesForAssignment: [WorkoutSubcategory]
+    @State private var showingCategoriesManagement = false
 
     private let quickDurations: [Double] = [15, 30, 45, 60, 90, 120]
     private var durationBinding: Binding<Double> {
@@ -102,41 +105,27 @@ struct EditWorkoutView: View {
                 )
             })
         _lastPersistedSnapshot = State(initialValue: snapshot)
+        _selectedCategoriesForAssignment = State(initialValue: workout.categories ?? [])
+        _selectedSubcategoriesForAssignment = State(initialValue: workout.subcategories ?? [])
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04),
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.04 : 0.015),
-                    Color(.systemBackground)
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-
-            ScrollView {
-                VStack(spacing: 16) {
-                    appleWorkoutTypeCard
-                    dateCard
-                    durationCard
-                    if showsDistance { distanceCard }
-                    exercisesCard
-                    advancedSectionCard
-                    if showingAdvancedFields {
-                        ratingCard
-                        notesCard
-                    }
-                }
-                .glassEffectContainer(spacing: 16)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
-                .padding(.bottom, 24)
+        Form {
+            appleWorkoutTypeCard
+            dateCard
+            durationCard
+            if showsDistance { distanceCard }
+            if type == .strength {
+                strengthManagementSection
+            }
+            exercisesCard
+            advancedSectionCard
+            if showingAdvancedFields {
+                ratingCard
+                notesCard
             }
         }
+        .formStyle(.grouped)
         .navigationTitle("Edit Workout")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -156,6 +145,20 @@ struct EditWorkoutView: View {
                 )
             } else {
                 EmptyView()
+            }
+        }
+        .sheet(isPresented: $showingCategoryAssignment) {
+            CategoryAndSubcategorySelectionView(
+                selectedCategories: $selectedCategoriesForAssignment,
+                selectedSubcategories: $selectedSubcategoriesForAssignment,
+                workoutType: type,
+                appleWorkoutActivityType: appleWorkoutActivityType,
+                lockedSubcategoryIDs: Set(exerciseEntries.compactMap(\.subcategoryID))
+            )
+        }
+        .sheet(isPresented: $showingCategoriesManagement) {
+            NavigationStack {
+                CategoriesManagementView()
             }
         }
         .onChange(of: selectedAppleWorkout) { _, newSelection in
@@ -182,6 +185,13 @@ struct EditWorkoutView: View {
                 }
             }
         }
+        .onChange(of: showingCategoryAssignment) { _, isPresented in
+            if !isPresented {
+                workout.categories = selectedCategoriesForAssignment
+                workout.subcategories = selectedSubcategoriesForAssignment
+                persistChangesIfNeeded()
+            }
+        }
         .task(id: currentSnapshot) {
             await autosaveIfNeeded()
         }
@@ -191,40 +201,24 @@ struct EditWorkoutView: View {
     }
 
     private var appleWorkoutTypeCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Apple Workout Type")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Apple Workout Type") {
             Picker("Apple Workout Type", selection: $selectedAppleWorkout) {
                 ForEach(appleWorkoutActivityOptions) { selection in
                     Text(selection.displayName).tag(selection)
                 }
             }
-            .pickerStyle(.menu)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassCard()
     }
 
     private var dateCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Date & Time")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            DatePicker("", selection: $date)
+        Section("Date & Time") {
+            DatePicker("Date", selection: $date)
                 .datePickerStyle(.compact)
-                .labelsHidden()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassCard()
     }
 
     private var advancedSectionCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        Section {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showingAdvancedFields.toggle()
@@ -242,17 +236,10 @@ struct EditWorkoutView: View {
             }
             .buttonStyle(.plain)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard()
     }
 
     private var durationCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Duration")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Duration") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 10)], spacing: 10) {
                 ForEach(quickDurations, id: \.self) { mins in
                     Button {
@@ -272,60 +259,20 @@ struct EditWorkoutView: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                TextField(
-                    "Duration",
-                    value: durationBinding,
-                    format: .number.precision(.fractionLength(0...2))
-                )
+            TextField("Minutes", value: durationBinding, format: .number.precision(.fractionLength(0...2)))
                 .keyboardType(.decimalPad)
-                .font(.title3.weight(.semibold))
-
-                Text("min")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassCard()
     }
 
     private var distanceCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Distance")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 8) {
-                TextField(
-                    "Distance",
-                    value: distanceBinding,
-                    format: .number.precision(.fractionLength(0...3))
-                )
+        Section("Distance") {
+            TextField("Kilometers", value: distanceBinding, format: .number.precision(.fractionLength(0...3)))
                 .keyboardType(.decimalPad)
-                .font(.title3.weight(.semibold))
-
-                Text("km")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassCard()
     }
 
     private var ratingCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Workout Rating")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Workout Rating") {
             if isImportedFromHealthKit {
                 if let workoutRating {
                     Text(String(format: "%.1f / 10", workoutRating))
@@ -369,9 +316,6 @@ struct EditWorkoutView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassCard()
     }
 
     private var exercisesCard: some View {
@@ -388,18 +332,29 @@ struct EditWorkoutView: View {
     }
 
     private var notesCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Notes")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        Section("Notes") {
             TextField("Add notes (optional)", text: $notes, axis: .vertical)
-                .textFieldStyle(.plain)
                 .lineLimit(3...6)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassCard()
+    }
+
+    private var strengthManagementSection: some View {
+        WorkoutStructureSection(
+            title: "Strength Setup",
+            primaryActionTitle: "Assign Categories",
+            primaryActionSubtitle: categoryAssignmentSummary,
+            primaryAction: {
+                selectedCategoriesForAssignment = workout.categories ?? []
+                selectedSubcategoriesForAssignment = workout.subcategories ?? []
+                showingCategoryAssignment = true
+            },
+            secondaryActionTitle: "Manage Exercise Library",
+            secondaryActionSubtitle: "Edit categories, subcategories, and exercise templates",
+            secondaryAction: { showingCategoriesManagement = true },
+            categoryItems: selectedCategorySummaryItems,
+            subcategoryItems: selectedSubcategorySummaryItems,
+            emptyStateText: "No categories assigned."
+        )
     }
 
     private var currentSnapshot: EditWorkoutSnapshot {
@@ -412,8 +367,39 @@ struct EditWorkoutView: View {
             distanceKilometers: distanceKilometers,
             workoutRating: workoutRating,
             notes: notes,
+            categoryIDs: selectedCategoriesForAssignment.map(\.id),
+            subcategoryIDs: selectedSubcategoriesForAssignment.map(\.id),
             exerciseSignatures: exerciseEntries.map(EditWorkoutSnapshot.ExerciseSignature.init)
         )
+    }
+
+    private var categoryAssignmentSummary: String {
+        let categoryCount = selectedCategoriesForAssignment.count
+        let subcategoryCount = selectedSubcategoriesForAssignment.count
+        if categoryCount == 0 && subcategoryCount == 0 {
+            return "No categories assigned"
+        }
+        return "\(categoryCount) categories • \(subcategoryCount) subcategories"
+    }
+
+    private var selectedCategorySummaryItems: [WorkoutStructureSummaryItem] {
+        selectedCategoriesForAssignment.map {
+            WorkoutStructureSummaryItem(
+                title: $0.name,
+                tint: Color(hex: $0.color) ?? type.tintColor,
+                symbol: "folder.fill"
+            )
+        }
+    }
+
+    private var selectedSubcategorySummaryItems: [WorkoutStructureSummaryItem] {
+        selectedSubcategoriesForAssignment.map {
+            WorkoutStructureSummaryItem(
+                title: $0.name,
+                tint: $0.category.flatMap { Color(hex: $0.color) } ?? type.tintColor,
+                symbol: "tag.fill"
+            )
+        }
     }
 
     private func defaultExerciseEntry() -> ExerciseLogEntry {
@@ -536,8 +522,8 @@ struct EditWorkoutView: View {
         }
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         workout.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
-        workout.categories = nil
-        workout.subcategories = nil
+        workout.categories = selectedCategoriesForAssignment
+        workout.subcategories = selectedSubcategoriesForAssignment
         (workout.exercises ?? []).forEach { modelContext.delete($0) }
         workout.exercises = exerciseEntries.enumerated().compactMap { index, entry in
             let name = entry.trimmedName
@@ -599,6 +585,8 @@ private struct EditWorkoutSnapshot: Equatable {
     let distanceKilometers: Double
     let workoutRating: Double?
     let notes: String
+    let categoryIDs: [UUID]
+    let subcategoryIDs: [UUID]
     let exerciseSignatures: [ExerciseSignature]
 
     init(workout: Workout) {
@@ -610,6 +598,8 @@ private struct EditWorkoutSnapshot: Equatable {
         self.distanceKilometers = workout.distance ?? 0
         self.workoutRating = workout.rating
         self.notes = workout.notes ?? ""
+        self.categoryIDs = (workout.categories ?? []).map(\.id)
+        self.subcategoryIDs = (workout.subcategories ?? []).map(\.id)
         self.exerciseSignatures = (workout.exercises ?? [])
             .sorted { $0.orderIndex < $1.orderIndex }
             .map {
@@ -633,6 +623,8 @@ private struct EditWorkoutSnapshot: Equatable {
         distanceKilometers: Double,
         workoutRating: Double?,
         notes: String,
+        categoryIDs: [UUID],
+        subcategoryIDs: [UUID],
         exerciseSignatures: [ExerciseSignature]
     ) {
         self.type = type
@@ -643,6 +635,8 @@ private struct EditWorkoutSnapshot: Equatable {
         self.distanceKilometers = distanceKilometers
         self.workoutRating = workoutRating
         self.notes = notes
+        self.categoryIDs = categoryIDs
+        self.subcategoryIDs = subcategoryIDs
         self.exerciseSignatures = exerciseSignatures
     }
 }

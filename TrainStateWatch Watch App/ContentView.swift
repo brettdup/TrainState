@@ -218,7 +218,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("TrainState")
+            .navigationTitle("Exercise Pal")
             .sheet(isPresented: $isShowingLogSheet) {
                 LogExerciseSheet { exercise in
                     workoutManager.addExercise(exercise)

@@ -132,7 +132,7 @@ struct OnboardingView: View {
         OnboardingPageContent(
             icon: "figure.run",
             iconColor: Color.accentColor,
-            title: "TrainState",
+            title: "Exercise Pal",
             subtitle: "Your workout companion",
             description: "A clean, focused way to log workouts and watch your progress grow.",
             heroContent: { OnboardingIconHero(icon: "figure.run", iconColor: Color.accentColor, appeared: appeared) },
