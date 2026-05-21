@@ -115,10 +115,6 @@ struct LiveStrengthSessionView: View {
                 currentExercise: activeExerciseName
             )
         }
-        .onDisappear {
-            WorkoutLiveActivityManager.shared.end()
-            didStartLiveActivity = false
-        }
         .onChange(of: activeExerciseSelection) { _, newValue in
             if newValue == nil {
                 // Defer cleanup so we don't mutate the entries array while the

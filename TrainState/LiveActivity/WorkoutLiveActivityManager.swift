@@ -23,9 +23,14 @@ final class WorkoutLiveActivityManager {
     func start(workoutName: String, startedAt: Date, exerciseCount: Int, currentExercise: String) {
         guard #available(iOS 16.1, *) else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        if let activity {
+        let existingActivities = activeActivities
+        if !existingActivities.isEmpty {
             self.activity = nil
-            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+            Task {
+                for activity in existingActivities {
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                }
+            }
         }
 
         let attributes = WorkoutLiveAttributes(
@@ -52,23 +57,40 @@ final class WorkoutLiveActivityManager {
 
     func update(elapsedSeconds: Int, exerciseCount: Int, currentExercise: String) {
         guard #available(iOS 16.1, *) else { return }
-        guard let activity else { return }
+        let activitiesToUpdate = activeActivities
+        guard !activitiesToUpdate.isEmpty else { return }
         let updatedState = WorkoutLiveAttributes.ContentState(
             elapsedSeconds: max(elapsedSeconds, 0),
             exerciseCount: max(exerciseCount, 0),
             currentExercise: currentExercise
         )
         Task {
-            await activity.update(.init(state: updatedState, staleDate: nil))
+            for activity in activitiesToUpdate {
+                await activity.update(.init(state: updatedState, staleDate: nil))
+            }
         }
     }
 
     func end() {
         guard #available(iOS 16.1, *) else { return }
-        guard let activity else { return }
+        let activitiesToEnd = activeActivities
+        guard !activitiesToEnd.isEmpty else { return }
         self.activity = nil
         Task {
-            await activity.end(nil, dismissalPolicy: .immediate)
+            for activity in activitiesToEnd {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
         }
+    }
+
+    @available(iOS 16.1, *)
+    private var activeActivities: [Activity<WorkoutLiveAttributes>] {
+        if let activity {
+            return [activity]
+        }
+
+        let activities = Array(Activity<WorkoutLiveAttributes>.activities)
+        activity = activities.first
+        return activities
     }
 }

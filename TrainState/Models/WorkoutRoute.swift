@@ -6,70 +6,62 @@ import CoreLocation
 @Model
 final class WorkoutRoute {
     var id: UUID = UUID()
+    var name: String?
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
     var routeData: Data? // Encoded [CLLocation]
+    var waypointData: Data? // Encoded tapped route control points
     @Transient private var cachedDecodedRoute: [CLLocation]?
     @Transient private var cachedRouteFingerprint: RouteDataFingerprint?
+    @Transient private var cachedDecodedWaypoints: [CLLocation]?
+    @Transient private var cachedWaypointFingerprint: RouteDataFingerprint?
     
     // SwiftData relationship - CloudKit compatible
     var workout: Workout?
 
-    init(routeData: Data? = nil) {
+    init(name: String? = nil, routeData: Data? = nil, waypointData: Data? = nil, createdAt: Date = Date(), updatedAt: Date = Date()) {
         self.id = UUID()
+        self.name = name
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
         self.routeData = routeData
+        self.waypointData = waypointData
     }
 
     // Helper to get/set route as [CLLocation]
     var decodedRoute: [CLLocation]? {
         get {
-            guard let data = routeData else {
-                cachedDecodedRoute = nil
-                cachedRouteFingerprint = nil
-                return nil
-            }
-
-            let fingerprint = RouteDataFingerprint(data: data)
-            if cachedRouteFingerprint == fingerprint {
-                return cachedDecodedRoute
-            }
-
-            do {
-                let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
-                unarchiver.requiresSecureCoding = false
-                let locations = try unarchiver.decodeTopLevelObject(forKey: NSKeyedArchiveRootObjectKey) as? [CLLocation]
-                unarchiver.finishDecoding()
-                guard let locations = locations, locations.count <= 2000 else {
-                    cachedDecodedRoute = nil
-                    cachedRouteFingerprint = fingerprint
-                    return nil
-                }
-                cachedDecodedRoute = locations
-                cachedRouteFingerprint = fingerprint
-                return locations
-            } catch {
-                cachedDecodedRoute = nil
-                cachedRouteFingerprint = fingerprint
-                return nil
-            }
+            decodeLocations(
+                from: routeData,
+                cachedLocations: &cachedDecodedRoute,
+                cachedFingerprint: &cachedRouteFingerprint
+            )
         }
         set {
-            guard let locations = newValue else {
-                routeData = nil
-                cachedDecodedRoute = nil
-                cachedRouteFingerprint = nil
-                return
-            }
-            // Save all points, no limit
-            let limitedLocations = locations
-            do {
-                let data = try NSKeyedArchiver.archivedData(withRootObject: limitedLocations, requiringSecureCoding: false)
-                routeData = data
-                cachedDecodedRoute = limitedLocations
-                cachedRouteFingerprint = RouteDataFingerprint(data: data)
-            } catch {
-                routeData = nil
-                cachedDecodedRoute = nil
-                cachedRouteFingerprint = nil
-            }
+            encodeLocations(
+                newValue,
+                data: &routeData,
+                cachedLocations: &cachedDecodedRoute,
+                cachedFingerprint: &cachedRouteFingerprint
+            )
+        }
+    }
+
+    var decodedWaypoints: [CLLocation]? {
+        get {
+            decodeLocations(
+                from: waypointData,
+                cachedLocations: &cachedDecodedWaypoints,
+                cachedFingerprint: &cachedWaypointFingerprint
+            )
+        }
+        set {
+            encodeLocations(
+                newValue,
+                data: &waypointData,
+                cachedLocations: &cachedDecodedWaypoints,
+                cachedFingerprint: &cachedWaypointFingerprint
+            )
         }
     }
     
@@ -98,6 +90,68 @@ final class WorkoutRoute {
         }
         
         return totalDistance
+    }
+
+    private func decodeLocations(
+        from data: Data?,
+        cachedLocations: inout [CLLocation]?,
+        cachedFingerprint: inout RouteDataFingerprint?
+    ) -> [CLLocation]? {
+        guard let data else {
+            cachedLocations = nil
+            cachedFingerprint = nil
+            return nil
+        }
+
+        let fingerprint = RouteDataFingerprint(data: data)
+        if cachedFingerprint == fingerprint {
+            return cachedLocations
+        }
+
+        do {
+            let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
+            unarchiver.requiresSecureCoding = false
+            let locations = try unarchiver.decodeTopLevelObject(forKey: NSKeyedArchiveRootObjectKey) as? [CLLocation]
+            unarchiver.finishDecoding()
+            guard let locations = locations, locations.count <= 3000 else {
+                cachedLocations = nil
+                cachedFingerprint = fingerprint
+                return nil
+            }
+            cachedLocations = locations
+            cachedFingerprint = fingerprint
+            return locations
+        } catch {
+            cachedLocations = nil
+            cachedFingerprint = fingerprint
+            return nil
+        }
+    }
+
+    private func encodeLocations(
+        _ locations: [CLLocation]?,
+        data: inout Data?,
+        cachedLocations: inout [CLLocation]?,
+        cachedFingerprint: inout RouteDataFingerprint?
+    ) {
+        guard let locations else {
+            data = nil
+            cachedLocations = nil
+            cachedFingerprint = nil
+            return
+        }
+
+        do {
+            let encodedData = try NSKeyedArchiver.archivedData(withRootObject: locations, requiringSecureCoding: false)
+            data = encodedData
+            updatedAt = Date()
+            cachedLocations = locations
+            cachedFingerprint = RouteDataFingerprint(data: encodedData)
+        } catch {
+            data = nil
+            cachedLocations = nil
+            cachedFingerprint = nil
+        }
     }
 }
 

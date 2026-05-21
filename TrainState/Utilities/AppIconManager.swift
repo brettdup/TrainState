@@ -1,25 +1,67 @@
 import SwiftUI
 import UIKit
 
-class AppIconManager {
+enum AppIconOption: String, CaseIterable, Identifiable {
+    case current = "Current"
+    case light = "AppIconLight"
+    case dark = "AppIconDark"
+    case clear = "AppIconClear"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .current: "Original"
+        case .light: "Light"
+        case .dark: "Dark"
+        case .clear: "Clear"
+        }
+    }
+
+    var iconName: String? {
+        switch self {
+        case .current: nil
+        case .light, .dark, .clear: rawValue
+        }
+    }
+
+    var previewImageName: String {
+        switch self {
+        case .current: "AppIconOriginalPreview"
+        case .light: "AppIconLightPreview"
+        case .dark: "AppIconDarkPreview"
+        case .clear: "AppIconClearPreview"
+        }
+    }
+
+    static func option(for iconName: String?) -> AppIconOption {
+        guard let iconName else { return .current }
+        return AppIconOption(rawValue: iconName) ?? .current
+    }
+}
+
+@MainActor
+final class AppIconManager {
     static let shared = AppIconManager()
     
     private init() {}
     
-    func setAppIcon(for version: String) {
-        guard UIApplication.shared.alternateIconName != version else {
-            print("Icon is already set to \(version)")
+    func setAppIcon(_ option: AppIconOption) {
+        guard UIApplication.shared.supportsAlternateIcons else {
+            print("Alternate app icons are not supported on this device")
             return
         }
-        
-        print("Attempting to set app icon to: \(version)")
-        
-        UIApplication.shared.setAlternateIconName(version) { error in
+
+        guard UIApplication.shared.alternateIconName != option.iconName else {
+            print("Icon is already set to \(option.displayName)")
+            return
+        }
+
+        UIApplication.shared.setAlternateIconName(option.iconName) { error in
             if let error = error {
                 print("Error setting alternate icon: \(error.localizedDescription)")
-              
             } else {
-                print("Successfully set app icon to: \(version)")
+                print("Successfully set app icon to: \(option.displayName)")
             }
         }
     }
@@ -31,27 +73,20 @@ class AppIconManager {
     }
     
     func resetToDefaultIcon() {
-        print("Attempting to reset to default icon")
-        
-        UIApplication.shared.setAlternateIconName(nil) { error in
-            if let error = error {
-                print("Error resetting to default icon: \(error.localizedDescription)")
-              
-            } else {
-                print("Successfully reset to default icon")
-            }
-        }
+        setAppIcon(.current)
     }
     
-    func getAvailableIcons() -> [String] {
+    func getAvailableIcons() -> [AppIconOption] {
         guard let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any],
               let alternateIcons = icons["CFBundleAlternateIcons"] as? [String: Any] else {
             print("No alternate icons found in Info.plist")
-            return []
+            return [.current]
         }
         
-        let iconNames = Array(alternateIcons.keys)
-        print("Available alternate icons: \(iconNames)")
-        return iconNames
+        let alternateOptions = AppIconOption.allCases.filter { option in
+            guard let iconName = option.iconName else { return false }
+            return alternateIcons.keys.contains(iconName)
+        }
+        return [.current] + alternateOptions
     }
 } 

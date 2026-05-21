@@ -11,6 +11,7 @@ struct ExerciseEditorSheetView: View {
     let availableSubcategories: [WorkoutSubcategory]
     let availableOptions: [ExerciseQuickAddOption]
     let onDelete: () -> Void
+    let quickLogSaveAction: (() -> Void)?
     let mode: Mode
 
     @FocusState private var focusedField: Field?
@@ -51,12 +52,14 @@ struct ExerciseEditorSheetView: View {
         availableSubcategories: [WorkoutSubcategory],
         availableOptions: [ExerciseQuickAddOption],
         onDelete: @escaping () -> Void,
+        quickLogSaveAction: (() -> Void)? = nil,
         mode: Mode = .workout
     ) {
         self._entry = entry
         self.availableSubcategories = availableSubcategories
         self.availableOptions = availableOptions
         self.onDelete = onDelete
+        self.quickLogSaveAction = quickLogSaveAction
         self.mode = mode
     }
 
@@ -183,6 +186,19 @@ struct ExerciseEditorSheetView: View {
                     }
                 }
 
+                if let quickLogSaveAction {
+                    Section {
+                        Button {
+                            quickLogSaveAction()
+                        } label: {
+                            Label("Save to Quick Log", systemImage: "tray.and.arrow.down.fill")
+                                .font(.headline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .disabled(!isReadyToSave)
+                    }
+                }
+
                 if !entry.isEmpty {
                     Section {
                         Button("Delete Exercise", role: .destructive) {
@@ -215,6 +231,7 @@ struct ExerciseEditorSheetView: View {
             if entry.subcategoryID == nil, let first = availableSubcategories.first {
                 entry.subcategoryID = first.id
             }
+            ensureDefaultSetPlan()
             syncPlannedSetEntriesFromMetrics()
             syncExerciseSelectionForCurrentSubcategory()
         }
@@ -556,6 +573,13 @@ struct ExerciseEditorSheetView: View {
             )
         }
         entry.setEntries = sets
+    }
+
+    private func ensureDefaultSetPlan() {
+        guard entry.sets == nil, entry.setEntries.isEmpty else { return }
+        entry.sets = 1
+        entry.reps = entry.reps ?? 0
+        entry.weight = entry.weight ?? 0
     }
 
     private func setSetCount(_ count: Int) {

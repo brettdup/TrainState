@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import RevenueCatUI
 import HealthKit
+import CoreLocation
 
 struct AddWorkoutView: View {
     @Environment(\.dismiss) private var dismiss
@@ -14,6 +15,7 @@ struct AddWorkoutView: View {
     @Query(sort: \WorkoutSubcategory.name) private var allSubcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
     @Query(sort: \StrengthWorkoutTemplate.updatedAt, order: .reverse) private var strengthTemplates: [StrengthWorkoutTemplate]
+    @Query(sort: \WorkoutRoute.updatedAt, order: .reverse) private var savedWorkoutRoutes: [WorkoutRoute]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var type: WorkoutType = .other
     @State private var selectedAppleWorkout = AppleWorkoutSelection(
@@ -38,6 +40,11 @@ struct AddWorkoutView: View {
     @State private var showingDuplicateTypeAlert = false
     @State private var showingAdvancedFields = false
     @State private var showingDiscardChangesAlert = false
+    @State private var showingRoutePlanner = false
+    @State private var showingSavedRoutePicker = false
+    @State private var plannedRoute: [CLLocation] = []
+    @State private var plannedRouteWaypoints: [CLLocation] = []
+    @State private var plannedRouteName: String?
     @State private var pendingWorkoutToSave: Workout?
     @State private var pendingTemplateEntries: [ExerciseLogEntry]?
     @State private var newTemplateName = ""
@@ -95,6 +102,12 @@ struct AddWorkoutView: View {
     }
     private var showsDistance: Bool {
         [.running, .cycling, .swimming].contains(type)
+    }
+    private var canPlanRoute: Bool {
+        [.running, .cycling].contains(type)
+    }
+    private var reusableRoutes: [WorkoutRoute] {
+        savedWorkoutRoutes.filter { $0.workout == nil && !($0.name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) && ($0.decodedRoute?.count ?? 0) > 1 }
     }
     private var appleWorkoutActivityType: HKWorkoutActivityType { selectedAppleWorkout.activityType }
     private var appleWorkoutLocationType: HKWorkoutSessionLocationType? { selectedAppleWorkout.locationType }
@@ -182,6 +195,7 @@ struct AddWorkoutView: View {
                     durationCard
                 }
                 if showsDistance { distanceCard }
+                if canPlanRoute { routePlannerCard }
                 if !isStrengthSessionType || strengthEntryMode == .manual {
                     exercisesCard
                 } else {
@@ -299,6 +313,25 @@ struct AddWorkoutView: View {
         .sheet(isPresented: $showingTemplateLibrary) {
             templateLibrarySheet
         }
+        .sheet(isPresented: $showingRoutePlanner) {
+            RoutePlannerSheetView(route: plannedRoute, waypoints: plannedRouteWaypoints.isEmpty ? nil : plannedRouteWaypoints, tintColor: type.tintColor) { route, waypoints in
+                plannedRoute = route
+                plannedRouteWaypoints = waypoints
+                plannedRouteName = nil
+                if route.count > 1 {
+                    distanceKilometers = route.routeDistanceKilometers
+                }
+            }
+        }
+        .sheet(isPresented: $showingSavedRoutePicker) {
+            SavedRoutePickerView(routes: reusableRoutes, tintColor: type.tintColor) { route in
+                guard let locations = route.decodedRoute else { return }
+                plannedRoute = locations
+                plannedRouteWaypoints = route.decodedWaypoints ?? locations
+                plannedRouteName = route.name
+                distanceKilometers = locations.routeDistanceKilometers
+            }
+        }
         .alert("Save Strength Template", isPresented: $showingSaveTemplateAlert) {
             TextField("Template name", text: $newTemplateName)
             Button("Cancel", role: .cancel) {
@@ -326,6 +359,11 @@ struct AddWorkoutView: View {
             } else {
                 strengthEntryMode = .manual
                 activeTemplateID = nil
+            }
+            if !canPlanRoute {
+                plannedRoute.removeAll()
+                plannedRouteWaypoints.removeAll()
+                plannedRouteName = nil
             }
         }
         .onAppear {
@@ -536,6 +574,70 @@ struct AddWorkoutView: View {
                 format: .number.precision(.fractionLength(0...3))
             )
             .keyboardType(.decimalPad)
+        }
+    }
+
+    private var routePlannerCard: some View {
+        Section {
+            if plannedRoute.count > 1 {
+                RouteMapView(route: plannedRoute)
+                    .frame(height: 190)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        showingRoutePlanner = true
+                    }
+
+                HStack {
+                    Label("\(String(format: "%.2f", plannedRoute.routeDistanceKilometers)) km", systemImage: "ruler")
+                    Spacer()
+                    Text(plannedRouteName ?? "\(plannedRoute.count) points")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.subheadline.weight(.semibold))
+
+                Button {
+                    showingRoutePlanner = true
+                } label: {
+                    Label("Edit Route", systemImage: "map")
+                }
+
+                if !reusableRoutes.isEmpty {
+                    Button {
+                        showingSavedRoutePicker = true
+                    } label: {
+                        Label("Choose Saved Route", systemImage: "map.fill")
+                    }
+                }
+
+                Button(role: .destructive) {
+                    plannedRoute.removeAll()
+                    plannedRouteWaypoints.removeAll()
+                    plannedRouteName = nil
+                } label: {
+                    Label("Remove Route", systemImage: "trash")
+                }
+            } else {
+                Text("Create a route by dropping points on a map. The route distance will fill in automatically.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    showingRoutePlanner = true
+                } label: {
+                    Label("Plan Route on Map", systemImage: "map")
+                }
+
+                if !reusableRoutes.isEmpty {
+                    Button {
+                        showingSavedRoutePicker = true
+                    } label: {
+                        Label("Choose Saved Route", systemImage: "map.fill")
+                    }
+                }
+            }
+        } header: {
+            Text("Route")
         }
     }
 
@@ -831,6 +933,7 @@ struct AddWorkoutView: View {
             abs(date.timeIntervalSinceNow) > 120 ||
             durationMinutes != 30.0 ||
             distanceKilometers > 0 ||
+            !plannedRoute.isEmpty ||
             workoutRating != nil ||
             !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
             !exerciseEntries.isEmpty
@@ -845,6 +948,7 @@ struct AddWorkoutView: View {
     }
 
     private func saveWorkout(_ workout: Workout) {
+        attachPlannedRoute(to: workout)
         modelContext.insert(workout)
         do {
             try modelContext.save()
@@ -946,6 +1050,18 @@ struct AddWorkoutView: View {
             persistExerciseTemplates(from: entries)
         }
         saveWorkout(workout)
+    }
+
+    private func attachPlannedRoute(to workout: Workout) {
+        guard canPlanRoute, plannedRoute.count > 1, workout.route == nil else { return }
+
+        let route = WorkoutRoute()
+        route.name = plannedRouteName
+        route.decodedRoute = plannedRoute
+        route.decodedWaypoints = plannedRouteWaypoints.isEmpty ? plannedRoute : plannedRouteWaypoints
+        route.workout = workout
+        workout.route = route
+        modelContext.insert(route)
     }
 
     private func hasExistingWorkoutOfSameTypeOnSameDay(as workout: Workout) -> Bool {

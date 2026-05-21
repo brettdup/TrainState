@@ -35,6 +35,7 @@ struct SettingsView: View {
     @State private var showDeleteBackupAlert = false
     @State private var backupPreview: BackupPreview?
     @State private var isLoadingBackupPreview = false
+    @State private var selectedAppIcon = AppIconOption.current
 
     var body: some View {
         NavigationStack {
@@ -50,6 +51,7 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .onAppear {
+                selectedAppIcon = AppIconOption.option(for: AppIconManager.shared.getCurrentAppIcon())
                 Task {
                     await loadBackups()
                     await loadCloudStatus()
@@ -248,6 +250,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 themeModePicker
                 accentColorPicker
+                appIconPicker
             }
         }
     }
@@ -315,6 +318,59 @@ struct SettingsView: View {
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(isSelected ? option.color.opacity(0.15) : Color.primary.opacity(0.04))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var appIconPicker: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("App Icon", systemImage: "app")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 78))], spacing: 12) {
+                ForEach(AppIconOption.allCases) { option in
+                    appIconOption(option)
+                }
+            }
+        }
+    }
+
+    private func appIconOption(_ option: AppIconOption) -> some View {
+        let isSelected = selectedAppIcon == option
+
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedAppIcon = option
+            }
+            AppIconManager.shared.setAppIcon(option)
+        } label: {
+            VStack(spacing: 8) {
+                AppIconSwatch(option: option)
+                    .frame(width: 52, height: 52)
+                    .overlay(alignment: .bottomTrailing) {
+                        if isSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(.white, Color.accentColor)
+                                .background(Circle().fill(Color.primary))
+                                .offset(x: 5, y: 5)
+                        }
+                    }
+
+                Text(option.displayName)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.04))
             )
         }
         .buttonStyle(.plain)
@@ -538,6 +594,18 @@ private struct SettingsRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+    }
+}
+
+private struct AppIconSwatch: View {
+    let option: AppIconOption
+
+    var body: some View {
+        Image(option.previewImageName)
+            .resizable()
+            .scaledToFill()
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
     }
 }
 

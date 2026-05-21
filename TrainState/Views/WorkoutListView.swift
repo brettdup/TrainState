@@ -9,9 +9,11 @@ struct WorkoutListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
     @Query private var categories: [WorkoutCategory]
     @Query private var subcategories: [WorkoutSubcategory]
+    @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
     @Query(sort: \StrengthWorkoutTemplate.updatedAt, order: .reverse) private var strengthTemplates: [StrengthWorkoutTemplate]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var showingAddWorkout = false
@@ -20,6 +22,7 @@ struct WorkoutListView: View {
     @AppStorage("hasSetWeeklyGoal") private var hasSetWeeklyGoal = false
     @AppStorage("hasEnabledWorkoutReminders") private var hasEnabledWorkoutReminders = false
     @AppStorage("hasDismissedFirstSessionChecklist") private var hasDismissedFirstSessionChecklist = false
+    @AppStorage("quickLogSheetRequestToken") private var quickLogSheetRequestToken = ""
     @AppStorage("healthKitRecentWorkoutsCache") private var healthKitRecentWorkoutsCacheData: Data = Data()
     @State private var recentHealthKitWorkouts: [HealthKitRecentWorkoutMenuItem] = []
     @State private var isLoadingRecentHealthKitWorkouts = false
@@ -45,6 +48,9 @@ struct WorkoutListView: View {
     @State private var lastKnownWorkoutCount = 0
     @State private var successBanner: SuccessBannerModel?
     @State private var bannerDismissTask: Task<Void, Never>?
+    @State private var pendingQuickExerciseLogs: [PendingQuickExerciseLog] = []
+    @State private var showingQuickLogSheet = false
+    @State private var handledQuickLogSheetRequestToken = ""
     private let healthKitImporter = HealthKitRecentWorkoutImporter()
 
     private var canAddWorkout: Bool {
@@ -74,6 +80,15 @@ struct WorkoutListView: View {
             .toolbar(content: workoutToolbarContent)
             .sheet(isPresented: $showingAddWorkout) {
                 AddWorkoutView()
+            }
+            .sheet(isPresented: $showingQuickLogSheet) {
+                WorkoutQuickExerciseLogSheet {
+                    refreshQuickExerciseLogs()
+                } availableSubcategories: {
+                    quickLogExerciseSubcategories
+                } availableOptions: {
+                    quickLogExerciseOptions
+                }
             }
             .sheet(item: $editingWorkout) { workout in
                 EditWorkoutView(workout: workout)
@@ -141,8 +156,10 @@ struct WorkoutListView: View {
                 isPresented: $showingHealthKitActionSheet,
                 presenting: pendingHealthKitItem
             ) { item in
-                Button("Attach to an existing workout") {
-                    pendingAttachItem = item
+                if hasAttachableWorkouts(for: item) {
+                    Button("Attach to an existing workout") {
+                        pendingAttachItem = item
+                    }
                 }
                 Button("Import as new workout") {
                     Task { await importHealthKitWorkout(item) }
@@ -163,6 +180,7 @@ struct WorkoutListView: View {
         }
         .onAppear {
             loadCachedRecentHealthKitWorkouts()
+            refreshQuickExerciseLogs()
             lastKnownWorkoutCount = workouts.count
             syncReminderPermissionStatus()
             Task { await loadRecentHealthKitWorkouts(showAlerts: false) }
@@ -173,6 +191,15 @@ struct WorkoutListView: View {
             }
             lastKnownWorkoutCount = newCount
             normalizeSelectedFilter()
+            refreshQuickExerciseLogs()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            QuickExerciseLogStore.attachPendingLogs(to: workouts, in: modelContext)
+            refreshQuickExerciseLogs()
+        }
+        .onChange(of: quickLogSheetRequestToken) { _, _ in
+            openQuickLogSheetIfRequested()
         }
         .onChange(of: workoutForCategoryAssignment) { _, newValue in
             if newValue == nil, pendingCategoryAssignmentWorkout != nil {
@@ -206,6 +233,10 @@ struct WorkoutListView: View {
 
             if groupedVisibleWorkouts.isEmpty {
                 emptyWorkoutsSection
+            }
+
+            if shouldShowTodayQuickLogsSection {
+                todayQuickLogsSection
             }
 
             if showLimitsCard {
@@ -263,6 +294,84 @@ struct WorkoutListView: View {
         case .apple(let activityType):
             return activityType.systemImage
         }
+    }
+
+    private var shouldShowTodayQuickLogsSection: Bool {
+        selectedFilter == .all && (!todaysPendingQuickLogs.isEmpty || !todaysAttachedQuickExercises.isEmpty)
+    }
+
+    private var todayQuickLogsSection: some View {
+        Section {
+            if !todaysPendingQuickLogs.isEmpty {
+                ForEach(todaysPendingQuickLogs) { log in
+                    quickLogRow(
+                        title: log.exerciseName,
+                        detail: log.summary,
+                        timestamp: log.loggedAt,
+                        systemImage: "tray.and.arrow.down.fill",
+                        tint: .orange
+                    )
+                }
+                .onDelete(perform: deleteTodaysPendingQuickLogs)
+            }
+
+            if !todaysAttachedQuickExercises.isEmpty {
+                ForEach(todaysAttachedQuickExercises, id: \.id) { exercise in
+                    quickLogRow(
+                        title: exercise.name,
+                        detail: attachedExerciseSummary(exercise),
+                        timestamp: nil,
+                        systemImage: "checkmark.circle.fill",
+                        tint: .green
+                    )
+                }
+            }
+        } header: {
+            Text("Today's Quick Logs")
+        } footer: {
+            Text(todayQuickLogsFooter)
+        }
+    }
+
+    private func quickLogRow(
+        title: String,
+        detail: String,
+        timestamp: Date?,
+        systemImage: String,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.body.weight(.semibold))
+                Text(detail)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            if let timestamp {
+                Text(timestamp, style: .time)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var todayQuickLogsFooter: String {
+        if !todaysPendingQuickLogs.isEmpty && todaysAttachedQuickExercises.isEmpty {
+            return "These are queued from the widget and will attach when you create or import a workout for today."
+        }
+        if todaysPendingQuickLogs.isEmpty {
+            return "These quick logs have been attached to today's workout."
+        }
+        return "Queued logs will attach to today's workout; attached logs are already saved."
     }
 
     private func workoutSection(for entry: (date: Date, items: [Workout])) -> some View {
@@ -335,9 +444,99 @@ struct WorkoutListView: View {
         }
     }
 
+    private var todaysPendingQuickLogs: [PendingQuickExerciseLog] {
+        let calendar = Calendar.current
+        return pendingQuickExerciseLogs
+            .filter { calendar.isDateInToday($0.loggedAt) }
+            .sorted { $0.loggedAt > $1.loggedAt }
+    }
+
+    private var todaysAttachedQuickExercises: [WorkoutExercise] {
+        todayWorkouts
+            .flatMap { $0.exercises ?? [] }
+            .filter { $0.notes?.contains("Logged from widget") == true }
+            .sorted { $0.orderIndex < $1.orderIndex }
+    }
+
+    private var todayWorkouts: [Workout] {
+        workouts
+            .filter { Calendar.current.isDateInToday($0.startDate) }
+            .sorted { $0.startDate > $1.startDate }
+    }
+
+    private var quickLogExerciseSubcategories: [WorkoutSubcategory] {
+        subcategories
+            .filter { subcategory in
+                guard let category = subcategory.category else { return false }
+                return category.matches(
+                    appleWorkoutActivityType: HKWorkoutActivityType.traditionalStrengthTraining,
+                    fallbackWorkoutType: .strength
+                )
+            }
+            .sorted { $0.name < $1.name }
+    }
+
+    private var quickLogExerciseOptions: [ExerciseQuickAddOption] {
+        var options: [ExerciseQuickAddOption] = []
+        for subcategory in quickLogExerciseSubcategories {
+            let templates = exerciseTemplates
+                .filter { $0.subcategory?.id == subcategory.id }
+                .sorted { $0.orderIndex < $1.orderIndex }
+            if templates.isEmpty {
+                options.append(ExerciseQuickAddOption(name: subcategory.name, subcategoryID: subcategory.id))
+            } else {
+                options.append(contentsOf: templates.map {
+                    ExerciseQuickAddOption(name: $0.name, subcategoryID: subcategory.id)
+                })
+            }
+        }
+        return options
+    }
+
+    private func refreshQuickExerciseLogs() {
+        pendingQuickExerciseLogs = QuickExerciseLogStore.pendingLogs()
+    }
+
+    private func openQuickLogSheetIfRequested() {
+        guard !quickLogSheetRequestToken.isEmpty,
+              quickLogSheetRequestToken != handledQuickLogSheetRequestToken else {
+            return
+        }
+        handledQuickLogSheetRequestToken = quickLogSheetRequestToken
+        quickLogSheetRequestToken = ""
+        showingQuickLogSheet = true
+    }
+
+    private func deleteTodaysPendingQuickLogs(at offsets: IndexSet) {
+        let idsToDelete = Set(offsets.map { todaysPendingQuickLogs[$0].id })
+        let remainingLogs = pendingQuickExerciseLogs.filter { !idsToDelete.contains($0.id) }
+        QuickExerciseLogStore.savePendingLogs(remainingLogs)
+        pendingQuickExerciseLogs = remainingLogs
+    }
+
+    private func attachedExerciseSummary(_ exercise: WorkoutExercise) -> String {
+        var parts: [String] = []
+        if let sets = exercise.sets, sets > 0 {
+            parts.append("\(sets) set\(sets == 1 ? "" : "s")")
+        }
+        if let reps = exercise.reps, reps > 0 {
+            parts.append("\(reps) reps")
+        }
+        if let weight = exercise.weight, weight > 0 {
+            parts.append("\(ExerciseLogEntry.displayWeight(weight)) kg")
+        }
+        return parts.isEmpty ? "Attached to today's workout" : parts.joined(separator: " - ")
+    }
+
     @ToolbarContentBuilder
     private func workoutToolbarContent() -> some ToolbarContent {
         ToolbarItemGroup(placement: .navigationBarTrailing) {
+            Button {
+                showingQuickLogSheet = true
+            } label: {
+                Image(systemName: "plus.circle")
+            }
+            .accessibilityLabel("Quick Log")
             filterMenu
             healthKitMenu
             addWorkoutButton
@@ -452,13 +651,15 @@ struct WorkoutListView: View {
     }
 
     private func handleHealthKitCandidateSelection(_ candidate: HealthKitRecentWorkoutMenuItem) {
-        let sameDayWorkouts = attachableWorkouts(for: candidate)
-        if sameDayWorkouts.isEmpty {
+        guard hasAttachableWorkouts(for: candidate) else {
+            pendingHealthKitItem = nil
+            pendingAttachItem = nil
             Task { await importHealthKitWorkout(candidate) }
-        } else {
-            pendingHealthKitItem = candidate
-            showingHealthKitActionSheet = true
+            return
         }
+
+        pendingHealthKitItem = candidate
+        showingHealthKitActionSheet = true
     }
 
     private var addWorkoutButton: some View {
@@ -894,6 +1095,10 @@ struct WorkoutListView: View {
         return workouts.filter { calendar.isDate($0.startDate, inSameDayAs: item.startDate) }
     }
 
+    private func hasAttachableWorkouts(for item: HealthKitRecentWorkoutMenuItem) -> Bool {
+        !attachableWorkouts(for: item).isEmpty
+    }
+
     private func healthKitWorkoutTitle(_ candidate: HealthKitRecentWorkoutMenuItem) -> String {
         return [
             candidate.activityType.displayName(locationType: candidate.locationType),
@@ -1098,6 +1303,60 @@ private struct HealthKitAttachTargetPickerView: View {
                 }
             }
         }
+    }
+}
+
+private struct WorkoutQuickExerciseLogSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var entry: ExerciseLogEntry
+    @State private var didSave = false
+    let onSave: () -> Void
+    let availableSubcategories: [WorkoutSubcategory]
+    let availableOptions: [ExerciseQuickAddOption]
+
+    init(
+        onSave: @escaping () -> Void,
+        availableSubcategories: () -> [WorkoutSubcategory],
+        availableOptions: () -> [ExerciseQuickAddOption]
+    ) {
+        self.onSave = onSave
+        self.availableSubcategories = availableSubcategories()
+        self.availableOptions = availableOptions()
+
+        let firstSubcategoryID = self.availableSubcategories.first?.id
+        _entry = State(initialValue: ExerciseLogEntry(subcategoryID: firstSubcategoryID))
+    }
+
+    var body: some View {
+        ExerciseEditorSheetView(
+            entry: $entry,
+            availableSubcategories: availableSubcategories,
+            availableOptions: availableOptions,
+            onDelete: {
+                entry = ExerciseLogEntry(subcategoryID: availableSubcategories.first?.id)
+            },
+            quickLogSaveAction: {
+                saveQuickLog()
+            },
+            mode: .workout
+        )
+    }
+
+    private func saveQuickLog() {
+        guard !entry.trimmedName.isEmpty, !didSave else { return }
+        let log = PendingQuickExerciseLog(
+            id: UUID(),
+            exerciseName: entry.trimmedName,
+            loggedAt: Date(),
+            sets: entry.effectiveSetCount ?? 1,
+            reps: entry.effectiveReps ?? 0,
+            weight: entry.effectiveWeight
+        )
+        QuickExerciseLogStore.appendPendingLog(log)
+        onSave()
+        didSave = true
+        entry = ExerciseLogEntry(subcategoryID: availableSubcategories.first?.id)
+        dismiss()
     }
 }
 
