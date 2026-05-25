@@ -12,6 +12,18 @@ struct SubscriptionInfoView: View {
         return purchaseManager.hasActiveSubscription ? "Active" : "No active subscription"
     }
 
+    private var currentPackageName: String {
+        guard let productID = purchaseManager.activePremiumProductID else {
+            return "None"
+        }
+
+        if let package = purchaseManager.availablePackages.first(where: { $0.storeProduct.productIdentifier == productID }) {
+            return package.storeProduct.localizedTitle
+        }
+
+        return fallbackPackageName(for: productID)
+    }
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -39,16 +51,27 @@ struct SubscriptionInfoView: View {
                     .glassCard()
 
                     VStack(alignment: .leading, spacing: 16) {
+                        Text("Current Package")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(currentPackageName)
+                            .font(.body)
+                    }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassCard()
+
+                    VStack(alignment: .leading, spacing: 16) {
                         Text("Entitlements")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
-                        if purchaseManager.purchasedProductIDs.isEmpty {
+                        if purchaseManager.activeEntitlementIDs.isEmpty {
                             Text("None")
                                 .font(.body)
                                 .foregroundStyle(.secondary)
                         } else {
-                            ForEach(Array(purchaseManager.purchasedProductIDs), id: \.self) { productID in
-                                Text(productID)
+                            ForEach(Array(purchaseManager.activeEntitlementIDs).sorted(), id: \.self) { entitlementID in
+                                Text(entitlementID)
                                     .font(.body)
                             }
                         }
@@ -93,7 +116,10 @@ struct SubscriptionInfoView: View {
         }
         .navigationTitle("Subscription")
         .onAppear {
-            Task { await purchaseManager.updatePurchasedProducts() }
+            Task {
+                await purchaseManager.retryLoadingProducts()
+                await purchaseManager.updatePurchasedProducts()
+            }
         }
         .alert("Restore Complete", isPresented: Binding(
             get: { restoreStatusMessage != nil },
@@ -124,6 +150,7 @@ struct SubscriptionInfoView: View {
     private func restorePurchases() async {
         do {
             try await purchaseManager.restorePurchases()
+            await purchaseManager.retryLoadingProducts()
             await purchaseManager.updatePurchasedProducts()
             if purchaseManager.hasActiveSubscription {
                 restoreStatusMessage = "Your premium access has been restored."
@@ -132,6 +159,19 @@ struct SubscriptionInfoView: View {
             }
         } catch {
             restoreErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func fallbackPackageName(for productID: String) -> String {
+        switch productID {
+        case "premiumlifetime":
+            return "Premium Lifetime"
+        case "premium1year":
+            return "Premium 1 Year"
+        case "Premium1Month":
+            return "Premium 1 Month"
+        default:
+            return productID
         }
     }
 }

@@ -10,6 +10,8 @@ class PurchaseManager: NSObject, ObservableObject, PurchasesDelegate {
     @Published private(set) var availablePackages: [Package] = []
     @Published private(set) var customerInfo: CustomerInfo?
     @Published private(set) var purchasedProductIDs = Set<String>()
+    @Published private(set) var activeEntitlementIDs = Set<String>()
+    @Published private(set) var activePremiumProductID: String?
     #if DEBUG
     @Published private(set) var debugPremiumOverride = false
     @Published private(set) var debugPremiumForceDisabled = false
@@ -201,6 +203,8 @@ class PurchaseManager: NSObject, ObservableObject, PurchasesDelegate {
     private func applyCustomerInfo(_ info: CustomerInfo) {
         customerInfo = info
         purchasedProductIDs = info.activeSubscriptions
+        activeEntitlementIDs = Set(info.entitlements.active.keys)
+        activePremiumProductID = info.entitlements.active["Premium"]?.productIdentifier
         hasCompletedInitialPremiumCheck = true
         debugLog += "Active subscriptions: \(info.activeSubscriptions)\n"
         debugLog += "Active entitlements: \(info.entitlements.active.keys)\n"

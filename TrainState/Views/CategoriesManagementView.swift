@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import RevenueCatUI
 import HealthKit
 
 struct CategoriesManagementView: View {
@@ -8,47 +7,231 @@ struct CategoriesManagementView: View {
     @Query(sort: \WorkoutCategory.name) private var categories: [WorkoutCategory]
     @Query(sort: \WorkoutSubcategory.name) private var subcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
+    @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var expandedCategoryId: UUID?
     @State private var selectedSubcategory: WorkoutSubcategory?
+    @State private var selectedExerciseTemplate: SubcategoryExercise?
+    @State private var subcategoryPendingMove: WorkoutSubcategory?
     @State private var showingAddSubcategory = false
     @State private var newSubcategoryName = ""
     @State private var subcategoryParentCategory: WorkoutCategory?
     @State private var showingAddExerciseTemplate = false
     @State private var newExerciseTemplateName = ""
     @State private var templateParentSubcategory: WorkoutSubcategory?
+    @State private var showingCategoryTools = false
     @State private var showingPaywall = false
     @State private var categoryPendingDelete: WorkoutCategory?
     @State private var subcategoryPendingDelete: WorkoutSubcategory?
+    @State private var exerciseTemplatePendingDelete: SubcategoryExercise?
+    @State private var exerciseSearchText = ""
+    @State private var expandedLibraryCategoryIDs: Set<String> = []
+    @State private var expandedLibrarySubcategoryIDs: Set<String> = []
+
+    let workoutType: WorkoutType?
+    let appleWorkoutActivityType: HKWorkoutActivityType?
+
+    init(
+        workoutType: WorkoutType? = nil,
+        appleWorkoutActivityType: HKWorkoutActivityType? = nil
+    ) {
+        self.workoutType = workoutType
+        self.appleWorkoutActivityType = appleWorkoutActivityType
+    }
+
+    private var relevantCategories: [WorkoutCategory] {
+        guard let workoutType else { return categories }
+        return categories.filter {
+            $0.matches(
+                appleWorkoutActivityType: appleWorkoutActivityType,
+                fallbackWorkoutType: workoutType
+            )
+        }
+    }
+
+    private var relevantSubcategories: [WorkoutSubcategory] {
+        let categoryIDs = Set(relevantCategories.map(\.id))
+        return subcategories.filter { subcategory in
+            guard let category = subcategory.category else { return false }
+            return categoryIDs.contains(category.id)
+        }
+    }
+
+    private var relevantExerciseTemplates: [SubcategoryExercise] {
+        let subcategoryIDs = Set(relevantSubcategories.map(\.id))
+        return exerciseTemplates.filter { template in
+            guard let subcategoryID = template.subcategory?.id else { return false }
+            return subcategoryIDs.contains(subcategoryID)
+        }
+    }
 
     private var groupedCategories: [(id: String, title: String, categories: [WorkoutCategory])] {
-        let grouped = Dictionary(grouping: categories) { category in
-            category.appleWorkoutActivityType?.rawValue
+        let grouped = Dictionary(grouping: relevantCategories) { category in
+            category.resolvedWorkoutType?.rawValue ?? category.activityDisplayName
         }
 
-        var sections = grouped.map { rawValue, items in
-            let title: String
-            if let rawValue,
-               let activityType = HKWorkoutActivityType(rawValue: UInt(rawValue)) {
-                title = activityType.displayName
-            } else {
-                title = items.first?.activityDisplayName ?? "Unspecified"
-            }
-
+        var sections = grouped.map { title, items in
             return (
-                id: rawValue.map { String($0) } ?? "unspecified",
-                title: title,
-                categories: items.sorted { $0.name < $1.name }
+                id: title,
+                title: title.isEmpty ? "Unspecified" : title,
+                categories: items.sorted {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
             )
         }
 
         sections.sort { lhs, rhs in
             if lhs.title == "Unspecified" { return false }
             if rhs.title == "Unspecified" { return true }
+
+            let lhsIndex = WorkoutType.allCases.firstIndex { $0.rawValue == lhs.title }
+            let rhsIndex = WorkoutType.allCases.firstIndex { $0.rawValue == rhs.title }
+            if let lhsIndex, let rhsIndex {
+                return lhsIndex < rhsIndex
+            }
+            if lhsIndex != nil { return true }
+            if rhsIndex != nil { return false }
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
 
         return sections
+    }
+
+    private var filteredExerciseTemplates: [SubcategoryExercise] {
+        let search = exerciseSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return relevantExerciseTemplates
+            .filter { template in
+                guard !search.isEmpty else { return true }
+                return template.name.localizedCaseInsensitiveContains(search) ||
+                    (template.subcategory?.name.localizedCaseInsensitiveContains(search) ?? false) ||
+                    (template.subcategory?.category?.name.localizedCaseInsensitiveContains(search) ?? false)
+            }
+            .sorted {
+                let lhsName = $0.name.localizedCaseInsensitiveCompare($1.name)
+                if lhsName == .orderedSame {
+                    return ($0.subcategory?.name ?? "").localizedCaseInsensitiveCompare($1.subcategory?.name ?? "") == .orderedAscending
+                }
+                return lhsName == .orderedAscending
+            }
+    }
+
+    private struct ExerciseLibraryCategoryGroup: Identifiable {
+        let category: WorkoutCategory?
+        let subcategories: [ExerciseLibrarySubcategoryGroup]
+
+        var id: String {
+            category?.id.uuidString ?? "unlinked-category"
+        }
+    }
+
+    private struct ExerciseLibraryTypeGroup: Identifiable {
+        let title: String
+        let categories: [ExerciseLibraryCategoryGroup]
+
+        var id: String { title }
+    }
+
+    private struct ExerciseLibrarySubcategoryGroup: Identifiable {
+        let subcategory: WorkoutSubcategory?
+        let templates: [SubcategoryExercise]
+
+        var id: String {
+            subcategory?.id.uuidString ?? "unlinked-subcategory"
+        }
+    }
+
+    private var groupedExerciseLibraryByType: [ExerciseLibraryTypeGroup] {
+        let categoryGroups = groupedExerciseLibrary
+        let groupedByType = Dictionary(grouping: categoryGroups) { group in
+            group.category?.resolvedWorkoutType?.rawValue ?? group.category?.activityDisplayName ?? "Unspecified"
+        }
+
+        let typeGroups = groupedByType.map { title, categories in
+            ExerciseLibraryTypeGroup(
+                title: title.isEmpty ? "Unspecified" : title,
+                categories: categories.sorted { lhs, rhs in
+                    categorySortTitle(lhs).localizedCaseInsensitiveCompare(categorySortTitle(rhs)) == .orderedAscending
+                }
+            )
+        }
+
+        return typeGroups.sorted { lhs, rhs in
+            typeSortTitle(lhs.title, rhs.title)
+        }
+    }
+
+    private var groupedExerciseLibrary: [ExerciseLibraryCategoryGroup] {
+        let groupedByCategory = Dictionary(grouping: filteredExerciseTemplates) { template in
+            template.subcategory?.category?.id
+        }
+
+        let groups = groupedByCategory.map { categoryID, templates in
+            exerciseLibraryCategoryGroup(categoryID: categoryID, templates: templates)
+        }
+
+        return groups.sorted { lhs, rhs in
+            categorySortTitle(lhs).localizedCaseInsensitiveCompare(categorySortTitle(rhs)) == .orderedAscending
+        }
+    }
+
+    private func exerciseLibraryCategoryGroup(
+        categoryID: UUID?,
+        templates: [SubcategoryExercise]
+    ) -> ExerciseLibraryCategoryGroup {
+        let category = categoryID.flatMap(categoryForID)
+        let groupedBySubcategory = Dictionary(grouping: templates) { template in
+            template.subcategory?.id
+        }
+
+        let subcategoryGroups = groupedBySubcategory
+            .map { subcategoryID, templates in
+                exerciseLibrarySubcategoryGroup(subcategoryID: subcategoryID, templates: templates)
+            }
+            .sorted { lhs, rhs in
+                subcategorySortTitle(lhs).localizedCaseInsensitiveCompare(subcategorySortTitle(rhs)) == .orderedAscending
+            }
+
+        return ExerciseLibraryCategoryGroup(category: category, subcategories: subcategoryGroups)
+    }
+
+    private func exerciseLibrarySubcategoryGroup(
+        subcategoryID: UUID?,
+        templates: [SubcategoryExercise]
+    ) -> ExerciseLibrarySubcategoryGroup {
+        let subcategory = subcategoryID.flatMap(subcategoryForID)
+        let sortedTemplates = templates.sorted { lhs, rhs in
+            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+        return ExerciseLibrarySubcategoryGroup(subcategory: subcategory, templates: sortedTemplates)
+    }
+
+    private func categoryForID(_ id: UUID) -> WorkoutCategory? {
+        relevantCategories.first { $0.id == id }
+    }
+
+    private func subcategoryForID(_ id: UUID) -> WorkoutSubcategory? {
+        relevantSubcategories.first { $0.id == id }
+    }
+
+    private func categorySortTitle(_ group: ExerciseLibraryCategoryGroup) -> String {
+        group.category?.name ?? "Unlinked"
+    }
+
+    private func subcategorySortTitle(_ group: ExerciseLibrarySubcategoryGroup) -> String {
+        group.subcategory?.name ?? "Unlinked"
+    }
+
+    private func typeSortTitle(_ lhs: String, _ rhs: String) -> Bool {
+        if lhs == "Unspecified" { return false }
+        if rhs == "Unspecified" { return true }
+        let lhsIndex = WorkoutType.allCases.firstIndex { $0.rawValue == lhs }
+        let rhsIndex = WorkoutType.allCases.firstIndex { $0.rawValue == rhs }
+        if let lhsIndex, let rhsIndex {
+            return lhsIndex < rhsIndex
+        }
+        if lhsIndex != nil { return true }
+        if rhsIndex != nil { return false }
+        return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
     }
 
     private func canAddSubcategory(to category: WorkoutCategory) -> Bool {
@@ -58,36 +241,66 @@ struct CategoriesManagementView: View {
 
     var body: some View {
         List {
-            Section {
-                LabeledContent("Categories", value: "\(categories.count)")
-                LabeledContent("Subcategories", value: "\(subcategories.count)")
-                LabeledContent("Exercises", value: "\(exerciseTemplates.count)")
-            } footer: {
-                Text("Expand a category to manage its subcategories, then expand a subcategory to manage its exercise library.")
-            }
-
-            if groupedCategories.isEmpty {
+            if relevantExerciseTemplates.isEmpty {
                 Section {
                     ContentUnavailableView(
-                        "No Categories Yet",
-                        systemImage: "square.grid.2x2",
-                        description: Text("Create a category from the workout flow first, then manage its subcategories and exercises here.")
+                        "No Exercises Yet",
+                        systemImage: "dumbbell",
+                        description: Text(workoutType == nil ? "Add exercises here once, then pick them quickly when logging workouts." : "Add exercises for this workout type, then pick them quickly when logging workouts.")
                     )
                     .frame(maxWidth: .infinity)
                     .listRowBackground(Color.clear)
                 }
+            } else if filteredExerciseTemplates.isEmpty {
+                Section {
+                    ContentUnavailableView.search(text: exerciseSearchText)
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                }
             } else {
-                ForEach(groupedCategories, id: \.id) { section in
-                    Section(section.title) {
-                        ForEach(section.categories) { category in
-                            categoryDisclosure(for: category)
+                ForEach(groupedExerciseLibraryByType) { typeGroup in
+                    Section {
+                        ForEach(typeGroup.categories) { categoryGroup in
+                            exerciseLibraryCategoryRows(categoryGroup)
                         }
+                    } header: {
+                        Text(typeGroup.title)
                     }
+                }
+            }
+
+            Section {
+                Button {
+                    templateParentSubcategory = nil
+                    newExerciseTemplateName = ""
+                    showingAddExerciseTemplate = true
+                } label: {
+                    Label("Add Exercise", systemImage: "plus")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+                .disabled(relevantSubcategories.isEmpty)
+            } footer: {
+                if relevantSubcategories.isEmpty {
+                    Text("Create a subcategory from Categories before adding library exercises.")
                 }
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("Categories")
+        .navigationTitle("Exercise Library")
+        .searchable(text: $exerciseSearchText, prompt: "Search exercises")
+        .onAppear {
+            expandInitialLibraryGroupsIfNeeded()
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingCategoryTools = true
+                } label: {
+                    Label("Categories", systemImage: "folder")
+                }
+            }
+        }
         .sheet(isPresented: $showingAddSubcategory) {
             addSubcategorySheet
         }
@@ -97,12 +310,17 @@ struct CategoriesManagementView: View {
         .sheet(item: $selectedSubcategory) { subcategory in
             subcategorySheet(for: subcategory)
         }
+        .sheet(item: $selectedExerciseTemplate) { template in
+            exerciseTemplateEditorSheet(for: template)
+        }
+        .sheet(item: $subcategoryPendingMove) { subcategory in
+            moveSubcategoryContentSheet(for: subcategory)
+        }
+        .sheet(isPresented: $showingCategoryTools) {
+            categoryToolsSheet
+        }
         .sheet(isPresented: $showingPaywall) {
-            if let offering = purchaseManager.offerings?.current {
-                PaywallView(offering: offering)
-            } else {
-                PaywallPlaceholderView(onDismiss: { showingPaywall = false })
-            }
+            CustomPaywallView()
         }
         .confirmationDialog(
             "Delete Category",
@@ -134,14 +352,65 @@ struct CategoriesManagementView: View {
         } message: { subcategory in
             Text(subcategoryDeleteMessage(for: subcategory))
         }
+        .confirmationDialog(
+            "Remove Exercise",
+            isPresented: exerciseTemplateDeleteConfirmationBinding,
+            titleVisibility: .visible,
+            presenting: exerciseTemplatePendingDelete
+        ) { template in
+            Button(exerciseTemplateDeleteButtonTitle(for: template), role: .destructive) {
+                deleteExerciseTemplate(template)
+            }
+            Button("Cancel", role: .cancel) {
+                exerciseTemplatePendingDelete = nil
+            }
+        } message: { template in
+            Text(exerciseTemplateDeleteMessage(for: template))
+        }
+    }
+
+    private var categoryToolsSheet: some View {
+        NavigationStack {
+            List {
+                if groupedCategories.isEmpty {
+                    Section {
+                        ContentUnavailableView(
+                            "No Categories Yet",
+                            systemImage: "square.grid.2x2",
+                            description: Text("Create a category from the workout flow first.")
+                        )
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                    }
+                } else {
+                    ForEach(groupedCategories, id: \.id) { section in
+                        Section(section.title) {
+                            ForEach(section.categories) { category in
+                                categoryDisclosure(for: category)
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Category Setup")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        showingCategoryTools = false
+                    }
+                }
+            }
+        }
     }
 
     private func subcategoriesFor(_ category: WorkoutCategory) -> [WorkoutSubcategory] {
-        subcategories.filter { $0.category?.id == category.id }
+        relevantSubcategories.filter { $0.category?.id == category.id }
     }
 
     private func exerciseTemplatesFor(_ subcategory: WorkoutSubcategory) -> [SubcategoryExercise] {
-        exerciseTemplates
+        relevantExerciseTemplates
             .filter { $0.subcategory?.id == subcategory.id }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
@@ -158,6 +427,152 @@ struct CategoriesManagementView: View {
             get: { subcategoryPendingDelete != nil },
             set: { if !$0 { subcategoryPendingDelete = nil } }
         )
+    }
+
+    private var exerciseTemplateDeleteConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { exerciseTemplatePendingDelete != nil },
+            set: { if !$0 { exerciseTemplatePendingDelete = nil } }
+        )
+    }
+
+    private func exerciseTemplateRow(_ template: SubcategoryExercise, showLocation: Bool = true) -> some View {
+        Button {
+            selectedExerciseTemplate = template
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "dumbbell.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(template.name)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                    if showLocation {
+                        Text(exerciseTemplateSubtitle(for: template))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                let usageCount = loggedExerciseMatches(for: template).count
+                if usageCount > 0 {
+                    Text("\(usageCount)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(.secondary.opacity(0.12), in: Capsule())
+                        .accessibilityLabel("\(usageCount) logged uses")
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                exerciseTemplatePendingDelete = template
+            } label: {
+                Label("Remove", systemImage: "trash")
+            }
+        }
+    }
+
+    private func exerciseLibraryCategoryRows(_ group: ExerciseLibraryCategoryGroup) -> some View {
+        DisclosureGroup(
+            isExpanded: libraryCategoryExpansionBinding(for: group)
+        ) {
+            ForEach(group.subcategories) { subgroup in
+                exerciseLibrarySubcategoryRows(subgroup)
+            }
+        } label: {
+            HStack {
+                Text(categorySortTitle(group))
+                    .font(.headline)
+                Spacer()
+                Text("\(group.subcategories.reduce(0) { $0 + $1.templates.count })")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func exerciseLibrarySubcategoryRows(
+        _ subgroup: ExerciseLibrarySubcategoryGroup
+    ) -> some View {
+        DisclosureGroup(
+            isExpanded: librarySubcategoryExpansionBinding(for: subgroup)
+        ) {
+            ForEach(subgroup.templates) { template in
+                exerciseTemplateRow(template, showLocation: false)
+            }
+        } label: {
+            HStack {
+                Text(subcategorySortTitle(subgroup))
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(subgroup.templates.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func libraryCategoryExpansionBinding(for group: ExerciseLibraryCategoryGroup) -> Binding<Bool> {
+        Binding(
+            get: { expandedLibraryCategoryIDs.contains(group.id) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedLibraryCategoryIDs.insert(group.id)
+                } else {
+                    expandedLibraryCategoryIDs.remove(group.id)
+                }
+            }
+        )
+    }
+
+    private func librarySubcategoryExpansionBinding(for subgroup: ExerciseLibrarySubcategoryGroup) -> Binding<Bool> {
+        Binding(
+            get: { expandedLibrarySubcategoryIDs.contains(subgroup.id) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedLibrarySubcategoryIDs.insert(subgroup.id)
+                } else {
+                    expandedLibrarySubcategoryIDs.remove(subgroup.id)
+                }
+            }
+        )
+    }
+
+    private func expandInitialLibraryGroupsIfNeeded() {
+        guard expandedLibraryCategoryIDs.isEmpty,
+              expandedLibrarySubcategoryIDs.isEmpty,
+              let firstTypeGroup = groupedExerciseLibraryByType.first,
+              let firstGroup = firstTypeGroup.categories.first else {
+            return
+        }
+
+        expandedLibraryCategoryIDs.insert(firstGroup.id)
+        if let firstSubcategory = firstGroup.subcategories.first {
+            expandedLibrarySubcategoryIDs.insert(firstSubcategory.id)
+        }
+    }
+
+    private func exerciseTemplateSubtitle(for template: SubcategoryExercise) -> String {
+        let subcategory = template.subcategory?.name ?? "Unlinked"
+        let category = template.subcategory?.category?.name
+        if let category {
+            return "\(category) - \(subcategory)"
+        }
+        return subcategory
     }
 
     private func categoryDisclosure(for category: WorkoutCategory) -> some View {
@@ -247,7 +662,7 @@ struct CategoriesManagementView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(category.name)
                         .font(.headline)
-                    Text("\(subcategoriesFor(category).count) subcategories")
+                    Text("\(subcategoriesFor(category).count) subcategories in \(category.resolvedWorkoutType?.rawValue ?? category.activityDisplayName)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -264,16 +679,17 @@ struct CategoriesManagementView: View {
     }
 
     private func subcategorySheet(for subcategory: WorkoutSubcategory) -> some View {
-        NavigationStack {
+        let templates = exerciseTemplatesFor(subcategory)
+
+        return NavigationStack {
             List {
                 Section {
                     LabeledContent("Parent Category", value: subcategory.category?.name ?? "Unlinked")
+                    LabeledContent("Workout Type", value: subcategory.category?.resolvedWorkoutType?.rawValue ?? subcategory.category?.activityDisplayName ?? "Unspecified")
                     LabeledContent("Exercises", value: "\(exerciseTemplatesFor(subcategory).count)")
                 }
 
                 Section("Exercises") {
-                    let templates = exerciseTemplatesFor(subcategory)
-
                     if templates.isEmpty {
                         ContentUnavailableView(
                             "No Exercises",
@@ -284,32 +700,52 @@ struct CategoriesManagementView: View {
                         .listRowBackground(Color.clear)
                     } else {
                         ForEach(templates) { template in
-                            HStack(spacing: 12) {
-                                Image(systemName: "dumbbell.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 16)
-
-                                Text(template.name)
-                                    .font(.subheadline)
-
-                                Spacer()
-
-                                Button(role: .destructive) {
-                                    modelContext.delete(template)
-                                    try? modelContext.save()
-                                } label: {
-                                    Image(systemName: "trash")
+                            Button {
+                                selectedExerciseTemplate = template
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "dumbbell.fill")
                                         .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 16)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(template.name)
+                                            .font(.subheadline)
+                                        Text("\(loggedExerciseMatches(for: template).count) logged uses")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
                                 }
-                                .buttonStyle(.borderless)
                             }
+                            .buttonStyle(.plain)
                             .padding(.vertical, 2)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    exerciseTemplatePendingDelete = template
+                                } label: {
+                                    Label("Remove", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
 
                 Section {
+                    if !(templates.isEmpty && (subcategory.exercises?.isEmpty ?? true)) {
+                        Button {
+                            subcategoryPendingMove = subcategory
+                        } label: {
+                            Label("Move Exercises to Another Subcategory", systemImage: "arrow.right.arrow.left")
+                        }
+                    }
+
                     Button {
                         templateParentSubcategory = subcategory
                         newExerciseTemplateName = ""
@@ -326,7 +762,7 @@ struct CategoriesManagementView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle(subcategory.name)
+            .navigationTitle("Subcategory")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -361,6 +797,43 @@ struct CategoriesManagementView: View {
         return "\(subcategory.name) will be permanently deleted. This will also delete \(linkedTemplates) exercise templates. \(linkedWorkouts == 0 && linkedLoggedExercises == 0 ? "No workouts or logged exercises are currently linked." : "\(linkedWorkouts) linked workouts and \(linkedLoggedExercises) logged exercises will remain, but their subcategory link will be removed.")"
     }
 
+    private func exerciseTemplateDeleteButtonTitle(for template: SubcategoryExercise) -> String {
+        loggedExerciseMatches(for: template).isEmpty ? "Delete Exercise" : "Remove from Library"
+    }
+
+    private func exerciseTemplateDeleteMessage(for template: SubcategoryExercise) -> String {
+        let matches = loggedExerciseMatches(for: template)
+        guard !matches.isEmpty else {
+            return "\(template.name) is not used in workout history. Deleting it removes it from future exercise pickers."
+        }
+
+        let latest = latestLoggedDate(for: template).map {
+            $0.formatted(date: .abbreviated, time: .omitted)
+        }
+        let latestSentence = latest.map { " Last used \($0)." } ?? ""
+        return "\(template.name) appears in \(matches.count) logged workout exercise\(matches.count == 1 ? "" : "s"). Removing it from the library will not delete or rename workout history.\(latestSentence)"
+    }
+
+    private func loggedExerciseMatches(for template: SubcategoryExercise) -> [WorkoutExercise] {
+        let templateName = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !templateName.isEmpty else { return [] }
+        return workouts.flatMap { $0.exercises ?? [] }.filter { exercise in
+            exercise.subcategory?.id == template.subcategory?.id &&
+            exercise.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(templateName) == .orderedSame
+        }
+    }
+
+    private func workoutsMatchingExerciseTemplate(_ template: SubcategoryExercise) -> [Workout] {
+        let matches = Set(loggedExerciseMatches(for: template).map(\.id))
+        return workouts.filter { workout in
+            (workout.exercises ?? []).contains { matches.contains($0.id) }
+        }
+    }
+
+    private func latestLoggedDate(for template: SubcategoryExercise) -> Date? {
+        workoutsMatchingExerciseTemplate(template).map(\.startDate).max()
+    }
+
     private func deleteCategory(_ category: WorkoutCategory) {
         if expandedCategoryId == category.id {
             expandedCategoryId = nil
@@ -385,6 +858,30 @@ struct CategoriesManagementView: View {
         modelContext.delete(subcategory)
         try? modelContext.save()
         subcategoryPendingDelete = nil
+    }
+
+    private func moveSubcategoryContent(_ source: WorkoutSubcategory, to destination: WorkoutSubcategory) {
+        guard source.id != destination.id else { return }
+
+        for template in exerciseTemplatesFor(source) {
+            template.subcategory = destination
+        }
+
+        for exercise in source.exercises ?? [] {
+            exercise.subcategory = destination
+        }
+
+        try? modelContext.save()
+        subcategoryPendingMove = nil
+    }
+
+    private func deleteExerciseTemplate(_ template: SubcategoryExercise) {
+        if selectedExerciseTemplate?.id == template.id {
+            selectedExerciseTemplate = nil
+        }
+        modelContext.delete(template)
+        try? modelContext.save()
+        exerciseTemplatePendingDelete = nil
     }
 
     private var addSubcategorySheet: some View {
@@ -423,6 +920,53 @@ struct CategoriesManagementView: View {
         }
     }
 
+    private func moveSubcategoryContentSheet(for source: WorkoutSubcategory) -> some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Exercise templates", value: "\(exerciseTemplatesFor(source).count)")
+                    LabeledContent("Logged exercises", value: "\(source.exercises?.count ?? 0)")
+                } footer: {
+                    Text("This keeps workout history and library exercises intact, but moves their subcategory link.")
+                }
+
+                Section("Move to") {
+                    ForEach(relevantSubcategories.filter { $0.id != source.id }) { destination in
+                        Button {
+                            moveSubcategoryContent(source, to: destination)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(destination.name)
+                                        .foregroundStyle(.primary)
+                                    if let categoryName = destination.category?.name {
+                                        Text(categoryName)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .navigationTitle("Move Exercises")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        subcategoryPendingMove = nil
+                    }
+                }
+            }
+        }
+    }
+
     private var addExerciseTemplateSheet: some View {
         NavigationStack {
             Form {
@@ -436,6 +980,24 @@ struct CategoriesManagementView: View {
                     Section("Parent Subcategory") {
                         Text(subcategory.name)
                             .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Section("Subcategory") {
+                        ForEach(relevantSubcategories) { subcategory in
+                            Button {
+                                templateParentSubcategory = subcategory
+                            } label: {
+                                HStack {
+                                    Text(subcategory.name)
+                                    Spacer()
+                                    if templateParentSubcategory?.id == subcategory.id {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.tint)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
@@ -453,7 +1015,10 @@ struct CategoriesManagementView: View {
                     Button("Add") {
                         addExerciseTemplate()
                     }
-                    .disabled(newExerciseTemplateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(
+                        newExerciseTemplateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        templateParentSubcategory == nil
+                    )
                 }
             }
         }
@@ -474,6 +1039,15 @@ struct CategoriesManagementView: View {
     private func addExerciseTemplate() {
         let name = newExerciseTemplateName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, let subcategory = templateParentSubcategory else { return }
+        let exists = exerciseTemplatesFor(subcategory).contains {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(name) == .orderedSame
+        }
+        guard !exists else {
+            newExerciseTemplateName = ""
+            templateParentSubcategory = nil
+            showingAddExerciseTemplate = false
+            return
+        }
         let order = exerciseTemplatesFor(subcategory).count
         let template = SubcategoryExercise(name: name, subcategory: subcategory, orderIndex: order)
         modelContext.insert(template)
@@ -481,6 +1055,148 @@ struct CategoriesManagementView: View {
         newExerciseTemplateName = ""
         templateParentSubcategory = nil
         showingAddExerciseTemplate = false
+    }
+
+    private func exerciseTemplateEditorSheet(for template: SubcategoryExercise) -> some View {
+        ExerciseTemplateEditorSheet(template: template, availableSubcategories: relevantSubcategories)
+    }
+}
+
+private struct ExerciseTemplateEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
+
+    let template: SubcategoryExercise
+    let availableSubcategories: [WorkoutSubcategory]
+    @State private var draftName: String
+    @State private var selectedSubcategoryID: UUID?
+    @State private var renameMatchingHistory = false
+    @State private var showingRemoveConfirmation = false
+
+    init(template: SubcategoryExercise, availableSubcategories: [WorkoutSubcategory]) {
+        self.template = template
+        self.availableSubcategories = availableSubcategories
+        _draftName = State(initialValue: template.name)
+        _selectedSubcategoryID = State(initialValue: template.subcategory?.id)
+    }
+
+    private var trimmedName: String {
+        draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var matchingExercises: [WorkoutExercise] {
+        let originalName = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !originalName.isEmpty else { return [] }
+        return workouts.flatMap { $0.exercises ?? [] }.filter { exercise in
+            exercise.subcategory?.id == template.subcategory?.id &&
+            exercise.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(originalName) == .orderedSame
+        }
+    }
+
+    private var latestUseText: String {
+        let matchingIDs = Set(matchingExercises.map(\.id))
+        let latest = workouts
+            .filter { workout in
+                (workout.exercises ?? []).contains { matchingIDs.contains($0.id) }
+            }
+            .map(\.startDate)
+            .max()
+
+        guard let latest else { return "Never logged" }
+        return latest.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Exercise") {
+                    TextField("Exercise name", text: $draftName)
+                        .textInputAutocapitalization(.words)
+                        .disableAutocorrection(true)
+
+                    Picker("Subcategory", selection: $selectedSubcategoryID) {
+                        ForEach(availableSubcategories) { subcategory in
+                            Text(subcategory.name).tag(Optional(subcategory.id))
+                        }
+                    }
+                }
+
+                Section {
+                    LabeledContent("Logged uses", value: "\(matchingExercises.count)")
+                    LabeledContent("Last used", value: latestUseText)
+                } header: {
+                    Text("Usage")
+                } footer: {
+                    Text("Library changes affect future exercise pickers. Workout history is only changed if you turn on history renaming.")
+                }
+
+                if !matchingExercises.isEmpty {
+                    Section {
+                        Toggle("Also rename matching history", isOn: $renameMatchingHistory)
+                    } footer: {
+                        Text("This updates logged exercises with the current name in this subcategory. It does not touch exercises in other subcategories.")
+                    }
+                }
+
+                Section {
+                    Button(matchingExercises.isEmpty ? "Delete Exercise" : "Remove from Library", role: .destructive) {
+                        showingRemoveConfirmation = true
+                    }
+                }
+            }
+            .navigationTitle("Edit Exercise")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        save()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(trimmedName.isEmpty || selectedSubcategoryID == nil)
+                }
+            }
+            .confirmationDialog(
+                matchingExercises.isEmpty ? "Delete Exercise" : "Remove Exercise",
+                isPresented: $showingRemoveConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button(matchingExercises.isEmpty ? "Delete Exercise" : "Remove from Library", role: .destructive) {
+                    modelContext.delete(template)
+                    try? modelContext.save()
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                if matchingExercises.isEmpty {
+                    Text("This removes \(template.name) from future exercise pickers.")
+                } else {
+                    Text("\(template.name) appears in \(matchingExercises.count) logged workout exercise\(matchingExercises.count == 1 ? "" : "s"). Removing it from the library will keep workout history unchanged.")
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let selectedSubcategoryID,
+              let subcategory = availableSubcategories.first(where: { $0.id == selectedSubcategoryID }) else {
+            return
+        }
+
+        if renameMatchingHistory {
+            for exercise in matchingExercises {
+                exercise.name = trimmedName
+                exercise.subcategory = subcategory
+            }
+        }
+
+        template.name = trimmedName
+        template.subcategory = subcategory
+        try? modelContext.save()
+        dismiss()
     }
 }
 

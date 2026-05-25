@@ -84,37 +84,10 @@ struct UnifiedExercisePickerView: View {
         }
     }
 
-    /// Top suggestions (first 8 filtered options, excluding recent exercises to avoid duplicates)
-    private var suggestions: [ExerciseQuickAddOption] {
+    private var remainingOptions: [ExerciseQuickAddOption] {
+        guard searchText.isEmpty, filterSubcategoryID == nil else { return filteredOptions }
         let recentIDs = Set(recentExercises.map(\.id))
-        let nonRecentOptions = filteredOptions.filter { !recentIDs.contains($0.id) }
-        return Array(nonRecentOptions.prefix(8))
-    }
-
-    /// Options grouped by subcategory (excluding items already shown in recent/suggestions when no chip selected)
-    private var groupedBySubcategory: [(title: String, items: [ExerciseQuickAddOption])] {
-        // When showing recent/suggestions, exclude those items from the grouped list
-        var excludedIDs: Set<String> = []
-        if filterSubcategoryID == nil {
-            excludedIDs = Set(recentExercises.map(\.id)).union(Set(suggestions.map(\.id)))
-        }
-        let optionsToGroup = filteredOptions.filter { !excludedIDs.contains($0.id) }
-
-        let grouped = Dictionary(grouping: optionsToGroup) { option in
-            subcategoryNameByID[option.subcategoryID] ?? "Other"
-        }
-        return grouped.keys
-            .sorted()
-            .compactMap { key in
-                let items = grouped[key]!.sorted {
-                    let nameComparison = $0.name.localizedCaseInsensitiveCompare($1.name)
-                    if nameComparison == .orderedSame {
-                        return $0.id < $1.id
-                    }
-                    return nameComparison == .orderedAscending
-                }
-                return items.isEmpty ? nil : (title: key, items: items)
-            }
+        return filteredOptions.filter { !recentIDs.contains($0.id) }
     }
 
     private var selectedOptions: [ExerciseQuickAddOption] {
@@ -142,15 +115,9 @@ struct UnifiedExercisePickerView: View {
     var body: some View {
         NavigationStack {
             List {
-                if !subcategories.isEmpty, !searchText.isEmpty || filterSubcategoryID != nil {
+                if !subcategories.isEmpty {
                     Section {
                         filterRow
-                    }
-                } else if !subcategories.isEmpty {
-                    Section {
-                        filterRow
-                    } footer: {
-                        Text("Use search or filter by subcategory.")
                     }
                 }
 
@@ -163,14 +130,10 @@ struct UnifiedExercisePickerView: View {
                         recentSection
                     }
 
-                    if !suggestions.isEmpty && filterSubcategoryID == nil {
-                        suggestionsSection
-                    }
-
-                    ForEach(groupedBySubcategory, id: \.title) { group in
-                        Section(header: Text(group.title)) {
-                            ForEach(group.items, id: \.id) { option in
-                                exerciseRow(for: option, showSubcategory: false)
+                    if !remainingOptions.isEmpty {
+                        Section(header: Text("Exercises")) {
+                            ForEach(remainingOptions, id: \.id) { option in
+                                exerciseRow(for: option, showSubcategory: true)
                             }
                         }
                     }
@@ -229,9 +192,9 @@ struct UnifiedExercisePickerView: View {
     private var emptyStateSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("No exercises available")
+                Text("No exercises yet")
                     .font(.subheadline.weight(.semibold))
-                Text("Add exercise templates in Categories to build your library.")
+                Text("Create one from search, or add exercises in your library.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -256,14 +219,6 @@ struct UnifiedExercisePickerView: View {
         Section(header: Text("Recent")) {
             ForEach(recentExercises, id: \.id) { option in
                 exerciseRow(for: option, showSubcategory: true, showLastUsed: true)
-            }
-        }
-    }
-
-    private var suggestionsSection: some View {
-        Section(header: Text("Suggestions")) {
-            ForEach(suggestions, id: \.id) { option in
-                exerciseRow(for: option, showSubcategory: true)
             }
         }
     }

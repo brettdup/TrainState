@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "ChatGPT Image May 18, 2026, 03_00_57 PM.png",
+      "filename" : "TrainStateLogo2026Light.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,6 +13,7 @@
           "value" : "dark"
         }
       ],
+      "filename" : "TrainStateLogo2026Dark.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -24,6 +25,7 @@
           "value" : "tinted"
         }
       ],
+      "filename" : "TrainStateLogo2026Clear.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"

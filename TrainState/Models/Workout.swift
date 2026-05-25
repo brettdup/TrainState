@@ -243,6 +243,7 @@ struct WorkoutExport: Codable {
     let hkUUID: String?
     let categoryIds: [UUID]?
     let subcategoryIds: [UUID]?
+    let exercises: [WorkoutExerciseExport]
     
     init(workout: Workout) {
         self.id = workout.id
@@ -269,6 +270,87 @@ struct WorkoutExport: Codable {
         } else {
             self.subcategoryIds = nil
         }
+
+        self.exercises = (workout.exercises ?? [])
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map(WorkoutExerciseExport.init)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case type
+        case startDate
+        case duration
+        case calories
+        case distance
+        case rating
+        case notes
+        case hkActivityTypeRaw
+        case hkLocationTypeRaw
+        case hkUUID
+        case categoryIds
+        case subcategoryIds
+        case exercises
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        type = try container.decode(WorkoutType.self, forKey: .type)
+        startDate = try container.decode(Date.self, forKey: .startDate)
+        duration = try container.decode(TimeInterval.self, forKey: .duration)
+        calories = try container.decodeIfPresent(Double.self, forKey: .calories)
+        distance = try container.decodeIfPresent(Double.self, forKey: .distance)
+        rating = try container.decodeIfPresent(Double.self, forKey: .rating)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        hkActivityTypeRaw = try container.decodeIfPresent(Int.self, forKey: .hkActivityTypeRaw)
+        hkLocationTypeRaw = try container.decodeIfPresent(Int.self, forKey: .hkLocationTypeRaw)
+        hkUUID = try container.decodeIfPresent(String.self, forKey: .hkUUID)
+        categoryIds = try container.decodeIfPresent([UUID].self, forKey: .categoryIds)
+        subcategoryIds = try container.decodeIfPresent([UUID].self, forKey: .subcategoryIds)
+        exercises = try container.decodeIfPresent([WorkoutExerciseExport].self, forKey: .exercises) ?? []
+    }
+}
+
+struct WorkoutExerciseExport: Codable {
+    let id: UUID
+    let name: String
+    let sets: Int?
+    let reps: Int?
+    let weight: Double?
+    let notes: String?
+    let orderIndex: Int
+    let subcategoryId: UUID?
+
+    init(exercise: WorkoutExercise) {
+        self.id = exercise.id
+        self.name = exercise.name
+        self.sets = exercise.sets
+        self.reps = exercise.reps
+        self.weight = exercise.weight
+        self.notes = exercise.notes
+        self.orderIndex = exercise.orderIndex
+        self.subcategoryId = exercise.subcategory?.id
+    }
+}
+
+struct WorkoutRouteExport: Codable {
+    let id: UUID
+    let name: String?
+    let createdAt: Date
+    let updatedAt: Date
+    let routeData: Data?
+    let waypointData: Data?
+    let workoutId: UUID?
+
+    init(route: WorkoutRoute) {
+        self.id = route.id
+        self.name = route.name
+        self.createdAt = route.createdAt
+        self.updatedAt = route.updatedAt
+        self.routeData = route.routeData
+        self.waypointData = route.waypointData
+        self.workoutId = route.workout?.id
     }
 }
 

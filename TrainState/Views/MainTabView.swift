@@ -5,6 +5,7 @@ struct MainTabView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
+    @Query private var subcategories: [WorkoutSubcategory]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @AppStorage("quickLogSheetRequestToken") private var quickLogSheetRequestToken = ""
     @AppStorage("lastBackupReminderPromptTimeInterval") private var lastBackupReminderPromptTimeInterval: Double = 0
@@ -55,18 +56,30 @@ struct MainTabView: View {
         }
         .onAppear {
             WorkoutWidgetSnapshotWriter.writeSnapshot(for: workouts)
-            QuickExerciseLogStore.attachPendingLogs(to: workouts, in: modelContext)
+            QuickExerciseLogStore.attachPendingLogs(
+                to: workouts,
+                availableSubcategories: subcategories,
+                in: modelContext
+            )
             guard !hasCheckedBackupReminder else { return }
             hasCheckedBackupReminder = true
             Task { await evaluateBackupReminderIfNeeded() }
         }
         .onChange(of: widgetSnapshotFingerprint) { _, _ in
-            QuickExerciseLogStore.attachPendingLogs(to: workouts, in: modelContext)
+            QuickExerciseLogStore.attachPendingLogs(
+                to: workouts,
+                availableSubcategories: subcategories,
+                in: modelContext
+            )
             WorkoutWidgetSnapshotWriter.writeSnapshot(for: workouts)
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
-            QuickExerciseLogStore.attachPendingLogs(to: workouts, in: modelContext)
+            QuickExerciseLogStore.attachPendingLogs(
+                to: workouts,
+                availableSubcategories: subcategories,
+                in: modelContext
+            )
             WorkoutWidgetSnapshotWriter.writeSnapshot(for: workouts)
             Task { await evaluateBackupReminderIfNeeded() }
         }

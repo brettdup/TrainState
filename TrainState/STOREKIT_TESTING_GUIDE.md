@@ -57,7 +57,7 @@ If StoreKit testing isn't working, you can use the debug override toggle:
    - Run → Options → StoreKit Configuration should be set to `TrainState.storekit`
 
 2. **Check product IDs match**:
-   - Your StoreKit file has: `Premium1Month`, `premium1year`
+   - Your StoreKit file has: `Premium1Month`, `premium1year`, `premiumlifetime`
    - Ensure RevenueCat offerings use the same product IDs
 
 3. **Restart simulator** after changing StoreKit configuration

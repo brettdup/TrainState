@@ -231,7 +231,6 @@ struct ExerciseEditorSheetView: View {
             if entry.subcategoryID == nil, let first = availableSubcategories.first {
                 entry.subcategoryID = first.id
             }
-            ensureDefaultSetPlan()
             syncPlannedSetEntriesFromMetrics()
             syncExerciseSelectionForCurrentSubcategory()
         }
@@ -573,13 +572,6 @@ struct ExerciseEditorSheetView: View {
             )
         }
         entry.setEntries = sets
-    }
-
-    private func ensureDefaultSetPlan() {
-        guard entry.sets == nil, entry.setEntries.isEmpty else { return }
-        entry.sets = 1
-        entry.reps = entry.reps ?? 0
-        entry.weight = entry.weight ?? 0
     }
 
     private func setSetCount(_ count: Int) {

@@ -1,4 +1,3 @@
-import RevenueCatUI
 import SwiftUI
 import SwiftData
 import HealthKit
@@ -98,18 +97,7 @@ struct SettingsView: View {
                 }
             }
             .sheet(isPresented: $showPaywall) {
-                if let offering = purchaseManager.offerings?.current {
-                    PaywallView(offering: offering)
-                } else {
-                    VStack(spacing: 12) {
-                        ProgressView("Loading paywall...")
-                        Text("Premium")
-                            .font(.title2.weight(.semibold))
-                        Text("No paywall available.")
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
-                }
+                CustomPaywallView()
             }
             .sheet(item: $backupPreview) { preview in
                 BackupPreviewSheet(preview: preview)

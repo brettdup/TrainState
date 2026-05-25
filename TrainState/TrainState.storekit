@@ -14,7 +14,21 @@
 
   ],
   "products" : [
-
+    {
+      "displayPrice" : "399.99",
+      "familyShareable" : false,
+      "internalID" : "6747289001",
+      "localizations" : [
+        {
+          "description" : "Lifetime premium access",
+          "displayName" : "Premium Lifetime",
+          "locale" : "en_GB"
+        }
+      ],
+      "productID" : "premiumlifetime",
+      "referenceName" : "Premium Lifetime",
+      "type" : "NonConsumable"
+    }
   ],
   "settings" : {
     "_applicationInternalID" : "6747159475",

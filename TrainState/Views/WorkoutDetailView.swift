@@ -238,7 +238,10 @@ struct WorkoutDetailView: View {
         }
         .sheet(isPresented: $showingCategoriesManagement) {
             NavigationStack {
-                CategoriesManagementView()
+                CategoriesManagementView(
+                    workoutType: workout.type,
+                    appleWorkoutActivityType: workout.appleWorkoutActivityType
+                )
             }
         }
         .onChange(of: exerciseDraftEntry) { _, _ in
@@ -496,7 +499,21 @@ struct WorkoutDetailView: View {
     private func addCustomExerciseToWorkout(name: String, subcategoryID: UUID) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        saveExerciseTemplateIfNeeded(name: trimmed, subcategoryID: subcategoryID)
         addExerciseToWorkout(from: ExerciseQuickAddOption(name: trimmed, subcategoryID: subcategoryID))
+    }
+
+    private func saveExerciseTemplateIfNeeded(name: String, subcategoryID: UUID) {
+        guard let subcategory = allSubcategories.first(where: { $0.id == subcategoryID }) else { return }
+        let exists = exerciseTemplates.contains {
+            $0.subcategory?.id == subcategoryID &&
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(name) == .orderedSame
+        }
+        guard !exists else { return }
+
+        let order = exerciseTemplates.filter { $0.subcategory?.id == subcategoryID }.count
+        modelContext.insert(SubcategoryExercise(name: name, subcategory: subcategory, orderIndex: order))
+        try? modelContext.save()
     }
 
     private func syncWorkoutClassification(for subcategory: WorkoutSubcategory?) {

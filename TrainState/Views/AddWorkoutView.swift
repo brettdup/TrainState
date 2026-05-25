@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import RevenueCatUI
 import HealthKit
 import CoreLocation
 
@@ -236,6 +235,7 @@ struct AddWorkoutView: View {
                     }
                 },
                 onCreateCustom: { name, subcategoryID in
+                    saveExerciseTemplateIfNeeded(name: name, subcategoryID: subcategoryID)
                     exerciseEntries.append(ExerciseLogEntry(
                         name: name,
                         subcategoryID: subcategoryID
@@ -245,11 +245,7 @@ struct AddWorkoutView: View {
             )
         }
         .sheet(isPresented: $showingPaywall) {
-            if let offering = purchaseManager.offerings?.current {
-                PaywallView(offering: offering)
-            } else {
-                PaywallPlaceholderView(onDismiss: { showingPaywall = false })
-            }
+            CustomPaywallView()
         }
         .sheet(item: $activeExerciseSelection) { selection in
             if let index = exerciseEntries.firstIndex(where: { $0.id == selection.id }) {
@@ -1089,6 +1085,24 @@ struct AddWorkoutView: View {
             entry.reps = recentMatch.reps
         }
         exerciseEntries.append(entry)
+    }
+
+    private func saveExerciseTemplateIfNeeded(name: String, subcategoryID: UUID) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty,
+              let subcategory = allSubcategories.first(where: { $0.id == subcategoryID }) else {
+            return
+        }
+
+        let exists = exerciseTemplates.contains {
+            $0.subcategory?.id == subcategoryID &&
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(trimmedName) == .orderedSame
+        }
+        guard !exists else { return }
+
+        let order = exerciseTemplates.filter { $0.subcategory?.id == subcategoryID }.count
+        modelContext.insert(SubcategoryExercise(name: trimmedName, subcategory: subcategory, orderIndex: order))
+        try? modelContext.save()
     }
 
     private func exerciseSummary(for entry: ExerciseLogEntry) -> String? {

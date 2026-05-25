@@ -106,6 +106,13 @@ class DataInitializationManager {
             "Rear Delt Fly",
             "Arnold Press"
         ],
+        "triceps": [
+            "Close-Grip Bench Press",
+            "Cable Triceps Pushdown",
+            "Overhead Triceps Extension",
+            "Skull Crusher",
+            "Bench Dip"
+        ],
         "back": [
             "Pull-Up",
             "Bent-Over Row",
@@ -119,6 +126,34 @@ class DataInitializationManager {
             "Incline Dumbbell Curl",
             "Preacher Curl",
             "Cable Curl"
+        ],
+        "rear delts": [
+            "Face Pull",
+            "Reverse Pec Deck",
+            "Bent-Over Rear Delt Raise",
+            "Cable Rear Delt Fly",
+            "Chest-Supported Rear Delt Row"
+        ],
+        "quads": [
+            "Back Squat",
+            "Front Squat",
+            "Leg Press",
+            "Walking Lunge",
+            "Leg Extension"
+        ],
+        "hamstrings": [
+            "Romanian Deadlift",
+            "Lying Leg Curl",
+            "Seated Leg Curl",
+            "Good Morning",
+            "Single-Leg Romanian Deadlift"
+        ],
+        "calves": [
+            "Standing Calf Raise",
+            "Seated Calf Raise",
+            "Single-Leg Calf Raise",
+            "Leg Press Calf Raise",
+            "Donkey Calf Raise"
         ],
         "hiit": [
             "Sprint Intervals",
@@ -379,6 +414,11 @@ class DataInitializationManager {
         if normalizedName.contains("shoulder") { return defaultExerciseTemplatesBySubcategory["shoulders"] ?? [] }
         if normalizedName.contains("back") { return defaultExerciseTemplatesBySubcategory["back"] ?? [] }
         if normalizedName.contains("bicep") { return defaultExerciseTemplatesBySubcategory["biceps"] ?? [] }
+        if normalizedName.contains("tricep") { return defaultExerciseTemplatesBySubcategory["triceps"] ?? [] }
+        if normalizedName.contains("rear delt") { return defaultExerciseTemplatesBySubcategory["rear delts"] ?? [] }
+        if normalizedName.contains("quad") { return defaultExerciseTemplatesBySubcategory["quads"] ?? [] }
+        if normalizedName.contains("hamstring") { return defaultExerciseTemplatesBySubcategory["hamstrings"] ?? [] }
+        if normalizedName.contains("calf") { return defaultExerciseTemplatesBySubcategory["calves"] ?? [] }
         if normalizedName.contains("tempo") { return defaultExerciseTemplatesBySubcategory["tempo"] ?? [] }
         if normalizedName.contains("run") { return defaultExerciseTemplatesBySubcategory["easy run"] ?? [] }
         if normalizedName.contains("recovery") { return defaultExerciseTemplatesBySubcategory["recovery"] ?? [] }

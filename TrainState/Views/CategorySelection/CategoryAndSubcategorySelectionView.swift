@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import RevenueCatUI
 import HealthKit
 
 struct CategoryAndSubcategorySelectionView: View {
@@ -230,11 +229,7 @@ struct CategoryAndSubcategorySelectionView: View {
                 }
             }
             .sheet(isPresented: $showingPaywall) {
-                if let offering = purchaseManager.offerings?.current {
-                    PaywallView(offering: offering)
-                } else {
-                    PaywallPlaceholderView(onDismiss: { showingPaywall = false })
-                }
+                CustomPaywallView()
             }
             .alert("Can't Remove Yet", isPresented: selectionWarningBinding) {
                 Button("OK", role: .cancel) {

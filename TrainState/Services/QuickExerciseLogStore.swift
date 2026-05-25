@@ -6,13 +6,66 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
     let id: UUID
     let exerciseName: String
     let loggedAt: Date
-    let sets: Int
-    let reps: Int
+    let sets: Int?
+    let reps: Int?
     let weight: Double?
+    let subcategoryID: UUID?
 
     var summary: String {
         let weightText = weight.map { ExerciseLogEntry.displayWeight($0) + " kg" }
-        return [exerciseName, "\(sets)x\(reps)", weightText].compactMap { $0 }.joined(separator: " - ")
+        return [exerciseName, setRepSummary, weightText].compactMap { $0 }.joined(separator: " - ")
+    }
+
+    init(
+        id: UUID,
+        exerciseName: String,
+        loggedAt: Date,
+        sets: Int?,
+        reps: Int?,
+        weight: Double?,
+        subcategoryID: UUID?
+    ) {
+        self.id = id
+        self.exerciseName = exerciseName
+        self.loggedAt = loggedAt
+        self.sets = sets
+        self.reps = reps
+        self.weight = weight
+        self.subcategoryID = subcategoryID
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case exerciseName
+        case loggedAt
+        case sets
+        case reps
+        case weight
+        case subcategoryID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        exerciseName = try container.decode(String.self, forKey: .exerciseName)
+        loggedAt = try container.decode(Date.self, forKey: .loggedAt)
+        sets = try container.decodeIfPresent(Int.self, forKey: .sets)
+        reps = try container.decodeIfPresent(Int.self, forKey: .reps)
+        weight = try container.decodeIfPresent(Double.self, forKey: .weight)
+        subcategoryID = try container.decodeIfPresent(UUID.self, forKey: .subcategoryID)
+    }
+
+    private var setRepSummary: String? {
+        switch (sets, reps) {
+        case let (.some(sets), .some(reps)) where sets > 0 && reps > 0:
+            return "\(sets)x\(reps)"
+        case let (.some(sets), _) where sets > 0:
+            return "\(sets) set\(sets == 1 ? "" : "s")"
+        case let (_, .some(reps)) where reps > 0:
+            return "\(reps) reps"
+        default:
+            return nil
+        }
     }
 }
 
@@ -45,7 +98,12 @@ enum QuickExerciseLogStore {
     }
 
     @MainActor
-    static func attachPendingLogs(to workouts: [Workout], in context: ModelContext, calendar: Calendar = .current) {
+    static func attachPendingLogs(
+        to workouts: [Workout],
+        availableSubcategories: [WorkoutSubcategory],
+        in context: ModelContext,
+        calendar: Calendar = .current
+    ) {
         let logs = pendingLogs()
         guard !logs.isEmpty, !workouts.isEmpty else { return }
 
@@ -66,13 +124,20 @@ enum QuickExerciseLogStore {
                 weight: log.weight,
                 notes: "Logged from widget on \(log.loggedAt.formatted(date: .abbreviated, time: .shortened))",
                 orderIndex: nextOrderIndex,
-                workout: workout
+                workout: workout,
+                subcategory: linkedSubcategory(for: log, from: availableSubcategories)
             )
 
             if workout.exercises == nil {
                 workout.exercises = []
             }
             workout.exercises?.append(exercise)
+            if let subcategory = exercise.subcategory {
+                workout.addSubcategory(subcategory)
+                if let category = subcategory.category {
+                    workout.addCategory(category)
+                }
+            }
             context.insert(exercise)
             didAttachLog = true
         }
@@ -87,5 +152,18 @@ enum QuickExerciseLogStore {
             .filter { calendar.isDate($0.startDate, inSameDayAs: log.loggedAt) }
             .sorted { $0.startDate > $1.startDate }
             .first
+    }
+
+    private static func linkedSubcategory(
+        for log: PendingQuickExerciseLog,
+        from subcategories: [WorkoutSubcategory]
+    ) -> WorkoutSubcategory? {
+        if let subcategoryID = log.subcategoryID {
+            return subcategories.first { $0.id == subcategoryID }
+        }
+
+        return subcategories.first {
+            $0.name.compare(log.exerciseName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
     }
 }

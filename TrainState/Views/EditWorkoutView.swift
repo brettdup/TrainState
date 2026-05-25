@@ -158,7 +158,10 @@ struct EditWorkoutView: View {
         }
         .sheet(isPresented: $showingCategoriesManagement) {
             NavigationStack {
-                CategoriesManagementView()
+                CategoriesManagementView(
+                    workoutType: type,
+                    appleWorkoutActivityType: appleWorkoutActivityType
+                )
             }
         }
         .onChange(of: selectedAppleWorkout) { _, newSelection in

@@ -1,6 +1,10 @@
 import SwiftUI
+import SwiftData
 
 struct WorkoutExerciseSectionView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
+
     @Binding var entries: [ExerciseLogEntry]
 
     let tintColor: Color
@@ -85,6 +89,7 @@ struct WorkoutExerciseSectionView: View {
                     }
                 },
                 onCreateCustom: { name, subcategoryID in
+                    saveExerciseTemplateIfNeeded(name: name, subcategoryID: subcategoryID)
                     let entry = ExerciseLogEntry(name: name, subcategoryID: subcategoryID)
                     entries.append(entry)
                     onTap(entry)
@@ -104,6 +109,24 @@ struct WorkoutExerciseSectionView: View {
         }
         entries.append(entry)
         onTap(entry)
+    }
+
+    private func saveExerciseTemplateIfNeeded(name: String, subcategoryID: UUID) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty,
+              let subcategory = availableSubcategories.first(where: { $0.id == subcategoryID }) else {
+            return
+        }
+
+        let exists = exerciseTemplates.contains {
+            $0.subcategory?.id == subcategoryID &&
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(trimmedName) == .orderedSame
+        }
+        guard !exists else { return }
+
+        let order = exerciseTemplates.filter { $0.subcategory?.id == subcategoryID }.count
+        modelContext.insert(SubcategoryExercise(name: trimmedName, subcategory: subcategory, orderIndex: order))
+        try? modelContext.save()
     }
 }
 

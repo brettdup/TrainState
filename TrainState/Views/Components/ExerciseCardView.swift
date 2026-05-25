@@ -89,6 +89,8 @@ struct ExerciseCardView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .opacity(isDragging ? 0.9 : 1.0)
         .scaleEffect(isDragging ? 1.02 : 1.0)
         .animation(.easeInOut(duration: 0.2), value: isDragging)

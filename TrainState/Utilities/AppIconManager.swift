@@ -11,7 +11,7 @@ enum AppIconOption: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .current: "Original"
+        case .current: "Auto"
         case .light: "Light"
         case .dark: "Dark"
         case .clear: "Clear"

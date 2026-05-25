@@ -434,7 +434,7 @@
 				CODE_SIGN_ENTITLEMENTS = TrainState/TrainState.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 1000;
 				DEVELOPMENT_TEAM = C6GR6GJPAA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -475,7 +475,7 @@
 				CODE_SIGN_ENTITLEMENTS = TrainState/TrainState.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 1000;
 				DEVELOPMENT_TEAM = C6GR6GJPAA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -710,7 +710,7 @@
 				CODE_SIGN_ENTITLEMENTS = TrainStateWidgetExtension/TrainStateWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 1000;
 				DEVELOPMENT_TEAM = C6GR6GJPAA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainStateWidgetExtension/Info.plist;
@@ -722,7 +722,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = brettduplessis.TrainState.TrainStateWidgetExtension;
 				PRODUCT_NAME = "Exercise Pal Widget";
 				SKIP_INSTALL = YES;
@@ -743,7 +743,7 @@
 				CODE_SIGN_ENTITLEMENTS = TrainStateWidgetExtension/TrainStateWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 1000;
 				DEVELOPMENT_TEAM = C6GR6GJPAA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainStateWidgetExtension/Info.plist;
@@ -755,7 +755,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = brettduplessis.TrainState.TrainStateWidgetExtension;
 				PRODUCT_NAME = "Exercise Pal Widget";
 				SKIP_INSTALL = YES;

@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import RevenueCatUI
 import HealthKit
 import UserNotifications
 import CoreLocation
@@ -68,22 +67,21 @@ struct WorkoutListView: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Workouts")
             .navigationBarTitleDisplayMode(.large)
-            .safeAreaInset(edge: .top) {
+            .overlay(alignment: .top) {
                 if let successBanner {
                     postLogSuccessBanner(successBanner)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 6)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .padding(.top, 8)
+                        .transition(.opacity)
                 }
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.86), value: successBanner)
+            .animation(.easeInOut(duration: 0.18), value: successBanner)
             .toolbar(content: workoutToolbarContent)
             .sheet(isPresented: $showingAddWorkout) {
                 AddWorkoutView()
             }
             .sheet(isPresented: $showingQuickLogSheet) {
                 WorkoutQuickExerciseLogSheet {
-                    refreshQuickExerciseLogs()
+                    attachPendingQuickExerciseLogs()
                 } availableSubcategories: {
                     quickLogExerciseSubcategories
                 } availableOptions: {
@@ -109,11 +107,7 @@ struct WorkoutListView: View {
                 workoutExercisesSheet(for: workout)
             }
             .sheet(isPresented: $showingPaywall) {
-                if let offering = purchaseManager.offerings?.current {
-                    PaywallView(offering: offering)
-                } else {
-                    PaywallPlaceholderView(onDismiss: { showingPaywall = false })
-                }
+                CustomPaywallView()
             }
             .alert("HealthKit Import", isPresented: healthKitImportAlertBinding) {
                 Button("OK", role: .cancel) {
@@ -180,7 +174,7 @@ struct WorkoutListView: View {
         }
         .onAppear {
             loadCachedRecentHealthKitWorkouts()
-            refreshQuickExerciseLogs()
+            attachPendingQuickExerciseLogs()
             lastKnownWorkoutCount = workouts.count
             syncReminderPermissionStatus()
             Task { await loadRecentHealthKitWorkouts(showAlerts: false) }
@@ -191,12 +185,11 @@ struct WorkoutListView: View {
             }
             lastKnownWorkoutCount = newCount
             normalizeSelectedFilter()
-            refreshQuickExerciseLogs()
+            attachPendingQuickExerciseLogs()
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
-            QuickExerciseLogStore.attachPendingLogs(to: workouts, in: modelContext)
-            refreshQuickExerciseLogs()
+            attachPendingQuickExerciseLogs()
         }
         .onChange(of: quickLogSheetRequestToken) { _, _ in
             openQuickLogSheetIfRequested()
@@ -495,6 +488,15 @@ struct WorkoutListView: View {
 
     private func refreshQuickExerciseLogs() {
         pendingQuickExerciseLogs = QuickExerciseLogStore.pendingLogs()
+    }
+
+    private func attachPendingQuickExerciseLogs() {
+        QuickExerciseLogStore.attachPendingLogs(
+            to: workouts,
+            availableSubcategories: subcategories,
+            in: modelContext
+        )
+        refreshQuickExerciseLogs()
     }
 
     private func openQuickLogSheetIfRequested() {
@@ -1076,6 +1078,7 @@ struct WorkoutListView: View {
     @MainActor
     private func attachHealthKitWorkout(_ candidate: HealthKitRecentWorkoutMenuItem, to workout: Workout) async {
         guard !isImportingHealthKitWorkout else { return }
+        guard workout.type == candidate.activityType.mappedWorkoutType else { return }
         if importedHealthKitUUIDs.contains(candidate.hkUUID) || newlyImportedHealthKitUUIDs.contains(candidate.hkUUID) {
             return
         }
@@ -1092,7 +1095,11 @@ struct WorkoutListView: View {
 
     private func attachableWorkouts(for item: HealthKitRecentWorkoutMenuItem) -> [Workout] {
         let calendar = Calendar.current
-        return workouts.filter { calendar.isDate($0.startDate, inSameDayAs: item.startDate) }
+        let workoutType = item.activityType.mappedWorkoutType
+        return workouts.filter {
+            calendar.isDate($0.startDate, inSameDayAs: item.startDate) &&
+            $0.type == workoutType
+        }
     }
 
     private func hasAttachableWorkouts(for item: HealthKitRecentWorkoutMenuItem) -> Bool {
@@ -1172,8 +1179,8 @@ struct WorkoutListView: View {
         let weeklyCount = workoutsThisWeekCount
         let streakDays = workoutDayStreak
         successBanner = SuccessBannerModel(
-            title: "Workout Logged",
-            subtitle: "Nice work. Keep the momentum going.",
+            title: "Workout saved",
+            subtitle: "Your session is in the log.",
             weeklyCount: weeklyCount,
             streakDays: streakDays
         )
@@ -1188,50 +1195,34 @@ struct WorkoutListView: View {
     }
 
     private func postLogSuccessBanner(_ banner: SuccessBannerModel) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "sparkles.circle.fill")
-                .font(.system(size: 20, weight: .bold))
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(.yellow, .orange)
-                .symbolEffect(.pulse, options: .nonRepeating)
-                .padding(.top, 2)
-            VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(Color.green, in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(banner.title)
-                    .font(.subheadline.weight(.bold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text(banner.subtitle)
-                    .font(.caption)
+                Text("\(banner.weeklyCount) this week  ·  \(banner.streakDays)-day streak")
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                HStack(spacing: 8) {
-                    metricPill(icon: "calendar", text: "\(banner.weeklyCount) this week")
-                    metricPill(icon: "flame.fill", text: "\(banner.streakDays)-day streak")
-                }
+                    .lineLimit(1)
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.leading, 9)
+        .padding(.trailing, 12)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: Capsule())
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+            Capsule()
+                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.10), lineWidth: 0.5)
         )
-        .shadow(color: Color.black.opacity(0.08), radius: 12, y: 3)
-    }
-
-    private func metricPill(icon: String, text: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.caption2.weight(.semibold))
-            Text(text)
-                .font(.caption2.weight(.semibold))
-        }
-        .foregroundStyle(.primary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.08), in: Capsule())
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.08), radius: 10, y: 3)
+        .allowsHitTesting(false)
     }
 
     private var workoutsThisWeekCount: Int {
@@ -1344,19 +1335,30 @@ private struct WorkoutQuickExerciseLogSheet: View {
 
     private func saveQuickLog() {
         guard !entry.trimmedName.isEmpty, !didSave else { return }
+        let quickLogMetrics = quickLogMetrics(for: entry)
         let log = PendingQuickExerciseLog(
             id: UUID(),
             exerciseName: entry.trimmedName,
             loggedAt: Date(),
-            sets: entry.effectiveSetCount ?? 1,
-            reps: entry.effectiveReps ?? 0,
-            weight: entry.effectiveWeight
+            sets: quickLogMetrics.sets,
+            reps: quickLogMetrics.reps,
+            weight: quickLogMetrics.weight,
+            subcategoryID: entry.subcategoryID
         )
         QuickExerciseLogStore.appendPendingLog(log)
         onSave()
         didSave = true
         entry = ExerciseLogEntry(subcategoryID: availableSubcategories.first?.id)
         dismiss()
+    }
+
+    private func quickLogMetrics(for entry: ExerciseLogEntry) -> (sets: Int?, reps: Int?, weight: Double?) {
+        let reps = entry.effectiveReps.flatMap { $0 > 0 ? $0 : nil }
+        let weight = entry.effectiveWeight.flatMap { $0 > 0 ? $0 : nil }
+        let setCount = entry.effectiveSetCount.flatMap { $0 > 0 ? $0 : nil }
+        let sets = setCount == 1 && reps == nil && weight == nil ? nil : setCount
+
+        return (sets, reps, weight)
     }
 }
 
