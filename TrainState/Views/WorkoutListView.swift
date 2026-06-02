@@ -1519,6 +1519,7 @@ struct WorkoutListView_Previews: PreviewProvider {
             distance: nil,
             hkActivityTypeRaw: Int(HKWorkoutActivityType.traditionalStrengthTraining.rawValue)
         )
+        longNameWorkout.hkUUID = UUID().uuidString
         context.insert(longNameWorkout)
 
         addWorkout(type: .running, daysAgo: 0, durationMinutes: 45, distance: 6.2, categories: [endurance], subcategories: [tempo])

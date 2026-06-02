@@ -253,30 +253,38 @@ struct WorkoutRowView: View {
                 .foregroundStyle(.primary)
                 .lineLimit(lineLimit)
                 .multilineTextAlignment(.leading)
-
-            if isImportedFromHealthKit {
-                healthKitImportedIcon
-            }
         }
         .accessibilityElement(children: .combine)
     }
 
     private var healthKitImportedIcon: some View {
         Image(systemName: "heart.text.square.fill")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.red)
             .accessibilityLabel("Imported from HealthKit")
     }
 
     private func iconView(size: CGFloat, iconSize: CGFloat, cornerRadius: CGFloat) -> some View {
-        Image(systemName: workout.primaryWorkoutSystemImage)
-            .font(.system(size: iconSize, weight: .semibold))
-            .foregroundStyle(workout.primaryWorkoutTintColor)
-            .frame(width: size, height: size)
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(workout.primaryWorkoutTintColor.opacity(0.12))
-            )
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(workout.primaryWorkoutTintColor.opacity(0.12))
+                .frame(width: size, height: size)
+                .overlay(
+                    Image(systemName: workout.primaryWorkoutSystemImage)
+                        .font(.system(size: iconSize, weight: .semibold))
+                        .foregroundStyle(workout.primaryWorkoutTintColor)
+                )
+
+            if isImportedFromHealthKit {
+                healthKitImportedIcon
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.red)
+                    .padding(3)
+                    .background(.thinMaterial, in: Circle())
+                    .overlay(
+                        Circle().strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5)
+                    )
+                    .offset(x: 4, y: -4)
+            }
+        }
     }
 
     @ViewBuilder
@@ -487,6 +495,7 @@ private struct WorkoutRowPreview: View {
             distance: nil,
             hkActivityTypeRaw: Int(HKWorkoutActivityType.traditionalStrengthTraining.rawValue)
         )
+        longNameWorkout.hkUUID = UUID().uuidString
         context.insert(longNameWorkout)
 
         return NavigationStack {
