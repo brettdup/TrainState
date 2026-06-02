@@ -1,9 +1,12 @@
 import SwiftUI
+import SwiftData
 
 struct AppRootView: View {
+    @Query private var userSettings: [UserSettings]
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("themeMode") private var themeModeRaw = AppThemeMode.system.rawValue
     @AppStorage("accentColor") private var accentColorRaw = AppAccentColor.blue.rawValue
+    @AppStorage("measurementSystem") private var measurementSystemRaw = MeasurementSystem.metric.rawValue
 
     private var themeMode: AppThemeMode {
         AppThemeMode(rawValue: themeModeRaw) ?? .system
@@ -23,6 +26,11 @@ struct AppRootView: View {
         }
         .preferredColorScheme(themeMode.colorScheme)
         .tint(accentColor.color)
+        .onAppear {
+            if let settings = userSettings.first {
+                measurementSystemRaw = settings.measurementSystem.rawValue
+            }
+        }
     }
 }
 

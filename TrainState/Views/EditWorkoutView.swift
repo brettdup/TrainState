@@ -7,6 +7,9 @@ struct EditWorkoutView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \WorkoutSubcategory.name) private var allSubcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
+    @Query(sort: \Workout.startDate, order: .reverse) private var allWorkouts: [Workout]
+    @AppStorage("measurementSystem") private var measurementSystemRaw = MeasurementSystem.metric.rawValue
+    @State private var expandedExerciseIDs: Set<UUID> = []
     @Bindable var workout: Workout
 
     @State private var type: WorkoutType
@@ -96,12 +99,14 @@ struct EditWorkoutView: View {
             .sorted { $0.orderIndex < $1.orderIndex }
             .map {
                 ExerciseLogEntry(
+                    id: $0.id,
                     name: $0.name,
                     sets: $0.sets,
                     reps: $0.reps,
                     weight: $0.weight,
+                    effortScore: $0.effortScore,
                     subcategoryID: $0.subcategory?.id,
-                    setEntries: Self.parseSetEntries(from: $0.notes)
+                    setEntries: ExerciseSetPlanSerializer.setEntries(from: $0)
                 )
             })
         _lastPersistedSnapshot = State(initialValue: snapshot)
@@ -141,7 +146,8 @@ struct EditWorkoutView: View {
                     availableOptions: quickAddOptions,
                     onDelete: {
                         exerciseEntries.removeAll { $0.id == selection.id }
-                    }
+                    },
+                    scope: .metadataOnly
                 )
             } else {
                 EmptyView()
@@ -327,8 +333,11 @@ struct EditWorkoutView: View {
             tintColor: type.tintColor,
             availableSubcategories: availableExerciseSubcategories,
             quickAddOptions: quickAddOptions,
+            workouts: allWorkouts,
+            measurementSystem: MeasurementSystem(rawValue: measurementSystemRaw) ?? .metric,
             allowsReordering: true,
-            onTap: { entry in
+            expandedExerciseIDs: $expandedExerciseIDs,
+            onEditMetadata: { entry in
                 activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
             }
         )
@@ -459,43 +468,6 @@ struct EditWorkoutView: View {
         }
     }
 
-    private func exerciseNotes(for entry: ExerciseLogEntry) -> String? {
-        let lines = entry.setSummaryLines
-        guard !lines.isEmpty else { return nil }
-        return lines.joined(separator: "\n")
-    }
-
-    private static func parseSetEntries(from notes: String?) -> [ExerciseSetEntry] {
-        guard let notes, !notes.isEmpty else { return [] }
-
-        return notes
-            .split(separator: "\n")
-            .compactMap { parseSetEntry(from: String($0).trimmingCharacters(in: .whitespacesAndNewlines)) }
-    }
-
-    private static func parseSetEntry(from line: String) -> ExerciseSetEntry? {
-        guard let separator = line.range(of: ": ") else { return nil }
-
-        let detail = String(line[separator.upperBound...])
-        let isCompleted = detail.hasPrefix("Done - ")
-        let normalizedDetail = isCompleted ? String(detail.dropFirst("Done - ".count)) : detail
-
-        let pattern = #"^\s*(\d+)\s+reps\s+@\s+([0-9]+(?:\.[0-9]+)?)\s+kg\s*$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(
-                in: normalizedDetail,
-                range: NSRange(normalizedDetail.startIndex..., in: normalizedDetail)
-              ),
-              let repsRange = Range(match.range(at: 1), in: normalizedDetail),
-              let weightRange = Range(match.range(at: 2), in: normalizedDetail),
-              let reps = Int(normalizedDetail[repsRange]),
-              let weight = Double(normalizedDetail[weightRange]) else {
-            return nil
-        }
-
-        return ExerciseSetEntry(reps: reps, weight: weight, isCompleted: isCompleted)
-    }
-
     @MainActor
     private func autosaveIfNeeded() async {
         let snapshot = currentSnapshot
@@ -534,10 +506,12 @@ struct EditWorkoutView: View {
             let linkedSubcategory = allSubcategories.first { $0.id == entry.subcategoryID }
             return WorkoutExercise(
                 name: name,
-                sets: entry.sets,
-                reps: entry.reps,
-                weight: entry.weight,
-                notes: exerciseNotes(for: entry),
+                sets: entry.effectiveSetCount,
+                reps: entry.effectiveReps,
+                weight: entry.effectiveWeight,
+                effortScore: entry.effortScore,
+                notes: ExerciseSetPlanSerializer.notes(from: entry.setEntries),
+                setPlanJSON: ExerciseSetPlanSerializer.encodeJSON(entry.setEntries),
                 orderIndex: index,
                 subcategory: linkedSubcategory
             )
@@ -558,6 +532,7 @@ private struct EditWorkoutSnapshot: Equatable {
         let sets: Int?
         let reps: Int?
         let weight: Double?
+        let effortScore: Int?
         let subcategoryID: UUID?
         let setNotes: String?
 
@@ -566,15 +541,17 @@ private struct EditWorkoutSnapshot: Equatable {
             self.sets = entry.sets
             self.reps = entry.reps
             self.weight = entry.weight
+            self.effortScore = entry.effortScore
             self.subcategoryID = entry.subcategoryID
             self.setNotes = entry.setSummaryLines.isEmpty ? nil : entry.setSummaryLines.joined(separator: "\n")
         }
 
-        init(name: String, sets: Int?, reps: Int?, weight: Double?, subcategoryID: UUID?, setNotes: String?) {
+        init(name: String, sets: Int?, reps: Int?, weight: Double?, effortScore: Int?, subcategoryID: UUID?, setNotes: String?) {
             self.name = name
             self.sets = sets
             self.reps = reps
             self.weight = weight
+            self.effortScore = effortScore
             self.subcategoryID = subcategoryID
             self.setNotes = setNotes
         }
@@ -611,6 +588,7 @@ private struct EditWorkoutSnapshot: Equatable {
                     sets: $0.sets,
                     reps: $0.reps,
                     weight: $0.weight,
+                    effortScore: $0.effortScore,
                     subcategoryID: $0.subcategory?.id,
                     setNotes: $0.notes
                 )

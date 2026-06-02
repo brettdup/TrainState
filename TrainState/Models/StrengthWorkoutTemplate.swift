@@ -5,6 +5,13 @@ import HealthKit
 struct TemplateSetPlanEntry: Codable, Hashable {
     let reps: Int
     let weight: Double
+    var isCompleted: Bool?
+
+    init(reps: Int, weight: Double, isCompleted: Bool? = nil) {
+        self.reps = reps
+        self.weight = weight
+        self.isCompleted = isCompleted
+    }
 }
 
 @Model

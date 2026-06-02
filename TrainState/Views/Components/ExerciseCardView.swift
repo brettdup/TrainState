@@ -5,6 +5,7 @@ struct ExerciseCardView: View {
     @Environment(\.colorScheme) private var environmentColorScheme
     let name: String
     let setDetails: [String]
+    var effortScore: Int? = nil
     let subcategoryName: String?
     var showDragHandle: Bool = false
     var showChevron: Bool = true
@@ -55,6 +56,12 @@ struct ExerciseCardView: View {
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.secondary)
                             .tracking(0.5)
+                    }
+
+                    if let effortScore {
+                        Label("\(effortScore)/10 tough", systemImage: "gauge.medium")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -110,6 +117,7 @@ extension ExerciseCardView {
     init(entry: ExerciseLogEntry, subcategoryName: String? = nil, showDragHandle: Bool = false, showChevron: Bool = true, isDragging: Bool = false, colorScheme: ColorScheme? = nil) {
         self.name = entry.trimmedName
         self.setDetails = ExerciseCardView.setDetails(from: entry)
+        self.effortScore = entry.effortScore
         self.subcategoryName = subcategoryName
         self.showDragHandle = showDragHandle
         self.showChevron = showChevron
@@ -120,6 +128,7 @@ extension ExerciseCardView {
     /// Initialize from a WorkoutExercise (for WorkoutDetail view)
     init(exercise: WorkoutExercise, showChevron: Bool = true, colorScheme: ColorScheme? = nil) {
         self.name = exercise.name
+        self.effortScore = exercise.effortScore
         self.subcategoryName = exercise.subcategory?.name
         self.showDragHandle = false
         self.showChevron = showChevron

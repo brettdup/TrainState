@@ -61,6 +61,9 @@ struct TrainStateApp: App {
         }
         
         DataInitializationManager.shared.initializeAppData(context: modelContainer.mainContext)
+        Task { @MainActor in
+            await HealthKitWorkoutAutoImportService.shared.start(modelContainer: modelContainer)
+        }
         print("[App] App initialization completed")
     }
     

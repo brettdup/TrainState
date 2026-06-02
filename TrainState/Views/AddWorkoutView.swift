@@ -27,12 +27,12 @@ struct AddWorkoutView: View {
     @State private var workoutRating: Double?
     @State private var notes = ""
     @State private var exerciseEntries: [ExerciseLogEntry] = []
-    @State private var strengthEntryMode: StrengthEntryMode = .live
-    @State private var showingLiveStrengthSession = false
+    @State private var showingWorkoutSession = false
+    @State private var sessionStartsWithTimer = true
+    @State private var expandedExerciseIDs: Set<UUID> = []
     @State private var activeExerciseSelection: ExerciseEditorSelection?
     @State private var showingPaywall = false
     @State private var isSaving = false
-    @State private var showingExerciseLinkAlert = false
     @State private var hasAppliedSuggestedType = false
     @State private var showingTemplateLibrary = false
     @State private var showingSaveTemplateAlert = false
@@ -187,19 +187,15 @@ struct AddWorkoutView: View {
                 appleWorkoutTypeCard
                 dateCard
                 if isStrengthSessionType {
-                    strengthModeCard
                     strengthTemplatesCard
-                }
-                if !isStrengthSessionType || strengthEntryMode == .manual {
+                    durationCard
+                    strengthLiveSessionCard
+                } else {
                     durationCard
                 }
                 if showsDistance { distanceCard }
                 if canPlanRoute { routePlannerCard }
-                if !isStrengthSessionType || strengthEntryMode == .manual {
-                    exercisesCard
-                } else {
-                    liveSessionInfoCard
-                }
+                exercisesCard
                 advancedSectionCard
                 if showingAdvancedFields {
                     ratingCard
@@ -261,11 +257,6 @@ struct AddWorkoutView: View {
                 EmptyView()
             }
         }
-        .alert("Link Exercises to Subcategories", isPresented: $showingExerciseLinkAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("Each exercise must be linked to a subcategory before saving.")
-        }
         .alert("Workout Type Already Logged", isPresented: $showingDuplicateTypeAlert) {
             Button("Cancel", role: .cancel) {
                 pendingWorkoutToSave = nil
@@ -291,17 +282,23 @@ struct AddWorkoutView: View {
         } message: {
             Text("You have unsaved changes.")
         }
-        .fullScreenCover(isPresented: $showingLiveStrengthSession) {
-            LiveStrengthSessionView(
+        .fullScreenCover(isPresented: $showingWorkoutSession) {
+            WorkoutSessionView(
                 typeTintColor: type.tintColor,
                 availableSubcategories: availableExerciseSubcategories,
                 quickAddOptions: quickAddOptions,
-                initialEntries: exerciseEntries
+                initialEntries: exerciseEntries,
+                configuration: WorkoutSessionConfiguration(
+                    isTimerRunning: sessionStartsWithTimer,
+                    sessionStart: date,
+                    title: "Workout"
+                )
             ) { completedEntries, startedAt, duration in
                 exerciseEntries = completedEntries
                 date = startedAt
-                durationMinutes = duration / 60.0
-                saveStrengthWorkout(startDate: startedAt, duration: duration, entries: completedEntries)
+                let resolvedDuration = duration > 0 ? duration : durationMinutes * 60
+                durationMinutes = resolvedDuration / 60.0
+                saveStrengthWorkout(startDate: startedAt, duration: resolvedDuration, entries: completedEntries)
             } onCancel: { draftEntries in
                 exerciseEntries = draftEntries
             }
@@ -350,10 +347,7 @@ struct AddWorkoutView: View {
                 }
                 return entry
             }
-            if type == .strength {
-                strengthEntryMode = .live
-            } else {
-                strengthEntryMode = .manual
+            if type != .strength {
                 activeTemplateID = nil
             }
             if !canPlanRoute {
@@ -467,22 +461,19 @@ struct AddWorkoutView: View {
         }
     }
 
-    private var strengthModeCard: some View {
-        Section("Strength Mode") {
-            Picker("Strength Mode", selection: $strengthEntryMode) {
-                ForEach(StrengthEntryMode.allCases, id: \.self) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-        }
-    }
-
-    private var liveSessionInfoCard: some View {
-        Section("Live Strength Session") {
-            Text("Use a dedicated live screen so the session can't be dismissed by accident. You can leave and return to the app while it runs.")
+    private var strengthLiveSessionCard: some View {
+        Section("Live Session") {
+            Text("Optional. Use a full-screen session with an elapsed timer while you're training.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+
+            Button {
+                sessionStartsWithTimer = true
+                showingWorkoutSession = true
+            } label: {
+                Label("Start Live Workout", systemImage: "play.circle.fill")
+            }
+            .disabled(isSaving)
         }
     }
 
@@ -541,7 +532,16 @@ struct AddWorkoutView: View {
             Button {
                 showingTemplateLibrary = true
             } label: {
-                Label("Choose Template", systemImage: "square.stack.3d.up")
+                Label("Choose Template (Optional)", systemImage: "square.stack.3d.up")
+            }
+
+            if activeTemplateID != nil || !exerciseEntries.isEmpty {
+                Button {
+                    activeTemplateID = nil
+                    exerciseEntries = []
+                } label: {
+                    Label("Start Without Template", systemImage: "arrow.counterclockwise")
+                }
             }
 
             Button {
@@ -713,6 +713,12 @@ struct AddWorkoutView: View {
                                             .foregroundStyle(.secondary)
                                     }
 
+                                    if let effortScore = entry.effortScore {
+                                        Label("\(effortScore)/10 tough", systemImage: "gauge.medium")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+
                                     if !entry.setSummaryLines.isEmpty {
                                         Text(entry.setSummaryLines.joined(separator: "\n"))
                                             .font(.caption2)
@@ -823,12 +829,12 @@ struct AddWorkoutView: View {
                 }
                 return
             }
-            if isStrengthSessionType && strengthEntryMode == .live {
-                showingLiveStrengthSession = true
-                return
-            }
-            guard !hasUnlinkedExercises(exerciseEntries) else {
-                showingExerciseLinkAlert = true
+            if isStrengthSessionType {
+                saveStrengthWorkout(
+                    startDate: date,
+                    duration: durationMinutes * 60,
+                    entries: exerciseEntries
+                )
                 return
             }
             let workout = Workout(
@@ -840,22 +846,9 @@ struct AddWorkoutView: View {
                 notes: notes.isEmpty ? nil : notes,
                 categories: nil,
                 subcategories: nil,
-                exercises: exerciseEntries
-                    .enumerated()
-                    .compactMap { index, entry in
-                        let name = entry.trimmedName
-                        guard !name.isEmpty else { return nil }
-                        let linkedSubcategory = allSubcategories.first { $0.id == entry.subcategoryID }
-                        return WorkoutExercise(
-                            name: name,
-                            sets: entry.effectiveSetCount,
-                            reps: entry.effectiveReps,
-                            weight: entry.effectiveWeight,
-                            notes: exerciseNotes(for: entry),
-                            orderIndex: index,
-                            subcategory: linkedSubcategory
-                        )
-                    },
+                exercises: exerciseEntries.enumerated().compactMap { index, entry in
+                    WorkoutExerciseFactory.make(from: entry, orderIndex: index, subcategories: allSubcategories)
+                },
                 hkActivityTypeRaw: Int(appleWorkoutActivityType.rawValue),
                 hkLocationTypeRaw: appleWorkoutLocationType?.rawValue
             )
@@ -896,9 +889,6 @@ struct AddWorkoutView: View {
     private var saveButtonTitle: String {
         if isSaving { return "Saving..." }
         if !canAddWorkout { return "Upgrade to Add More" }
-        if isStrengthSessionType {
-            return strengthEntryMode == .live ? "Start Live Session" : "Save Workout"
-        }
         return "Save Workout"
     }
 
@@ -950,6 +940,14 @@ struct AddWorkoutView: View {
             try modelContext.save()
             handleReviewPromptAfterSuccessfulSave()
             refreshSmartReminder(with: workout.startDate)
+            Task { @MainActor in
+                do {
+                    let importer = HealthKitRecentWorkoutImporter()
+                    _ = try await importer.importNewRecentWorkouts(into: modelContext, limit: 30)
+                } catch {
+                    print("[HealthKitAutoImport] Post-save reconciliation failed: \(error.localizedDescription)")
+                }
+            }
             dismiss()
         } catch {
             isSaving = false
@@ -964,6 +962,22 @@ struct AddWorkoutView: View {
                 await purchaseManager.updatePurchasedProducts()
                 showingPaywall = true
             }
+            return
+        }
+
+        if preset.type == .strength {
+            type = .strength
+            selectedAppleWorkout = AppleWorkoutSelection(
+                activityType: preset.type.defaultAppleWorkoutActivityType,
+                locationType: nil
+            )
+            durationMinutes = preset.durationMinutes
+            date = Date()
+            saveStrengthWorkout(
+                startDate: date,
+                duration: preset.durationMinutes * 60,
+                entries: []
+            )
             return
         }
 
@@ -993,11 +1007,16 @@ struct AddWorkoutView: View {
     }
 
     private func saveStrengthWorkout(startDate: Date, duration: TimeInterval, entries: [ExerciseLogEntry]) {
-        guard !hasUnlinkedExercises(entries) else {
-            showingExerciseLinkAlert = true
-            return
-        }
         guard !isSaving else { return }
+        let resolvedEntries = WorkoutClassificationBuilder.entriesWithInferredSubcategories(
+            entries,
+            exerciseTemplates: exerciseTemplates,
+            quickAddOptions: quickAddOptions
+        )
+        let classification = WorkoutClassificationBuilder.build(
+            from: resolvedEntries,
+            subcategories: allSubcategories
+        )
         let workout = Workout(
             type: .strength,
             startDate: startDate,
@@ -1005,26 +1024,15 @@ struct AddWorkoutView: View {
             distance: nil,
             rating: workoutRating,
             notes: notes.isEmpty ? nil : notes,
-            categories: nil,
-            subcategories: nil,
-            exercises: entries.enumerated().compactMap { index, entry in
-                let name = entry.trimmedName
-                guard !name.isEmpty else { return nil }
-                let linkedSubcategory = allSubcategories.first { $0.id == entry.subcategoryID }
-                return WorkoutExercise(
-                    name: name,
-                    sets: entry.effectiveSetCount,
-                    reps: entry.effectiveReps,
-                    weight: entry.effectiveWeight,
-                    notes: exerciseNotes(for: entry),
-                    orderIndex: index,
-                    subcategory: linkedSubcategory
-                )
+            categories: classification.categories.isEmpty ? nil : classification.categories,
+            subcategories: classification.subcategories.isEmpty ? nil : classification.subcategories,
+            exercises: resolvedEntries.enumerated().compactMap { index, entry in
+                WorkoutExerciseFactory.make(from: entry, orderIndex: index, subcategories: allSubcategories)
             },
             hkActivityTypeRaw: Int(appleWorkoutActivityType.rawValue),
             hkLocationTypeRaw: appleWorkoutLocationType?.rawValue
         )
-        attemptSaveWorkout(workout, persistTemplatesFrom: entries)
+        attemptSaveWorkout(workout, persistTemplatesFrom: resolvedEntries)
     }
 
     private func attemptSaveWorkout(_ workout: Workout, persistTemplatesFrom entries: [ExerciseLogEntry]? = nil) {
@@ -1066,10 +1074,6 @@ struct AddWorkoutView: View {
             existing.type == workout.type &&
             calendar.isDate(existing.startDate, inSameDayAs: workout.startDate)
         }
-    }
-
-    private func hasUnlinkedExercises(_ entries: [ExerciseLogEntry]) -> Bool {
-        entries.contains { !$0.trimmedName.isEmpty && $0.subcategoryID == nil }
     }
 
     private func addAndEditNewExercise() {
@@ -1287,6 +1291,11 @@ struct AddWorkoutView: View {
                 setEntries: plannedSetEntries
             )
         }
+        exerciseEntries = WorkoutClassificationBuilder.entriesWithInferredSubcategories(
+            exerciseEntries,
+            exerciseTemplates: exerciseTemplates,
+            quickAddOptions: quickAddOptions
+        )
         if exerciseEntries.isEmpty {
             exerciseEntries = [defaultExerciseEntry()]
         }
@@ -1340,18 +1349,6 @@ struct AddWorkoutView: View {
     private func deleteStrengthTemplate(_ template: StrengthWorkoutTemplate) {
         modelContext.delete(template)
         try? modelContext.save()
-    }
-}
-
-private enum StrengthEntryMode: String, CaseIterable {
-    case manual
-    case live
-
-    var title: String {
-        switch self {
-        case .manual: return "Manual"
-        case .live: return "Live"
-        }
     }
 }
 

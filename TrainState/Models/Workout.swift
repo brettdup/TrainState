@@ -318,7 +318,9 @@ struct WorkoutExerciseExport: Codable {
     let sets: Int?
     let reps: Int?
     let weight: Double?
+    let effortScore: Int?
     let notes: String?
+    let setPlanJSON: String?
     let orderIndex: Int
     let subcategoryId: UUID?
 
@@ -328,7 +330,9 @@ struct WorkoutExerciseExport: Codable {
         self.sets = exercise.sets
         self.reps = exercise.reps
         self.weight = exercise.weight
+        self.effortScore = exercise.effortScore
         self.notes = exercise.notes
+        self.setPlanJSON = exercise.setPlanJSON
         self.orderIndex = exercise.orderIndex
         self.subcategoryId = exercise.subcategory?.id
     }

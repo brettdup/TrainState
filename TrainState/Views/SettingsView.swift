@@ -8,6 +8,10 @@ struct SettingsView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
     @AppStorage("themeMode") private var themeModeRaw = AppThemeMode.system.rawValue
     @AppStorage("accentColor") private var accentColorRaw = AppAccentColor.blue.rawValue
+    @AppStorage("measurementSystem") private var measurementSystemRaw = MeasurementSystem.metric.rawValue
+    @AppStorage("restTimerEnabled") private var restTimerEnabled = false
+    @AppStorage("restTimerDurationSeconds") private var restTimerDurationSeconds = 90
+    @Query private var userSettingsList: [UserSettings]
 
     private var themeMode: AppThemeMode {
         get { AppThemeMode(rawValue: themeModeRaw) ?? .system }
@@ -51,6 +55,9 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.large)
             .onAppear {
                 selectedAppIcon = AppIconOption.option(for: AppIconManager.shared.getCurrentAppIcon())
+                if let settings = userSettingsList.first {
+                    measurementSystemRaw = settings.measurementSystem.rawValue
+                }
                 Task {
                     await loadBackups()
                     await loadCloudStatus()
@@ -224,8 +231,35 @@ struct SettingsView: View {
     private var preferencesCard: some View {
         Section("Preferences") {
             appearanceSection
-
+            workoutLoggingSection
             Toggle("Show Onboarding", isOn: $hasCompletedOnboarding.inverse)
+        }
+        .onChange(of: measurementSystemRaw) { _, newValue in
+            if let settings = userSettingsList.first,
+               let system = MeasurementSystem(rawValue: newValue) {
+                settings.measurementSystem = system
+                try? modelContext.save()
+            }
+        }
+    }
+
+    private var workoutLoggingSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Workout Logging")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            Picker("Units", selection: $measurementSystemRaw) {
+                Text("Kilograms").tag(MeasurementSystem.metric.rawValue)
+                Text("Pounds").tag(MeasurementSystem.imperial.rawValue)
+            }
+            .pickerStyle(.segmented)
+
+            Toggle("Rest timer after sets", isOn: $restTimerEnabled)
+
+            if restTimerEnabled {
+                Stepper("Rest duration: \(restTimerDurationSeconds)s", value: $restTimerDurationSeconds, in: 30...300, step: 15)
+            }
         }
     }
 

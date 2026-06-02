@@ -500,7 +500,9 @@ private extension CloudKitManager {
                         sets: exerciseExport.sets,
                         reps: exerciseExport.reps,
                         weight: exerciseExport.weight,
+                        effortScore: exerciseExport.effortScore,
                         notes: exerciseExport.notes,
+                        setPlanJSON: exerciseExport.setPlanJSON,
                         orderIndex: exerciseExport.orderIndex,
                         subcategory: exerciseExport.subcategoryId.flatMap { subcategoryMap[$0] }
                     )

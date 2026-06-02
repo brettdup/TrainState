@@ -1,6 +1,6 @@
 import Foundation
 
-struct ExerciseSetEntry: Identifiable, Hashable {
+struct ExerciseSetEntry: Identifiable, Hashable, Codable {
     var id: UUID = UUID()
     var reps: Int = 0
     var weight: Double = 0
@@ -12,21 +12,23 @@ struct ExerciseSetEntry: Identifiable, Hashable {
     }
 }
 
-struct ExerciseLogEntry: Identifiable, Hashable {
+struct ExerciseLogEntry: Identifiable, Hashable, Codable {
     var id: UUID = UUID()
     var name: String = ""
     var sets: Int?
     var reps: Int?
     var weight: Double?
+    var effortScore: Int?
     var subcategoryID: UUID?
     var setEntries: [ExerciseSetEntry] = []
 
     var isEmpty: Bool {
         name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        sets == nil &&
-        reps == nil &&
-        weight == nil &&
-        setEntries.isEmpty
+            sets == nil &&
+            reps == nil &&
+            weight == nil &&
+            effortScore == nil &&
+            setEntries.isEmpty
     }
 
     var trimmedName: String {

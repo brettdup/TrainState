@@ -49,6 +49,13 @@ struct WorkoutListView: View {
     @State private var bannerDismissTask: Task<Void, Never>?
     @State private var pendingQuickExerciseLogs: [PendingQuickExerciseLog] = []
     @State private var showingQuickLogSheet = false
+    @State private var showingContinueSession = false
+    @State private var draftSessionEntries: [ExerciseLogEntry] = []
+    @State private var continueSessionConfiguration = WorkoutSessionConfiguration(
+        isTimerRunning: true,
+        sessionStart: Date(),
+        title: "Workout"
+    )
     @State private var handledQuickLogSheetRequestToken = ""
     private let healthKitImporter = HealthKitRecentWorkoutImporter()
 
@@ -78,6 +85,23 @@ struct WorkoutListView: View {
             .toolbar(content: workoutToolbarContent)
             .sheet(isPresented: $showingAddWorkout) {
                 AddWorkoutView()
+            }
+            .fullScreenCover(isPresented: $showingContinueSession) {
+                WorkoutSessionView(
+                    typeTintColor: WorkoutType.strength.tintColor,
+                    availableSubcategories: quickLogExerciseSubcategories,
+                    quickAddOptions: quickLogExerciseOptions,
+                    initialEntries: draftSessionEntries,
+                    configuration: continueSessionConfiguration,
+                    onFinish: { entries, startedAt, duration in
+                        saveContinuedSession(entries: entries, startedAt: startedAt, duration: duration)
+                        showingContinueSession = false
+                    },
+                    onCancel: { entries in
+                        draftSessionEntries = entries
+                        showingContinueSession = false
+                    }
+                )
             }
             .sheet(isPresented: $showingQuickLogSheet) {
                 WorkoutQuickExerciseLogSheet {
@@ -275,7 +299,7 @@ struct WorkoutListView: View {
 
     private var emptyWorkoutsDescription: String {
         if selectedFilter == .all {
-            return "Tap + to log your first workout."
+            return "Tap Log Workout to start your first session."
         }
         return "No workouts match the current filter."
     }
@@ -320,7 +344,7 @@ struct WorkoutListView: View {
                 }
             }
         } header: {
-            Text("Today's Quick Logs")
+            Text("Today's Log a Set Queue")
         } footer: {
             Text(todayQuickLogsFooter)
         }
@@ -532,35 +556,107 @@ struct WorkoutListView: View {
 
     @ToolbarContentBuilder
     private func workoutToolbarContent() -> some ToolbarContent {
-        ToolbarItemGroup(placement: .navigationBarTrailing) {
-            Button {
-                showingQuickLogSheet = true
-            } label: {
-                Image(systemName: "plus.circle")
-            }
-            .accessibilityLabel("Quick Log")
-            filterMenu
-            healthKitMenu
+        ToolbarItem(placement: .primaryAction) {
             addWorkoutButton
+        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Menu {
+                if WorkoutSessionDraftStore.hasDraft {
+                    Button {
+                        resumeWorkoutSessionDraft()
+                    } label: {
+                        Label("Continue Workout", systemImage: "play.circle.fill")
+                    }
+                }
+                Button {
+                    showingQuickLogSheet = true
+                } label: {
+                    Label("Log a Set", systemImage: "tray.and.arrow.down.fill")
+                }
+                Menu {
+                    ForEach(availableFilters, id: \.self) { filter in
+                        Button {
+                            selectedFilter = filter
+                        } label: {
+                            if selectedFilter == filter {
+                                Label(filter.title, systemImage: "checkmark")
+                            } else {
+                                Text(filter.title)
+                            }
+                        }
+                    }
+                } label: {
+                    Label("Filter", systemImage: "line.3.horizontal.decrease.circle")
+                }
+                Menu {
+                    healthKitMenuContent
+                } label: {
+                    Label("HealthKit", systemImage: "heart.text.square")
+                }
+                .disabled(isImportingHealthKitWorkout)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .accessibilityLabel("More workout actions")
         }
     }
 
-    private var filterMenu: some View {
-        Menu {
-            ForEach(availableFilters, id: \.self) { filter in
-                Button {
-                    selectedFilter = filter
-                } label: {
-                    if selectedFilter == filter {
-                        Label(filter.title, systemImage: "checkmark")
-                    } else {
-                        Text(filter.title)
+    @ViewBuilder
+    private var healthKitMenuContent: some View {
+        Button {
+            Task { await loadRecentHealthKitWorkouts() }
+        } label: {
+            Label("Refresh Recent Workouts", systemImage: "arrow.clockwise")
+        }
+
+        Button {
+            Task { await importAllAvailableHealthKitWorkouts() }
+        } label: {
+            Label(bulkImportButtonTitle, systemImage: "square.and.arrow.down.on.square")
+        }
+        .disabled(isImportingHealthKitWorkout || availableHealthKitImportCandidates.isEmpty)
+
+        if isLoadingRecentHealthKitWorkouts {
+            Label("Loading recent workouts…", systemImage: "hourglass")
+        } else if recentHealthKitWorkouts.isEmpty {
+            Text("No recent HealthKit workouts. Tap Refresh.")
+        } else {
+            if !recentHealthKitWorkoutsAvailable.isEmpty {
+                Section(recentHealthKitWorkoutsImported.isEmpty ? "Recent workouts" : "Available to import") {
+                    ForEach(recentHealthKitWorkoutsAvailable) { candidate in
+                        healthKitMenuRow(for: candidate, isImported: false)
                     }
                 }
             }
-        } label: {
-            Image(systemName: selectedFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+
+            if !recentHealthKitWorkoutsImported.isEmpty {
+                Section("Already imported") {
+                    ForEach(recentHealthKitWorkoutsImported) { candidate in
+                        healthKitMenuRow(for: candidate, isImported: true)
+                    }
+                }
+            }
         }
+    }
+
+    private func healthKitMenuRow(for candidate: HealthKitRecentWorkoutMenuItem, isImported: Bool) -> some View {
+        Button {
+            handleHealthKitCandidateSelection(candidate)
+        } label: {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(healthKitMenuPrimaryTitle(candidate))
+                        .lineLimit(2)
+                    Text(healthKitMenuSubtitle(candidate, isImported: isImported))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: isImported ? "checkmark.circle.fill" : candidate.activityType.systemImage)
+                    .foregroundStyle(isImported ? .green : candidate.activityType.mappedWorkoutType.tintColor)
+            }
+        }
+        .disabled(isImportingHealthKitWorkout || isImported)
     }
 
     private var availableFilters: [WorkoutFilter] {
@@ -569,87 +665,6 @@ struct WorkoutListView: View {
             .sorted { $0.displayName < $1.displayName }
             .map { WorkoutFilter.apple($0) }
         return [.all] + activityFilters
-    }
-
-    private var healthKitMenu: some View {
-        Menu {
-            Section("HealthKit") {
-                Button {
-                    Task { await loadRecentHealthKitWorkouts() }
-                } label: {
-                    Label("Refresh Recent Workouts", systemImage: "arrow.clockwise")
-                }
-                .menuActionDismissBehavior(.disabled)
-
-                Button {
-                    Task { await importAllAvailableHealthKitWorkouts() }
-                } label: {
-                    Label(
-                        bulkImportButtonTitle,
-                        systemImage: "square.and.arrow.down.on.square"
-                    )
-                }
-                .disabled(isImportingHealthKitWorkout || availableHealthKitImportCandidates.isEmpty)
-                .menuActionDismissBehavior(.disabled)
-            }
-
-            healthKitRecentWorkoutsSection
-        } label: {
-            Image(systemName: "heart.text.square")
-        }
-        .disabled(isImportingHealthKitWorkout)
-    }
-
-    @ViewBuilder
-    private var healthKitRecentWorkoutsSection: some View {
-        if isLoadingRecentHealthKitWorkouts {
-            Section {
-                Label("Loading...", systemImage: "hourglass")
-            }
-        } else if recentHealthKitWorkouts.isEmpty {
-            Section {
-                Text("No recent workouts available for import.")
-            }
-        } else {
-            Section("Recent Workouts") {
-                ForEach(recentHealthKitWorkouts) { candidate in
-                    healthKitCandidateButton(for: candidate)
-                }
-            }
-        }
-    }
-
-    private func healthKitCandidateButton(for candidate: HealthKitRecentWorkoutMenuItem) -> some View {
-        let isImported = importedHealthKitUUIDs.contains(candidate.hkUUID) || newlyImportedHealthKitUUIDs.contains(candidate.hkUUID)
-
-        return Button {
-            handleHealthKitCandidateSelection(candidate)
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: candidate.activityType.systemImage)
-                    .foregroundStyle(candidate.activityType.mappedWorkoutType.tintColor)
-                    .frame(width: 20)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(healthKitWorkoutTitle(candidate))
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(healthKitWorkoutSubtitle(candidate))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                if isImported {
-                    Label("Imported", systemImage: "checkmark.circle.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.green)
-                }
-            }
-        }
-        .disabled(isImported)
     }
 
     private func handleHealthKitCandidateSelection(_ candidate: HealthKitRecentWorkoutMenuItem) {
@@ -676,8 +691,47 @@ struct WorkoutListView: View {
                 }
             }
         } label: {
-            Image(systemName: "plus")
+            Label("Log Workout", systemImage: "plus")
         }
+    }
+
+    private func resumeWorkoutSessionDraft() {
+        guard let draft = WorkoutSessionDraftStore.load() else { return }
+        draftSessionEntries = draft.entries
+        continueSessionConfiguration = WorkoutSessionConfiguration(
+            isTimerRunning: draft.isTimerRunning,
+            sessionStart: draft.sessionStart,
+            title: "Workout"
+        )
+        showingContinueSession = true
+    }
+
+    private func saveContinuedSession(entries: [ExerciseLogEntry], startedAt: Date, duration: TimeInterval) {
+        let resolvedDuration = duration > 0 ? duration : 45 * 60
+        let resolvedEntries = WorkoutClassificationBuilder.entriesWithInferredSubcategories(
+            entries,
+            exerciseTemplates: exerciseTemplates,
+            quickAddOptions: quickLogExerciseOptions
+        )
+        let classification = WorkoutClassificationBuilder.build(
+            from: resolvedEntries,
+            subcategories: subcategories
+        )
+        let workout = Workout(
+            type: .strength,
+            startDate: startedAt,
+            duration: resolvedDuration,
+            categories: classification.categories.isEmpty ? nil : classification.categories,
+            subcategories: classification.subcategories.isEmpty ? nil : classification.subcategories,
+            exercises: resolvedEntries.enumerated().compactMap { index, entry in
+                WorkoutExerciseFactory.make(from: entry, orderIndex: index, subcategories: subcategories)
+            },
+            hkActivityTypeRaw: Int(WorkoutType.strength.defaultAppleWorkoutActivityType.rawValue),
+            hkLocationTypeRaw: nil
+        )
+        modelContext.insert(workout)
+        try? modelContext.save()
+        WorkoutSessionDraftStore.clear()
     }
 
     private var healthKitImportAlertBinding: Binding<Bool> {
@@ -921,7 +975,7 @@ struct WorkoutListView: View {
             }
 
             checklistRow(
-                title: "Log your first workout",
+                title: "Log your first workout and expand an exercise to log sets",
                 isDone: hasLoggedFirstWorkout
             )
             checklistRow(
@@ -1009,11 +1063,51 @@ struct WorkoutListView: View {
         Set(workouts.compactMap(\.hkUUID))
     }
 
+    private func isHealthKitWorkoutImported(_ candidate: HealthKitRecentWorkoutMenuItem) -> Bool {
+        importedHealthKitUUIDs.contains(candidate.hkUUID) ||
+        newlyImportedHealthKitUUIDs.contains(candidate.hkUUID)
+    }
+
+    private var recentHealthKitWorkoutsImported: [HealthKitRecentWorkoutMenuItem] {
+        recentHealthKitWorkouts.filter(isHealthKitWorkoutImported)
+    }
+
+    private var recentHealthKitWorkoutsAvailable: [HealthKitRecentWorkoutMenuItem] {
+        recentHealthKitWorkouts.filter { !isHealthKitWorkoutImported($0) }
+    }
+
     private var availableHealthKitImportCandidates: [HealthKitRecentWorkoutMenuItem] {
-        recentHealthKitWorkouts.filter {
-            !importedHealthKitUUIDs.contains($0.hkUUID) &&
-            !newlyImportedHealthKitUUIDs.contains($0.hkUUID)
+        recentHealthKitWorkoutsAvailable
+    }
+
+    private func linkedWorkout(for candidate: HealthKitRecentWorkoutMenuItem) -> Workout? {
+        workouts.first { $0.hkUUID == candidate.hkUUID }
+    }
+
+    private func healthKitMenuPrimaryTitle(_ candidate: HealthKitRecentWorkoutMenuItem) -> String {
+        [
+            candidate.activityType.displayName(locationType: candidate.locationType),
+            candidate.startDate.formatted(date: .omitted, time: .shortened)
+        ].joined(separator: " · ")
+    }
+
+    private func healthKitMenuSubtitle(
+        _ candidate: HealthKitRecentWorkoutMenuItem,
+        isImported: Bool
+    ) -> String {
+        var parts: [String] = [relativeDateCompactLabel(for: candidate.startDate)]
+        if let distance = candidate.distanceKilometers, distance > 0 {
+            parts.append(String(format: "%.1f km", distance))
         }
+        parts.append(candidate.sourceName)
+        if isImported {
+            if let linked = linkedWorkout(for: candidate) {
+                parts.append("In app as \(linked.primaryWorkoutDisplayName)")
+            } else {
+                parts.append("Imported")
+            }
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var bulkImportButtonTitle: String {
@@ -1043,7 +1137,7 @@ struct WorkoutListView: View {
     @MainActor
     private func importHealthKitWorkout(_ candidate: HealthKitRecentWorkoutMenuItem) async {
         guard !isImportingHealthKitWorkout else { return }
-        if importedHealthKitUUIDs.contains(candidate.hkUUID) || newlyImportedHealthKitUUIDs.contains(candidate.hkUUID) {
+        if isHealthKitWorkoutImported(candidate) {
             return
         }
         isImportingHealthKitWorkout = true
@@ -1079,7 +1173,7 @@ struct WorkoutListView: View {
     private func attachHealthKitWorkout(_ candidate: HealthKitRecentWorkoutMenuItem, to workout: Workout) async {
         guard !isImportingHealthKitWorkout else { return }
         guard workout.type == candidate.activityType.mappedWorkoutType else { return }
-        if importedHealthKitUUIDs.contains(candidate.hkUUID) || newlyImportedHealthKitUUIDs.contains(candidate.hkUUID) {
+        if isHealthKitWorkoutImported(candidate) {
             return
         }
         isImportingHealthKitWorkout = true
@@ -1298,7 +1392,9 @@ private struct HealthKitAttachTargetPickerView: View {
 }
 
 private struct WorkoutQuickExerciseLogSheet: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
     @State private var entry: ExerciseLogEntry
     @State private var didSave = false
     let onSave: () -> Void
@@ -1336,6 +1432,7 @@ private struct WorkoutQuickExerciseLogSheet: View {
     private func saveQuickLog() {
         guard !entry.trimmedName.isEmpty, !didSave else { return }
         let quickLogMetrics = quickLogMetrics(for: entry)
+        saveExerciseTemplateIfNeeded(name: entry.trimmedName, subcategoryID: entry.subcategoryID)
         let log = PendingQuickExerciseLog(
             id: UUID(),
             exerciseName: entry.trimmedName,
@@ -1343,6 +1440,7 @@ private struct WorkoutQuickExerciseLogSheet: View {
             sets: quickLogMetrics.sets,
             reps: quickLogMetrics.reps,
             weight: quickLogMetrics.weight,
+            effortScore: entry.effortScore,
             subcategoryID: entry.subcategoryID
         )
         QuickExerciseLogStore.appendPendingLog(log)
@@ -1350,6 +1448,25 @@ private struct WorkoutQuickExerciseLogSheet: View {
         didSave = true
         entry = ExerciseLogEntry(subcategoryID: availableSubcategories.first?.id)
         dismiss()
+    }
+
+    private func saveExerciseTemplateIfNeeded(name: String, subcategoryID: UUID?) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty,
+              let subcategoryID,
+              let subcategory = availableSubcategories.first(where: { $0.id == subcategoryID }) else {
+            return
+        }
+
+        let exists = exerciseTemplates.contains {
+            $0.subcategory?.id == subcategoryID &&
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(trimmedName) == .orderedSame
+        }
+        guard !exists else { return }
+
+        let order = exerciseTemplates.filter { $0.subcategory?.id == subcategoryID }.count
+        modelContext.insert(SubcategoryExercise(name: trimmedName, subcategory: subcategory, orderIndex: order))
+        try? modelContext.save()
     }
 
     private func quickLogMetrics(for entry: ExerciseLogEntry) -> (sets: Int?, reps: Int?, weight: Double?) {

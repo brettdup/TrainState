@@ -16,6 +16,13 @@ struct OnboardingView: View {
     @State private var showCelebration = false
     @State private var selectedGoal: OnboardingGoal = .buildStrength
     @State private var selectedTrainingStyle: OnboardingTrainingStyle = .balanced
+    @State private var onboardingDemoExpanded = true
+    @State private var onboardingDemoEntry = ExerciseLogEntry(
+        name: "Bench Press",
+        sets: 3,
+        reps: 8,
+        weight: 60
+    )
 
     private let totalPages = 5
 
@@ -141,20 +148,52 @@ struct OnboardingView: View {
     }
 
     private var quickLogPage: some View {
-        OnboardingPageContent(
-            icon: "plus.circle.fill",
-            iconColor: Color.accentColor,
-            title: "Log in Seconds",
-            subtitle: "Quick & simple",
-            description: "Add workouts with type, duration, and distance. Organize with custom categories and subcategories.",
-            features: [
-                ("Running, strength, yoga & more", "figure.run"),
-                ("Duration and distance tracking", "timer"),
-                ("Categories for your routine", "tag.fill")
-            ],
-            heroContent: { OnboardingIconHero(icon: "plus.circle.fill", iconColor: Color.accentColor, appeared: appeared) },
-            appeared: appeared
-        )
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 20) {
+                Spacer(minLength: 24)
+                VStack(spacing: 8) {
+                    Text("TRY IT")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    Text("Log a Set")
+                        .font(.system(size: 28, weight: .bold))
+                    Text("Expand the exercise, tap Log Set, and adjust reps and weight inline.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 24)
+
+                List {
+                    ExerciseSessionCard(
+                        entry: $onboardingDemoEntry,
+                        isExpanded: $onboardingDemoExpanded,
+                        subcategoryName: "Chest",
+                        tintColor: Color.accentColor,
+                        measurementSystem: .metric,
+                        restTimerEnabled: false,
+                        restDurationSeconds: 90,
+                        onEditMetadata: {},
+                        onStartRest: {}
+                    )
+                }
+                .listStyle(.insetGrouped)
+                .frame(height: 360)
+                .padding(.horizontal, 8)
+
+                Spacer(minLength: 24)
+            }
+        }
+        .opacity(appeared ? 1 : 0)
+        .animation(.easeOut(duration: 0.5), value: appeared)
+        .onAppear {
+            if onboardingDemoEntry.setEntries.isEmpty {
+                onboardingDemoEntry.setEntries = (0..<3).map { _ in
+                    ExerciseSetEntry(reps: 8, weight: 60)
+                }
+            }
+        }
     }
 
     private var appPreviewPage: some View {

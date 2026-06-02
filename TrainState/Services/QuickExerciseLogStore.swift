@@ -9,11 +9,13 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
     let sets: Int?
     let reps: Int?
     let weight: Double?
+    let effortScore: Int?
     let subcategoryID: UUID?
 
     var summary: String {
         let weightText = weight.map { ExerciseLogEntry.displayWeight($0) + " kg" }
-        return [exerciseName, setRepSummary, weightText].compactMap { $0 }.joined(separator: " - ")
+        let effortText = effortScore.map { "\($0)/10 tough" }
+        return [exerciseName, setRepSummary, weightText, effortText].compactMap { $0 }.joined(separator: " - ")
     }
 
     init(
@@ -23,6 +25,7 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
         sets: Int?,
         reps: Int?,
         weight: Double?,
+        effortScore: Int?,
         subcategoryID: UUID?
     ) {
         self.id = id
@@ -31,6 +34,7 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
         self.sets = sets
         self.reps = reps
         self.weight = weight
+        self.effortScore = effortScore
         self.subcategoryID = subcategoryID
     }
 
@@ -41,6 +45,7 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
         case sets
         case reps
         case weight
+        case effortScore
         case subcategoryID
     }
 
@@ -52,6 +57,7 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
         sets = try container.decodeIfPresent(Int.self, forKey: .sets)
         reps = try container.decodeIfPresent(Int.self, forKey: .reps)
         weight = try container.decodeIfPresent(Double.self, forKey: .weight)
+        effortScore = try container.decodeIfPresent(Int.self, forKey: .effortScore)
         subcategoryID = try container.decodeIfPresent(UUID.self, forKey: .subcategoryID)
     }
 
@@ -122,6 +128,7 @@ enum QuickExerciseLogStore {
                 sets: log.sets,
                 reps: log.reps,
                 weight: log.weight,
+                effortScore: log.effortScore,
                 notes: "Logged from widget on \(log.loggedAt.formatted(date: .abbreviated, time: .shortened))",
                 orderIndex: nextOrderIndex,
                 workout: workout,

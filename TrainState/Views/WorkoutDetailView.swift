@@ -7,7 +7,14 @@ struct WorkoutDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \WorkoutSubcategory.name) private var allSubcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
+    @Query(sort: \Workout.startDate, order: .reverse) private var allWorkouts: [Workout]
+    @AppStorage("measurementSystem") private var measurementSystemRaw = MeasurementSystem.metric.rawValue
     @Bindable var workout: Workout
+    @AppStorage("restTimerEnabled") private var restTimerEnabled = false
+    @AppStorage("restTimerDurationSeconds") private var restTimerDurationSeconds = 90
+    @State private var expandedExerciseIDs: Set<UUID> = []
+    @State private var exerciseDraftsByID: [UUID: ExerciseLogEntry] = [:]
+    @State private var restSecondsRemaining: Int?
     @Query(sort: \StrengthWorkoutTemplate.updatedAt, order: .reverse) private var strengthTemplates: [StrengthWorkoutTemplate]
     @State private var showingDeleteConfirmation = false
     @State private var showingRouteMapSheet = false
@@ -70,22 +77,33 @@ struct WorkoutDetailView: View {
                 addExercisesButton
 
                 if let exercises = workout.exercises, !exercises.isEmpty {
+                    if hasUncategorizedExercises {
+                        Text("Categorize exercises for better insights. Tap Exercise on a card to assign a subcategory.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
                     ForEach(exercises.sorted(by: { $0.orderIndex < $1.orderIndex }), id: \.id) { exercise in
-                        Button {
-                            openExerciseEditor(for: exercise)
-                        } label: {
-                            ExerciseCardView(
-                                exercise: exercise,
-                                showChevron: false,
-                                colorScheme: .light
-                            )
-                        }
-                        .buttonStyle(.plain)
+                        ExerciseSessionCard(
+                            entry: exerciseDraftBinding(for: exercise),
+                            isExpanded: exerciseExpansionBinding(for: exercise.id),
+                            subcategoryName: exercise.subcategory?.name,
+                            tintColor: workout.primaryWorkoutTintColor,
+                            measurementSystem: MeasurementSystem(rawValue: measurementSystemRaw) ?? .metric,
+                            restTimerEnabled: restTimerEnabled,
+                            restDurationSeconds: restTimerDurationSeconds,
+                            onEditMetadata: {
+                                openExerciseEditor(for: exercise)
+                            },
+                            onStartRest: {
+                                restSecondsRemaining = max(restTimerDurationSeconds, 15)
+                            }
+                        )
                         .contextMenu {
                             Button {
                                 openExerciseEditor(for: exercise)
                             } label: {
-                                Label("Add Sets", systemImage: "plus.circle")
+                                Label("Edit Exercise", systemImage: "slider.horizontal.3")
                             }
 
                             Button {
@@ -104,7 +122,7 @@ struct WorkoutDetailView: View {
                 Text("Exercises")
             } footer: {
                 if workout.exercises?.isEmpty == false {
-                    Text("Tap an exercise to view its recent performance.")
+                    Text("Expand an exercise to log or edit sets.")
                 }
             }
 
@@ -224,7 +242,8 @@ struct WorkoutDetailView: View {
                 availableOptions: quickAddOptions,
                 onDelete: {
                     deleteEditedExercise()
-                }
+                },
+                scope: .metadataOnly
             )
         }
         .sheet(isPresented: $showingCategoryAssignment) {
@@ -269,6 +288,12 @@ struct WorkoutDetailView: View {
                 exerciseName: target.exerciseName,
                 subcategoryID: target.subcategoryID
             )
+        }
+        .onAppear {
+            syncExerciseDraftsFromWorkout()
+        }
+        .onChange(of: workout.exercises?.map(\.id)) { _, _ in
+            syncExerciseDraftsFromWorkout()
         }
     }
 
@@ -482,6 +507,7 @@ struct WorkoutDetailView: View {
             sets: previousMatch?.sets,
             reps: previousMatch?.reps,
             weight: previousMatch?.weight,
+            effortScore: previousMatch?.effortScore,
             notes: previousMatch?.notes,
             orderIndex: nextOrderIndex,
             workout: workout,
@@ -493,6 +519,8 @@ struct WorkoutDetailView: View {
         }
         workout.exercises?.append(exercise)
         modelContext.insert(exercise)
+        exerciseDraftsByID[exercise.id] = exerciseLogEntry(from: exercise)
+        expandedExerciseIDs.insert(exercise.id)
         try? modelContext.save()
     }
 
@@ -540,15 +568,7 @@ struct WorkoutDetailView: View {
         pendingExerciseSaveTask?.cancel()
         pendingExerciseSaveTask = nil
         editingExerciseID = exercise.id
-        let draft = ExerciseLogEntry(
-            id: exercise.id,
-            name: exercise.name,
-            sets: exercise.sets,
-            reps: exercise.reps,
-            weight: exercise.weight,
-            subcategoryID: exercise.subcategory?.id,
-            setEntries: Self.parseSetEntries(from: exercise.notes)
-        )
+        let draft = exerciseDraftsByID[exercise.id] ?? exerciseLogEntry(from: exercise)
         exerciseDraftEntry = draft
         originalExerciseDraftEntry = draft
         showingExerciseEditor = true
@@ -581,12 +601,8 @@ struct WorkoutDetailView: View {
             return
         }
 
-        exercise.name = exerciseDraftEntry.trimmedName
-        exercise.sets = exerciseDraftEntry.sets
-        exercise.reps = exerciseDraftEntry.reps
-        exercise.weight = exerciseDraftEntry.weight
-        exercise.notes = exerciseNotes(for: exerciseDraftEntry)
-        exercise.subcategory = allSubcategories.first { $0.id == exerciseDraftEntry.subcategoryID }
+        applyExerciseLogEntry(exerciseDraftEntry, to: exercise)
+        exerciseDraftsByID[exercise.id] = exerciseDraftEntry
         if saveToStore {
             try? modelContext.save()
         }
@@ -609,41 +625,91 @@ struct WorkoutDetailView: View {
         self.editingExerciseID = nil
     }
 
-    private func exerciseNotes(for entry: ExerciseLogEntry) -> String? {
-        let lines = entry.setSummaryLines
-        guard !lines.isEmpty else { return nil }
-        return lines.joined(separator: "\n")
+    private var hasUncategorizedExercises: Bool {
+        (workout.exercises ?? []).contains { $0.subcategory == nil && !$0.name.isEmpty }
     }
 
-    private static func parseSetEntries(from notes: String?) -> [ExerciseSetEntry] {
-        guard let notes, !notes.isEmpty else { return [] }
-
-        return notes
-            .split(separator: "\n")
-            .compactMap { parseSetEntry(from: String($0).trimmingCharacters(in: .whitespacesAndNewlines)) }
+    private func exerciseLogEntry(from exercise: WorkoutExercise) -> ExerciseLogEntry {
+        ExerciseLogEntry(
+            id: exercise.id,
+            name: exercise.name,
+            sets: exercise.sets,
+            reps: exercise.reps,
+            weight: exercise.weight,
+            effortScore: exercise.effortScore,
+            subcategoryID: exercise.subcategory?.id,
+            setEntries: ExerciseSetPlanSerializer.setEntries(from: exercise)
+        )
     }
 
-    private static func parseSetEntry(from line: String) -> ExerciseSetEntry? {
-        guard let separator = line.range(of: ": ") else { return nil }
+    private func applyExerciseLogEntry(_ entry: ExerciseLogEntry, to exercise: WorkoutExercise) {
+        exercise.name = entry.trimmedName
+        exercise.sets = entry.effectiveSetCount
+        exercise.reps = entry.effectiveReps
+        exercise.weight = entry.effectiveWeight
+        exercise.effortScore = entry.effortScore
+        exercise.notes = ExerciseSetPlanSerializer.notes(from: entry.setEntries)
+        exercise.setPlanJSON = ExerciseSetPlanSerializer.encodeJSON(entry.setEntries)
+        exercise.subcategory = allSubcategories.first { $0.id == entry.subcategoryID }
+    }
 
-        let detail = String(line[separator.upperBound...])
-        let isCompleted = detail.hasPrefix("Done - ")
-        let normalizedDetail = isCompleted ? String(detail.dropFirst("Done - ".count)) : detail
+    private func exerciseExpansionBinding(for exerciseID: UUID) -> Binding<Bool> {
+        Binding(
+            get: { expandedExerciseIDs.contains(exerciseID) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedExerciseIDs.insert(exerciseID)
+                } else {
+                    expandedExerciseIDs.remove(exerciseID)
+                }
+            }
+        )
+    }
 
-        let pattern = #"^\s*(\d+)\s+reps\s+@\s+([0-9]+(?:\.[0-9]+)?)\s+kg\s*$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(
-                in: normalizedDetail,
-                range: NSRange(normalizedDetail.startIndex..., in: normalizedDetail)
-              ),
-              let repsRange = Range(match.range(at: 1), in: normalizedDetail),
-              let weightRange = Range(match.range(at: 2), in: normalizedDetail),
-              let reps = Int(normalizedDetail[repsRange]),
-              let weight = Double(normalizedDetail[weightRange]) else {
-            return nil
+    private func exerciseDraftBinding(for exercise: WorkoutExercise) -> Binding<ExerciseLogEntry> {
+        Binding(
+            get: {
+                if let draft = exerciseDraftsByID[exercise.id] {
+                    return draft
+                }
+                return exerciseLogEntry(from: exercise)
+            },
+            set: { newValue in
+                exerciseDraftsByID[exercise.id] = newValue
+                scheduleExerciseDraftPersistence(for: exercise.id)
+            }
+        )
+    }
+
+    private func syncExerciseDraftsFromWorkout() {
+        let exercises = (workout.exercises ?? []).sorted { $0.orderIndex < $1.orderIndex }
+        var updated = exerciseDraftsByID
+        for exercise in exercises {
+            if updated[exercise.id] == nil {
+                updated[exercise.id] = exerciseLogEntry(from: exercise)
+            }
         }
+        let validIDs = Set(exercises.map(\.id))
+        updated.keys.filter { !validIDs.contains($0) }.forEach { updated.removeValue(forKey: $0) }
+        exerciseDraftsByID = updated
+    }
 
-        return ExerciseSetEntry(reps: reps, weight: weight, isCompleted: isCompleted)
+    private func scheduleExerciseDraftPersistence(for exerciseID: UUID) {
+        pendingExerciseSaveTask?.cancel()
+        pendingExerciseSaveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            persistExerciseDraft(exerciseID: exerciseID)
+        }
+    }
+
+    private func persistExerciseDraft(exerciseID: UUID) {
+        guard let draft = exerciseDraftsByID[exerciseID],
+              let exercise = workout.exercises?.first(where: { $0.id == exerciseID }) else {
+            return
+        }
+        applyExerciseLogEntry(draft, to: exercise)
+        try? modelContext.save()
     }
 }
 

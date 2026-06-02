@@ -250,47 +250,45 @@ struct UnifiedExercisePickerView: View {
     }
 
     private var filterRow: some View {
-        Menu {
-            Button("All Subcategories") {
-                filterSubcategoryID = nil
-            }
+        HStack(spacing: 12) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .foregroundStyle(.secondary)
 
-            Divider()
+            Text("Subcategory")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
-            ForEach(subcategories) { subcategory in
-                Button {
-                    filterSubcategoryID = subcategory.id
-                } label: {
-                    if filterSubcategoryID == subcategory.id {
-                        Label(subcategory.name, systemImage: "checkmark")
-                    } else {
-                        Text(subcategory.name)
+            Spacer(minLength: 12)
+
+            Menu {
+                Button("All Subcategories") {
+                    filterSubcategoryID = nil
+                }
+
+                Divider()
+
+                ForEach(subcategories) { subcategory in
+                    Button {
+                        filterSubcategoryID = subcategory.id
+                    } label: {
+                        if filterSubcategoryID == subcategory.id {
+                            Label(subcategory.name, systemImage: "checkmark")
+                        } else {
+                            Text(subcategory.name)
+                        }
                     }
                 }
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Subcategory")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            } label: {
+                HStack(spacing: 4) {
                     Text(activeFilterTitle)
                         .font(.body)
                         .foregroundStyle(.primary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
-
-                Spacer()
-
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Row Builder

@@ -37,11 +37,7 @@ struct WorkoutRowView: View {
             iconView(size: 40, iconSize: 18, cornerRadius: 10)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(workout.primaryWorkoutDisplayName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+                workoutTitle(font: .headline, lineLimit: 2)
 
                 if let classificationSummary {
                     Text(classificationSummary)
@@ -74,9 +70,7 @@ struct WorkoutRowView: View {
                 iconView(size: 44, iconSize: 20, cornerRadius: 12)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(workout.primaryWorkoutDisplayName)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.primary)
+                    workoutTitle(font: .system(size: 17, weight: .semibold))
 
                     if let classificationSummary {
                         Text(classificationSummary)
@@ -119,9 +113,7 @@ struct WorkoutRowView: View {
                     iconView(size: 40, iconSize: 18, cornerRadius: 10)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(workout.primaryWorkoutDisplayName)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.primary)
+                        workoutTitle(font: .system(size: 17, weight: .semibold))
 
                         if let classificationSummary {
                             Text(classificationSummary)
@@ -189,9 +181,7 @@ struct WorkoutRowView: View {
                         .foregroundStyle(workout.primaryWorkoutTintColor)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(workout.primaryWorkoutDisplayName)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.primary)
+                        workoutTitle(font: .system(size: 16, weight: .semibold))
 
                         if let classificationSummary {
                             Text(classificationSummary)
@@ -220,12 +210,7 @@ struct WorkoutRowView: View {
             iconView(size: 36, iconSize: 16, cornerRadius: 10)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(workout.primaryWorkoutDisplayName)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-
-                }
+                workoutTitle(font: .system(size: 15, weight: .semibold))
 
                 if let classificationSummary {
                     Text(classificationSummary)
@@ -261,6 +246,28 @@ struct WorkoutRowView: View {
     }
 
     // MARK: - Shared Components
+    private func workoutTitle(font: Font, lineLimit: Int = 1) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(workout.primaryWorkoutDisplayName)
+                .font(font)
+                .foregroundStyle(.primary)
+                .lineLimit(lineLimit)
+                .multilineTextAlignment(.leading)
+
+            if isImportedFromHealthKit {
+                healthKitImportedIcon
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var healthKitImportedIcon: some View {
+        Image(systemName: "heart.text.square.fill")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.red)
+            .accessibilityLabel("Imported from HealthKit")
+    }
+
     private func iconView(size: CGFloat, iconSize: CGFloat, cornerRadius: CGFloat) -> some View {
         Image(systemName: workout.primaryWorkoutSystemImage)
             .font(.system(size: iconSize, weight: .semibold))
@@ -361,6 +368,11 @@ struct WorkoutRowView: View {
         default:
             return "arrow.left.and.right"
         }
+    }
+
+    private var isImportedFromHealthKit: Bool {
+        guard let hkUUID = workout.hkUUID else { return false }
+        return !hkUUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func statChip(icon: String, value: String, tinted: Bool = false) -> some View {

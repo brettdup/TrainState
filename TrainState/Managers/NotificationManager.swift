@@ -53,6 +53,62 @@ class NotificationManager {
     func cancelWorkoutReminder() {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["workoutReminder"])
     }
+
+    func sendHealthKitWorkoutImportNotification(mergedCount: Int, importedCount: Int) {
+        let totalCount = mergedCount + importedCount
+        guard totalCount > 0 else { return }
+
+        checkNotificationStatus { authorized in
+            guard authorized else { return }
+
+            let content = UNMutableNotificationContent()
+            content.title = self.healthKitImportNotificationTitle(
+                mergedCount: mergedCount,
+                importedCount: importedCount
+            )
+            content.body = self.healthKitImportNotificationBody(
+                mergedCount: mergedCount,
+                importedCount: importedCount
+            )
+            content.sound = .default
+
+            let request = UNNotificationRequest(
+                identifier: "healthKitWorkoutImport-\(UUID().uuidString)",
+                content: content,
+                trigger: nil
+            )
+
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error {
+                    print("Error sending HealthKit import notification: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private func healthKitImportNotificationTitle(mergedCount: Int, importedCount: Int) -> String {
+        if mergedCount > 0 && importedCount > 0 {
+            return "Workouts updated"
+        }
+        if mergedCount > 0 {
+            return mergedCount == 1 ? "Workout merged" : "Workouts merged"
+        }
+        return importedCount == 1 ? "Workout imported" : "Workouts imported"
+    }
+
+    private func healthKitImportNotificationBody(mergedCount: Int, importedCount: Int) -> String {
+        if mergedCount > 0 && importedCount > 0 {
+            return "\(mergedCount) merged with manual workouts and \(importedCount) imported from Apple Health."
+        }
+        if mergedCount > 0 {
+            return mergedCount == 1
+                ? "Your manual workout was updated with Apple Health time and metrics."
+                : "\(mergedCount) manual workouts were updated with Apple Health time and metrics."
+        }
+        return importedCount == 1
+            ? "A workout was imported from Apple Health."
+            : "\(importedCount) workouts were imported from Apple Health."
+    }
     
     func checkNotificationStatus(completion: @escaping (Bool) -> Void) {
         UNUserNotificationCenter.current().getNotificationSettings { settings in

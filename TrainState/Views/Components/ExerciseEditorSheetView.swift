@@ -13,11 +13,17 @@ struct ExerciseEditorSheetView: View {
     let onDelete: () -> Void
     let quickLogSaveAction: (() -> Void)?
     let mode: Mode
+    let scope: Scope
 
+    @AppStorage("measurementSystem") private var measurementSystemRaw = MeasurementSystem.metric.rawValue
     @FocusState private var focusedField: Field?
     @State private var isCreatingCustomExercise = false
     @State private var activePickerEditor: PickerEditor?
     @State private var showingCategoryBrowser = false
+
+    private var measurementSystem: MeasurementSystem {
+        MeasurementSystem(rawValue: measurementSystemRaw) ?? .metric
+    }
 
     private enum Field: Hashable {
         case name
@@ -28,24 +34,40 @@ struct ExerciseEditorSheetView: View {
         case template
     }
 
+    enum Scope {
+        case full
+        case metadataOnly
+    }
+
     private enum PickerEditor: Hashable, Identifiable {
-        case sets
         case reps(UUID)
         case weight(UUID)
 
         var id: String {
             switch self {
-            case .sets:
-                return "sets"
             case .reps(let id):
                 return "reps-\(id.uuidString)"
             case .weight(let id):
                 return "weight-\(id.uuidString)"
             }
         }
-    }
 
-    private let newExercisePickerValue = "__new_exercise__"
+        var metric: SetMetricStepperSheet.Metric {
+            switch self {
+            case .reps:
+                return .reps
+            case .weight:
+                return .weight
+            }
+        }
+
+        var setID: UUID {
+            switch self {
+            case .reps(let id), .weight(let id):
+                return id
+            }
+        }
+    }
 
     init(
         entry: Binding<ExerciseLogEntry>,
@@ -53,7 +75,8 @@ struct ExerciseEditorSheetView: View {
         availableOptions: [ExerciseQuickAddOption],
         onDelete: @escaping () -> Void,
         quickLogSaveAction: (() -> Void)? = nil,
-        mode: Mode = .workout
+        mode: Mode = .workout,
+        scope: Scope = .full
     ) {
         self._entry = entry
         self.availableSubcategories = availableSubcategories
@@ -61,6 +84,11 @@ struct ExerciseEditorSheetView: View {
         self.onDelete = onDelete
         self.quickLogSaveAction = quickLogSaveAction
         self.mode = mode
+        self.scope = scope
+    }
+
+    private var showsSetEditing: Bool {
+        scope == .full || mode == .template
     }
 
     private var exerciseNamesForSelectedSubcategory: [String] {
@@ -86,22 +114,11 @@ struct ExerciseEditorSheetView: View {
             List {
                 Section("Exercise") {
                     if !availableSubcategories.isEmpty {
-                        Picker("Subcategory", selection: subcategoryBinding) {
-                            ForEach(availableSubcategories, id: \.id) { subcategory in
-                                Text(subcategory.name).tag(Optional(subcategory.id))
-                            }
-                        }
-                        .pickerStyle(.menu)
+                        subcategoryMenuRow
                     }
 
                     if !exerciseNamesForPicker.isEmpty {
-                        Picker("Exercise", selection: exerciseSelectionBinding) {
-                            ForEach(exerciseNamesForPicker, id: \.self) { name in
-                                Text(name).tag(name)
-                            }
-                            Text("New Exercise...").tag(newExercisePickerValue)
-                        }
-                        .pickerStyle(.menu)
+                        exerciseMenuRow
                     }
 
                     if isCreatingCustomExercise || exerciseNamesForPicker.isEmpty {
@@ -127,6 +144,27 @@ struct ExerciseEditorSheetView: View {
                     }
                 }
 
+                Section {
+                    if let score = entry.effortScore {
+                        Stepper(value: effortScoreBinding, in: 1...10) {
+                            LabeledContent("Toughness", value: "\(score) / 10")
+                        }
+
+                        Button("Clear Toughness", role: .destructive) {
+                            entry.effortScore = nil
+                        }
+                    } else {
+                        Button {
+                            entry.effortScore = 5
+                        } label: {
+                            Label("Add Toughness Score", systemImage: "gauge.medium")
+                        }
+                    }
+                } footer: {
+                    Text("Rate how tough this exercise felt from 1 to 10.")
+                }
+
+                if showsSetEditing {
                 Section {
                     HStack {
                         Text("Sets")
@@ -185,9 +223,21 @@ struct ExerciseEditorSheetView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                }
+
+                if scope == .metadataOnly {
+                    Section {
+                        Text("Sets are logged on the workout screen. Expand the exercise card to add or edit sets.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
 
                 if let quickLogSaveAction {
                     Section {
+                        Text("Adds to today's strength workout when you save.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         Button {
                             quickLogSaveAction()
                         } label: {
@@ -210,7 +260,13 @@ struct ExerciseEditorSheetView: View {
             }
             .listStyle(.insetGrouped)
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(entry.trimmedName.isEmpty ? "New Exercise" : "Edit Exercise")
+            .navigationTitle(
+                quickLogSaveAction != nil
+                    ? "Log a Set"
+                    : scope == .metadataOnly
+                        ? (entry.trimmedName.isEmpty ? "Exercise" : entry.trimmedName)
+                        : (entry.trimmedName.isEmpty ? "New Exercise" : "Edit Exercise")
+            )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -237,10 +293,27 @@ struct ExerciseEditorSheetView: View {
         .onChange(of: entry.subcategoryID) { _, _ in
             syncExerciseSelectionForCurrentSubcategory()
         }
+        .onChange(of: entry.name) { _, newName in
+            guard entry.subcategoryID == nil else { return }
+            let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            if let match = availableOptions.first(where: {
+                $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+            }) {
+                entry.subcategoryID = match.subcategoryID
+            }
+        }
         .sheet(item: $activePickerEditor) { editor in
-            pickerEditorSheet(editor: editor)
+            if showsSetEditing {
+                SetMetricStepperSheet(
+                    metric: editor.metric,
+                    measurementSystem: measurementSystem,
+                    reps: repsBinding(for: editor.setID),
+                    weight: weightBinding(for: editor.setID)
+                )
                 .presentationDetents([.fraction(0.35), .medium])
                 .presentationDragIndicator(.visible)
+            }
         }
         .sheet(isPresented: $showingCategoryBrowser) {
             UnifiedExercisePickerView(
@@ -261,38 +334,92 @@ struct ExerciseEditorSheetView: View {
         }
     }
 
-    private var subcategoryBinding: Binding<UUID?> {
-        Binding(
-            get: { entry.subcategoryID },
-            set: { newValue in
-                entry.subcategoryID = newValue
+    private var subcategoryMenuRow: some View {
+        HStack {
+            Text("Subcategory")
+            Spacer(minLength: 12)
+            Menu {
+                ForEach(availableSubcategories, id: \.id) { subcategory in
+                    Button {
+                        entry.subcategoryID = subcategory.id
+                    } label: {
+                        if entry.subcategoryID == subcategory.id {
+                            Label(subcategory.name, systemImage: "checkmark")
+                        } else {
+                            Text(subcategory.name)
+                        }
+                    }
+                }
+            } label: {
+                menuValueLabel(selectedSubcategoryTitle)
             }
-        )
+        }
     }
 
-    private var exerciseSelectionBinding: Binding<String> {
-        Binding(
-            get: {
-                if isCreatingCustomExercise { return newExercisePickerValue }
-                if exerciseNamesForPicker.contains(entry.trimmedName) {
-                    return entry.trimmedName
+    private var exerciseMenuRow: some View {
+        HStack {
+            Text("Exercise")
+            Spacer(minLength: 12)
+            Menu {
+                ForEach(exerciseNamesForPicker, id: \.self) { name in
+                    Button {
+                        isCreatingCustomExercise = false
+                        entry.name = name
+                        focusedField = nil
+                    } label: {
+                        if !isCreatingCustomExercise && entry.trimmedName == name {
+                            Label(name, systemImage: "checkmark")
+                        } else {
+                            Text(name)
+                        }
+                    }
                 }
-                return newExercisePickerValue
-            },
-            set: { newValue in
-                if newValue == newExercisePickerValue {
+                Button {
                     isCreatingCustomExercise = true
                     if exerciseNamesForPicker.contains(entry.trimmedName) {
                         entry.name = ""
                     }
                     focusedField = .name
-                } else {
-                    isCreatingCustomExercise = false
-                    entry.name = newValue
-                    focusedField = nil
+                } label: {
+                    if isCreatingCustomExercise {
+                        Label("New Exercise...", systemImage: "checkmark")
+                    } else {
+                        Text("New Exercise...")
+                    }
                 }
+            } label: {
+                menuValueLabel(exerciseMenuTitle)
             }
-        )
+        }
+    }
+
+    private var selectedSubcategoryTitle: String {
+        guard let id = entry.subcategoryID,
+              let subcategory = availableSubcategories.first(where: { $0.id == id }) else {
+            return "Select"
+        }
+        return subcategory.name
+    }
+
+    private var exerciseMenuTitle: String {
+        if isCreatingCustomExercise {
+            return "New Exercise..."
+        }
+        if entry.trimmedName.isEmpty {
+            return "Select"
+        }
+        return entry.trimmedName
+    }
+
+    @ViewBuilder
+    private func menuValueLabel(_ title: String) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .foregroundStyle(.primary)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
     }
 
     private func setPlanRow(index: Int, setEntry: ExerciseSetEntry) -> some View {
@@ -315,18 +442,7 @@ struct ExerciseEditorSheetView: View {
                 HapticManager.lightImpact()
                 activePickerEditor = .reps(setEntry.id)
             } label: {
-                HStack(spacing: 4) {
-                    Text("Reps")
-                    Text("\(setEntry.reps)")
-                        .monospacedDigit()
-                        .fontWeight(.semibold)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.primary.opacity(0.08))
-                )
+                SetMetricCapsuleButton(label: "Reps", value: "\(setEntry.reps)")
             }
             .buttonStyle(.plain)
 
@@ -334,17 +450,13 @@ struct ExerciseEditorSheetView: View {
                 HapticManager.lightImpact()
                 activePickerEditor = .weight(setEntry.id)
             } label: {
-                HStack(spacing: 4) {
-                    Text("Kg")
-                    Text(displayValue(setEntry.weight))
-                        .monospacedDigit()
-                        .fontWeight(.semibold)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.primary.opacity(0.08))
+                let display = MeasurementFormatting.displayWeightFromStorage(
+                    setEntry.weight,
+                    system: measurementSystem
+                )
+                SetMetricCapsuleButton(
+                    label: MeasurementFormatting.weightUnitLabel(for: measurementSystem),
+                    value: MeasurementFormatting.displayWeight(display, system: measurementSystem)
                 )
             }
             .buttonStyle(.plain)
@@ -402,45 +514,30 @@ struct ExerciseEditorSheetView: View {
         }
     }
 
-    @ViewBuilder
-    private func pickerEditorSheet(editor: PickerEditor) -> some View {
-        VStack(spacing: 18) {
-            Text(pickerTitle(editor))
-                .font(.headline)
-
-            Text(pickerValueString(editor))
-                .font(.system(size: 36, weight: .bold, design: .rounded))
-                .monospacedDigit()
-
-            HStack(spacing: 16) {
-                Button {
-                    adjust(editor: editor, delta: -pickerStep(editor))
-                } label: {
-                    Image(systemName: "minus")
-                        .font(.title2.weight(.bold))
-                        .frame(width: 56, height: 56)
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button {
-                    clear(editor: editor)
-                } label: {
-                    Text("Clear")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-
-                Button {
-                    adjust(editor: editor, delta: pickerStep(editor))
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.title2.weight(.bold))
-                        .frame(width: 56, height: 56)
-                }
-                .buttonStyle(.borderedProminent)
+    private func repsBinding(for setID: UUID) -> Binding<Int> {
+        Binding(
+            get: {
+                entry.setEntries.first(where: { $0.id == setID })?.reps ?? 0
+            },
+            set: { newValue in
+                guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
+                entry.setEntries[idx].reps = newValue
+                syncLegacyMetricsFromFirstSet()
             }
-        }
-        .padding(24)
+        )
+    }
+
+    private func weightBinding(for setID: UUID) -> Binding<Double> {
+        Binding(
+            get: {
+                entry.setEntries.first(where: { $0.id == setID })?.weight ?? 0
+            },
+            set: { newValue in
+                guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
+                entry.setEntries[idx].weight = newValue
+                syncLegacyMetricsFromFirstSet()
+            }
+        )
     }
 
     private func exerciseNames(for subcategoryID: UUID) -> [String] {
@@ -448,6 +545,13 @@ struct ExerciseEditorSheetView: View {
             .filter { $0.subcategoryID == subcategoryID }
             .map(\.name)
         return Array(Set(names)).sorted()
+    }
+
+    private var effortScoreBinding: Binding<Int> {
+        Binding(
+            get: { entry.effortScore ?? 5 },
+            set: { entry.effortScore = min(max($0, 1), 10) }
+        )
     }
 
     private func syncExerciseSelectionForCurrentSubcategory() {
@@ -471,82 +575,6 @@ struct ExerciseEditorSheetView: View {
         if !isCreatingCustomExercise, let matched = options.first(where: { $0 == trimmedName }) {
             entry.name = matched
         }
-    }
-
-    private func displayValue(_ value: Double) -> String {
-        if value.rounded(.towardZero) == value {
-            return String(Int(value))
-        }
-        return String(format: "%.1f", value)
-    }
-
-    private func pickerTitle(_ editor: PickerEditor) -> String {
-        switch editor {
-        case .sets:
-            return "Sets"
-        case .reps:
-            return "Reps"
-        case .weight:
-            return "Weight (kg)"
-        }
-    }
-
-    private func pickerValueString(_ editor: PickerEditor) -> String {
-        switch editor {
-        case .sets:
-            return "\(entry.effectiveSetCount ?? 0)"
-        case .reps(let setID):
-            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return "0" }
-            return "\(entry.setEntries[idx].reps)"
-        case .weight(let setID):
-            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return "0" }
-            return displayValue(entry.setEntries[idx].weight)
-        }
-    }
-
-    private func pickerStep(_ editor: PickerEditor) -> Double {
-        switch editor {
-        case .sets, .reps:
-            return 1
-        case .weight:
-            return 2.5
-        }
-    }
-
-    private func adjust(editor: PickerEditor, delta: Double) {
-        switch editor {
-        case .sets:
-            adjustSetCount(by: Int(delta))
-        case .reps(let setID):
-            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
-            let current = Double(entry.setEntries[idx].reps)
-            entry.setEntries[idx].reps = max(Int(current + delta), 0)
-            syncLegacyMetricsFromFirstSet()
-        case .weight(let setID):
-            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
-            let current = entry.setEntries[idx].weight
-            entry.setEntries[idx].weight = max(current + delta, 0)
-            syncLegacyMetricsFromFirstSet()
-        }
-        HapticManager.lightImpact()
-    }
-
-    private func clear(editor: PickerEditor) {
-        switch editor {
-        case .sets:
-            entry.setEntries = []
-            entry.sets = nil
-            syncLegacyMetricsFromFirstSet()
-        case .reps(let setID):
-            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
-            entry.setEntries[idx].reps = 0
-            syncLegacyMetricsFromFirstSet()
-        case .weight(let setID):
-            guard let idx = entry.setEntries.firstIndex(where: { $0.id == setID }) else { return }
-            entry.setEntries[idx].weight = 0
-            syncLegacyMetricsFromFirstSet()
-        }
-        HapticManager.lightImpact()
     }
 
     private func syncPlannedSetEntriesFromMetrics() {

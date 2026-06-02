@@ -119,6 +119,55 @@ final class HealthKitRecentWorkoutImporter {
     }
 
     func importWorkout(_ item: HealthKitRecentWorkoutMenuItem, into context: ModelContext) async throws {
+        let descriptor = FetchDescriptor<Workout>()
+        let existingWorkouts = try context.fetch(descriptor)
+
+        if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
+            if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
+                try await mergeImportedWorkout(importedWorkout, into: manualWorkout, using: item, in: context)
+            }
+            return
+        }
+
+        if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
+            try await attachWorkout(item, to: manualWorkout, in: context)
+            return
+        }
+
+        _ = try await createImportedWorkout(from: item, in: context)
+        try context.save()
+    }
+
+    func importWorkoutsBatch(_ items: [HealthKitRecentWorkoutMenuItem], into context: ModelContext) async throws {
+        guard !items.isEmpty else { return }
+
+        let descriptor = FetchDescriptor<Workout>()
+        let existingWorkouts = try context.fetch(descriptor)
+
+        for item in items {
+            if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
+                if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
+                    try await mergeImportedWorkout(importedWorkout, into: manualWorkout, using: item, in: context)
+                }
+                continue
+            }
+
+            if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
+                try await attachWorkout(item, to: manualWorkout, in: context)
+                continue
+            }
+
+            _ = try await createImportedWorkout(from: item, in: context)
+        }
+
+        try context.save()
+    }
+
+    @discardableResult
+    private func createImportedWorkout(
+        from item: HealthKitRecentWorkoutMenuItem,
+        in context: ModelContext
+    ) async throws -> Workout {
         let workout = Workout(
             startDate: item.startDate,
             duration: item.duration,
@@ -145,41 +194,54 @@ final class HealthKitRecentWorkoutImporter {
         }
 
         context.insert(workout)
-        try context.save()
+        return workout
     }
 
-    func importWorkoutsBatch(_ items: [HealthKitRecentWorkoutMenuItem], into context: ModelContext) async throws {
-        guard !items.isEmpty else { return }
+    func importNewRecentWorkouts(into context: ModelContext, limit: Int = 10) async throws -> Int {
+        let recentWorkouts = try await fetchRecentWorkouts(limit: limit)
+        let descriptor = FetchDescriptor<Workout>()
+        let existingWorkouts = try context.fetch(descriptor)
+        var mergedCount = 0
+        var importedCount = 0
 
-        for item in items {
-            let workout = Workout(
-                startDate: item.startDate,
-                duration: item.duration,
-                calories: item.calories,
-                distance: item.distanceKilometers,
-                rating: item.workoutRating,
-                notes: "Imported from HealthKit",
-                categories: nil,
-                subcategories: nil,
-                exercises: nil,
-                hkActivityTypeRaw: item.activityTypeRaw,
-                hkLocationTypeRaw: item.locationTypeRaw
-            )
-            workout.hkUUID = item.hkUUID
-
-            if let sourceWorkout = try await findWorkout(uuidString: item.hkUUID),
-               let importedRoute = try await fetchRouteLocations(for: sourceWorkout),
-               !importedRoute.isEmpty {
-                let route = WorkoutRoute()
-                route.decodedRoute = downsampleLocations(importedRoute, maxPoints: 2000)
-                route.workout = workout
-                workout.route = route
-                context.insert(route)
+        for item in recentWorkouts {
+            if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
+                guard let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) else {
+                    continue
+                }
+                try await mergeImportedWorkout(importedWorkout, into: manualWorkout, using: item, in: context)
+                mergedCount += 1
+            } else if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
+                try await attachWorkout(item, to: manualWorkout, in: context)
+                mergedCount += 1
+            } else {
+                try await importWorkout(item, into: context)
+                importedCount += 1
             }
-
-            context.insert(workout)
         }
 
+        NotificationManager.shared.sendHealthKitWorkoutImportNotification(
+            mergedCount: mergedCount,
+            importedCount: importedCount
+        )
+
+        return mergedCount + importedCount
+    }
+
+    private func mergeImportedWorkout(
+        _ importedWorkout: Workout,
+        into manualWorkout: Workout,
+        using item: HealthKitRecentWorkoutMenuItem,
+        in context: ModelContext
+    ) async throws {
+        if manualWorkout.route == nil, let importedRoute = importedWorkout.route {
+            importedRoute.workout = manualWorkout
+            manualWorkout.route = importedRoute
+            importedWorkout.route = nil
+        }
+
+        try await attachWorkout(item, to: manualWorkout, in: context)
+        context.delete(importedWorkout)
         try context.save()
     }
 
@@ -256,6 +318,29 @@ final class HealthKitRecentWorkoutImporter {
             menuItems.append(HealthKitRecentWorkoutMenuItem(workout: workout, workoutRating: rating))
         }
         return menuItems
+    }
+
+    private func matchingManualWorkout(
+        for item: HealthKitRecentWorkoutMenuItem,
+        in workouts: [Workout],
+        calendar: Calendar = .current
+    ) -> Workout? {
+        workouts
+            .filter { workout in
+                workout.hkUUID == nil &&
+                calendar.isDate(workout.startDate, inSameDayAs: item.startDate) &&
+                workout.type == item.activityType.mappedWorkoutType
+            }
+            .sorted { lhs, rhs in
+                let lhsHasExercises = !(lhs.exercises?.isEmpty ?? true)
+                let rhsHasExercises = !(rhs.exercises?.isEmpty ?? true)
+                if lhsHasExercises != rhsHasExercises {
+                    return lhsHasExercises
+                }
+                return abs(lhs.startDate.timeIntervalSince(item.startDate)) <
+                    abs(rhs.startDate.timeIntervalSince(item.startDate))
+            }
+            .first
     }
 
     private func isAuthorizationDenied(_ error: Error) -> Bool {
@@ -376,5 +461,96 @@ final class HealthKitRecentWorkoutImporter {
             }
         }
         return nil
+    }
+}
+
+@MainActor
+final class HealthKitWorkoutAutoImportService {
+    static let shared = HealthKitWorkoutAutoImportService()
+
+    private let healthStore = HKHealthStore()
+    private let importer = HealthKitRecentWorkoutImporter()
+    private var observerQuery: HKObserverQuery?
+    private var importTask: Task<Void, Never>?
+    private var hasStarted = false
+
+    private init() {}
+
+    func start(modelContainer: ModelContainer) async {
+        guard !hasStarted else { return }
+
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+
+        let workoutType = HKObjectType.workoutType()
+        do {
+            try await healthStore.requestAuthorization(toShare: [], read: [workoutType])
+            try await enableBackgroundDelivery(for: workoutType)
+            observeWorkouts(modelContainer: modelContainer, workoutType: workoutType)
+            hasStarted = true
+            scheduleImport(modelContainer: modelContainer)
+        } catch {
+            print("[HealthKitAutoImport] Failed to start: \(error.localizedDescription)")
+        }
+    }
+
+    private func observeWorkouts(modelContainer: ModelContainer, workoutType: HKSampleType) {
+        if let observerQuery {
+            healthStore.stop(observerQuery)
+        }
+
+        let query = HKObserverQuery(sampleType: workoutType, predicate: nil) { [weak self] _, completionHandler, error in
+            if let error {
+                print("[HealthKitAutoImport] Observer error: \(error.localizedDescription)")
+                completionHandler()
+                return
+            }
+
+            Task { @MainActor in
+                self?.scheduleImport(modelContainer: modelContainer) {
+                    completionHandler()
+                }
+            }
+        }
+
+        observerQuery = query
+        healthStore.execute(query)
+    }
+
+    private func scheduleImport(modelContainer: ModelContainer, completion: (() -> Void)? = nil) {
+        importTask = Task { @MainActor in
+            defer { completion?() }
+
+            do {
+                let importedCount = try await importer.importNewRecentWorkouts(
+                    into: modelContainer.mainContext,
+                    limit: 10
+                )
+                if importedCount > 0 {
+                    print("[HealthKitAutoImport] Imported \(importedCount) new workout(s).")
+                }
+            } catch {
+                print("[HealthKitAutoImport] Import failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func enableBackgroundDelivery(for workoutType: HKSampleType) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            healthStore.enableBackgroundDelivery(
+                for: workoutType,
+                frequency: .immediate
+            ) { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                if success {
+                    continuation.resume(returning: ())
+                } else {
+                    continuation.resume(throwing: HealthKitImportError.authorizationDenied)
+                }
+            }
+        }
     }
 }
