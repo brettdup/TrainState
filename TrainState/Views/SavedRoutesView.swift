@@ -317,5 +317,5 @@ private struct SavedRouteEditorSheet: View {
 
 #Preview {
     SavedRoutesView()
-        .modelContainer(for: [WorkoutRoute.self, Workout.self], inMemory: true)
+        .modelContainer(for: [WorkoutRoute.self, Workout.self, WorkoutSubcategoryRating.self], inMemory: true)
 }

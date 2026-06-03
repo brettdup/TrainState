@@ -517,5 +517,5 @@ private struct SubcategoryExerciseHistorySummary: Identifiable {
     NavigationStack {
         SubcategoryLastLoggedView()
     }
-    .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, SubcategoryExercise.self], inMemory: true)
+    .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutSubcategoryRating.self, WorkoutExercise.self, SubcategoryExercise.self], inMemory: true)
 }

@@ -20,6 +20,16 @@ struct HealthKitRecentWorkoutMenuItem: Identifiable, Hashable, Codable {
         HKWorkoutActivityType(rawValue: UInt(activityTypeRaw)) ?? .other
     }
 
+    var notificationDetail: HealthKitWorkoutImportNotificationDetail {
+        HealthKitWorkoutImportNotificationDetail(
+            workoutName: activityType.displayName(locationType: locationType),
+            startDate: startDate,
+            duration: duration,
+            distanceKilometers: distanceKilometers,
+            calories: calories
+        )
+    }
+
     var locationType: HKWorkoutSessionLocationType? {
         guard let locationTypeRaw else { return nil }
         return HKWorkoutSessionLocationType(rawValue: locationTypeRaw)
@@ -203,6 +213,7 @@ final class HealthKitRecentWorkoutImporter {
         let existingWorkouts = try context.fetch(descriptor)
         var mergedCount = 0
         var importedCount = 0
+        var notificationDetails: [HealthKitWorkoutImportNotificationDetail] = []
 
         for item in recentWorkouts {
             if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
@@ -211,18 +222,22 @@ final class HealthKitRecentWorkoutImporter {
                 }
                 try await mergeImportedWorkout(importedWorkout, into: manualWorkout, using: item, in: context)
                 mergedCount += 1
+                notificationDetails.append(item.notificationDetail)
             } else if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
                 try await attachWorkout(item, to: manualWorkout, in: context)
                 mergedCount += 1
+                notificationDetails.append(item.notificationDetail)
             } else {
                 try await importWorkout(item, into: context)
                 importedCount += 1
+                notificationDetails.append(item.notificationDetail)
             }
         }
 
         NotificationManager.shared.sendHealthKitWorkoutImportNotification(
             mergedCount: mergedCount,
-            importedCount: importedCount
+            importedCount: importedCount,
+            workoutDetails: notificationDetails
         )
 
         return mergedCount + importedCount

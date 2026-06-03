@@ -241,6 +241,25 @@ class DataInitializationManager {
         ]
     ]
 
+    private let defaultCompoundExerciseAttachments: [String: [String]] = [
+        "barbell bench press": ["Shoulders", "Triceps"],
+        "incline dumbbell press": ["Shoulders", "Triceps"],
+        "close-grip bench press": ["Chest", "Shoulders"],
+        "push-up": ["Shoulders", "Triceps"],
+        "overhead press": ["Triceps", "Chest"],
+        "pull-up": ["Biceps", "Rear Delts"],
+        "bent-over row": ["Biceps", "Rear Delts"],
+        "seated cable row": ["Biceps", "Rear Delts"],
+        "single-arm dumbbell row": ["Biceps", "Rear Delts"],
+        "back squat": ["Hamstrings", "Calves"],
+        "front squat": ["Hamstrings", "Calves"],
+        "leg press": ["Hamstrings", "Calves"],
+        "walking lunge": ["Hamstrings", "Calves"],
+        "romanian deadlift": ["Back"],
+        "good morning": ["Back"],
+        "single-leg romanian deadlift": ["Back"]
+    ]
+
     /// Ensures every workout type has starter categories/subcategories.
     func initializeDefaultDataIfNeeded(context: ModelContext) {
         let descriptor = FetchDescriptor<WorkoutCategory>()
@@ -289,6 +308,10 @@ class DataInitializationManager {
             guard !subcategories.isEmpty else { return }
 
             let existingTemplates = try context.fetch(FetchDescriptor<SubcategoryExercise>())
+            var subcategoriesByName: [String: WorkoutSubcategory] = [:]
+            for subcategory in subcategories {
+                subcategoriesByName[normalizedTemplateName(subcategory.name), default: subcategory] = subcategory
+            }
             var templatesBySubcategoryID: [UUID: [SubcategoryExercise]] = [:]
             for template in existingTemplates {
                 guard let subcategoryID = template.subcategory?.id else { continue }
@@ -296,6 +319,7 @@ class DataInitializationManager {
             }
 
             var didInsert = false
+            var didUpdate = false
 
             for subcategory in subcategories {
                 let existing = templatesBySubcategoryID[subcategory.id] ?? []
@@ -323,7 +347,12 @@ class DataInitializationManager {
                     let template = SubcategoryExercise(
                         name: candidateName,
                         subcategory: subcategory,
-                        orderIndex: orderIndex
+                        orderIndex: orderIndex,
+                        secondarySubcategoryIDs: compoundAttachmentIDs(
+                            for: candidateName,
+                            primarySubcategory: subcategory,
+                            subcategoriesByName: subcategoriesByName
+                        )
                     )
                     context.insert(template)
                     existingNames.insert(normalizedCandidate)
@@ -331,14 +360,49 @@ class DataInitializationManager {
                     orderIndex += 1
                     didInsert = true
                 }
+
+                for template in existing {
+                    let attachments = compoundAttachmentIDs(
+                        for: template.name,
+                        primarySubcategory: subcategory,
+                        subcategoriesByName: subcategoriesByName
+                    )
+                    guard !attachments.isEmpty, template.secondarySubcategoryIDs.isEmpty else { continue }
+                    template.secondarySubcategoryIDs = attachments
+                    didUpdate = true
+                }
             }
 
-            if didInsert {
+            if didInsert || didUpdate {
                 try context.save()
                 print("Initialized default exercise templates for subcategories")
             }
         } catch {
             print("Error initializing default exercise templates: \(error)")
+        }
+    }
+
+    private func compoundAttachmentIDs(
+        for exerciseName: String,
+        primarySubcategory: WorkoutSubcategory,
+        subcategoriesByName: [String: WorkoutSubcategory]
+    ) -> [UUID] {
+        let normalizedExerciseName = normalizedTemplateName(exerciseName)
+        guard let attachedNames = defaultCompoundExerciseAttachments[normalizedExerciseName] else {
+            return []
+        }
+
+        guard let primaryWorkoutType = primarySubcategory.category?.resolvedWorkoutType else {
+            return []
+        }
+
+        return attachedNames.compactMap { name in
+            guard let subcategory = subcategoriesByName[normalizedTemplateName(name)],
+                  subcategory.id != primarySubcategory.id,
+                  subcategory.category?.resolvedWorkoutType == primaryWorkoutType else {
+                return nil
+            }
+            return subcategory.id
         }
     }
     

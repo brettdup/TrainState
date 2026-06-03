@@ -763,5 +763,5 @@ private extension Binding where Value == Bool {
 
 #Preview {
     SettingsView()
-        .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self], inMemory: true)
+        .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutSubcategoryRating.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self], inMemory: true)
 }

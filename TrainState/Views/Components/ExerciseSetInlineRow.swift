@@ -24,12 +24,16 @@ struct ExerciseSetInlineRow: View {
         HStack(spacing: 12) {
             if showsCompletion {
                 Button {
-                    setEntry.isCompleted.toggle()
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                        setEntry.isCompleted.toggle()
+                    }
                     HapticManager.lightImpact()
                 } label: {
                     Image(systemName: setEntry.isCompleted ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(setEntry.isCompleted ? Color.green : Color.secondary)
                         .imageScale(.large)
+                        .contentTransition(.symbolEffect(.replace))
+                        .symbolEffect(.bounce, value: setEntry.isCompleted)
                 }
                 .buttonStyle(.plain)
             }
@@ -44,7 +48,12 @@ struct ExerciseSetInlineRow: View {
                 HapticManager.lightImpact()
                 presentedMetric = .reps
             } label: {
-                SetMetricCapsuleButton(label: "Reps", value: "\(setEntry.reps)")
+                SetMetricCapsuleButton(
+                    label: "Reps",
+                    value: "\(setEntry.reps)",
+                    minWidth: 62,
+                    valueMinWidth: 14
+                )
             }
             .buttonStyle(.plain)
 
@@ -52,7 +61,12 @@ struct ExerciseSetInlineRow: View {
                 HapticManager.lightImpact()
                 presentedMetric = .weight
             } label: {
-                SetMetricCapsuleButton(label: weightUnitLabel, value: weightDisplayText)
+                SetMetricCapsuleButton(
+                    label: weightUnitLabel,
+                    value: weightDisplayText,
+                    minWidth: 78,
+                    valueMinWidth: 36
+                )
             }
             .buttonStyle(.plain)
 
@@ -85,6 +99,7 @@ struct ExerciseSetInlineRow: View {
             Button(role: .destructive, action: onDelete) {
                 Label("Delete", systemImage: "trash")
             }
+            .tint(.red)
         }
     }
 }

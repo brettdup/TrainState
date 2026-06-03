@@ -48,6 +48,8 @@ struct WorkoutListView: View {
     @State private var successBanner: SuccessBannerModel?
     @State private var bannerDismissTask: Task<Void, Never>?
     @State private var pendingQuickExerciseLogs: [PendingQuickExerciseLog] = []
+    @State private var visibleAttachedQuickExerciseIDs: Set<UUID> = []
+    @State private var attachedQuickLogDismissTask: Task<Void, Never>?
     @State private var showingQuickLogSheet = false
     @State private var showingContinueSession = false
     @State private var draftSessionEntries: [ExerciseLogEntry] = []
@@ -314,7 +316,7 @@ struct WorkoutListView: View {
     }
 
     private var shouldShowTodayQuickLogsSection: Bool {
-        selectedFilter == .all && (!todaysPendingQuickLogs.isEmpty || !todaysAttachedQuickExercises.isEmpty)
+        selectedFilter == .all && (!todaysPendingQuickLogs.isEmpty || !visibleAttachedQuickExercises.isEmpty)
     }
 
     private var todayQuickLogsSection: some View {
@@ -332,8 +334,8 @@ struct WorkoutListView: View {
                 .onDelete(perform: deleteTodaysPendingQuickLogs)
             }
 
-            if !todaysAttachedQuickExercises.isEmpty {
-                ForEach(todaysAttachedQuickExercises, id: \.id) { exercise in
+            if !visibleAttachedQuickExercises.isEmpty {
+                ForEach(visibleAttachedQuickExercises, id: \.id) { exercise in
                     quickLogRow(
                         title: exercise.name,
                         detail: attachedExerciseSummary(exercise),
@@ -386,7 +388,7 @@ struct WorkoutListView: View {
             return "These are queued from the widget and will attach when you create or import a workout for today."
         }
         if todaysPendingQuickLogs.isEmpty {
-            return "These quick logs have been attached to today's workout."
+            return "Attached quick logs are saved to today's workout and will clear from this queue shortly."
         }
         return "Queued logs will attach to today's workout; attached logs are already saved."
     }
@@ -475,6 +477,12 @@ struct WorkoutListView: View {
             .sorted { $0.orderIndex < $1.orderIndex }
     }
 
+    private var visibleAttachedQuickExercises: [WorkoutExercise] {
+        let visibleIDs = visibleAttachedQuickExerciseIDs
+        guard !visibleIDs.isEmpty else { return [] }
+        return todaysAttachedQuickExercises.filter { visibleIDs.contains($0.id) }
+    }
+
     private var todayWorkouts: [Workout] {
         workouts
             .filter { Calendar.current.isDateInToday($0.startDate) }
@@ -515,12 +523,26 @@ struct WorkoutListView: View {
     }
 
     private func attachPendingQuickExerciseLogs() {
+        let previouslyAttachedIDs = Set(todaysAttachedQuickExercises.map(\.id))
         QuickExerciseLogStore.attachPendingLogs(
             to: workouts,
             availableSubcategories: subcategories,
             in: modelContext
         )
         refreshQuickExerciseLogs()
+        let newlyAttachedIDs = Set(todaysAttachedQuickExercises.map(\.id)).subtracting(previouslyAttachedIDs)
+        guard !newlyAttachedIDs.isEmpty else { return }
+        visibleAttachedQuickExerciseIDs.formUnion(newlyAttachedIDs)
+        scheduleAttachedQuickLogQueueClear()
+    }
+
+    private func scheduleAttachedQuickLogQueueClear() {
+        attachedQuickLogDismissTask?.cancel()
+        attachedQuickLogDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            visibleAttachedQuickExerciseIDs.removeAll()
+            attachedQuickLogDismissTask = nil
+        }
     }
 
     private func openQuickLogSheetIfRequested() {
@@ -715,7 +737,8 @@ struct WorkoutListView: View {
         )
         let classification = WorkoutClassificationBuilder.build(
             from: resolvedEntries,
-            subcategories: subcategories
+            subcategories: subcategories,
+            exerciseTemplates: exerciseTemplates
         )
         let workout = Workout(
             type: .strength,
@@ -1482,7 +1505,7 @@ private struct WorkoutQuickExerciseLogSheet: View {
 struct WorkoutListView_Previews: PreviewProvider {
     static var previews: some View {
         let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-        let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, configurations: config)
+        let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutSubcategoryRating.self, configurations: config)
         let context = container.mainContext
         let calendar = Calendar.current
 

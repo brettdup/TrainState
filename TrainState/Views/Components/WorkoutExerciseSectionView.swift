@@ -20,6 +20,7 @@ struct WorkoutExerciseSectionView: View {
     let onStartRest: () -> Void
 
     @State private var showingExercisePicker = false
+    @State private var activeRatingTarget: RatingPickerTarget?
 
     init(
         entries: Binding<[ExerciseLogEntry]>,
@@ -66,12 +67,22 @@ struct WorkoutExerciseSectionView: View {
                         entry: $entry,
                         isExpanded: expansionBinding(for: entry.id),
                         subcategoryName: subcategoryName,
+                        affectedSubcategoryNames: affectedSubcategoryNames(for: entry),
                         tintColor: tintColor,
                         measurementSystem: measurementSystem,
                         restTimerEnabled: restTimerEnabled,
                         restDurationSeconds: restDurationSeconds,
                         onEditMetadata: { onEditMetadata(entry) },
-                        onStartRest: onStartRest
+                        onStartRest: onStartRest,
+                        onEditEffortScore: {
+                            activeRatingTarget = RatingPickerTarget(
+                                context: "exercise",
+                                sourceID: entry.id,
+                                title: entry.trimmedName.isEmpty ? "Toughness" : entry.trimmedName,
+                                subtitle: "Rate how tough this exercise felt from 1 to 10.",
+                                clearTitle: "Clear"
+                            )
+                        }
                     )
                 }
                 .onDelete(perform: deleteExercises)
@@ -119,6 +130,29 @@ struct WorkoutExerciseSectionView: View {
                 tintColor: tintColor
             )
         }
+        .sheet(item: $activeRatingTarget) { target in
+            RatingPickerSheet(
+                title: target.title,
+                subtitle: target.subtitle,
+                clearTitle: target.clearTitle,
+                tintColor: tintColor,
+                rating: effortScoreBinding(for: target.sourceID)
+            )
+            .presentationDetents([.fraction(0.58), .medium])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func effortScoreBinding(for entryID: UUID) -> Binding<Int?> {
+        Binding(
+            get: {
+                entries.first { $0.id == entryID }?.effortScore
+            },
+            set: { newValue in
+                guard let index = entries.firstIndex(where: { $0.id == entryID }) else { return }
+                entries[index].effortScore = newValue.map { min(max($0, 1), 10) }
+            }
+        )
     }
 
     private func expansionBinding(for entryID: UUID) -> Binding<Bool> {
@@ -132,6 +166,33 @@ struct WorkoutExerciseSectionView: View {
                 }
             }
         )
+    }
+
+    private func affectedSubcategoryNames(for entry: ExerciseLogEntry) -> [String] {
+        guard let primarySubcategoryID = entry.subcategoryID,
+              let primarySubcategory = availableSubcategories.first(where: { $0.id == primarySubcategoryID }),
+              let primaryWorkoutType = primarySubcategory.category?.resolvedWorkoutType else {
+            return []
+        }
+
+        let trimmedName = entry.trimmedName
+        guard !trimmedName.isEmpty,
+              let template = exerciseTemplates.first(where: {
+                  $0.subcategory?.id == primarySubcategoryID &&
+                  $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(trimmedName) == .orderedSame
+              }) else {
+            return []
+        }
+
+        return template.secondarySubcategoryIDs.compactMap { id -> String? in
+            guard let subcategory = availableSubcategories.first(where: { $0.id == id }),
+                  subcategory.id != primarySubcategory.id,
+                  subcategory.category?.resolvedWorkoutType == primaryWorkoutType else {
+                return nil
+            }
+            return subcategory.name
+        }
+        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     private func deleteExercises(at offsets: IndexSet) {

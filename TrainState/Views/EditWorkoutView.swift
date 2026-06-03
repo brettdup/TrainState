@@ -18,6 +18,7 @@ struct EditWorkoutView: View {
     @State private var durationMinutes: Double
     @State private var distanceKilometers: Double
     @State private var workoutRating: Double?
+    @State private var subcategoryRatings: [UUID: Int]
     @State private var notes: String
     @State private var exerciseEntries: [ExerciseLogEntry]
     @State private var activeExerciseSelection: ExerciseEditorSelection?
@@ -27,6 +28,7 @@ struct EditWorkoutView: View {
     @State private var selectedCategoriesForAssignment: [WorkoutCategory]
     @State private var selectedSubcategoriesForAssignment: [WorkoutSubcategory]
     @State private var showingCategoriesManagement = false
+    @State private var activeRatingTarget: RatingPickerTarget?
 
     private let quickDurations: [Double] = [15, 30, 45, 60, 90, 120]
     private var durationBinding: Binding<Double> {
@@ -94,6 +96,7 @@ struct EditWorkoutView: View {
         _durationMinutes = State(initialValue: workout.duration / 60)
         _distanceKilometers = State(initialValue: workout.distance ?? 0)
         _workoutRating = State(initialValue: workout.rating)
+        _subcategoryRatings = State(initialValue: WorkoutSubcategoryRatingStore.ratingsBySubcategoryID(for: workout))
         _notes = State(initialValue: workout.notes ?? "")
         _exerciseEntries = State(initialValue: (workout.exercises ?? [])
             .sorted { $0.orderIndex < $1.orderIndex }
@@ -122,6 +125,7 @@ struct EditWorkoutView: View {
             if showsDistance { distanceCard }
             if type == .strength {
                 strengthManagementSection
+                subcategoryRatingsCard
             }
             exercisesCard
             advancedSectionCard
@@ -169,6 +173,17 @@ struct EditWorkoutView: View {
                     appleWorkoutActivityType: appleWorkoutActivityType
                 )
             }
+        }
+        .sheet(item: $activeRatingTarget) { target in
+            RatingPickerSheet(
+                title: target.title,
+                subtitle: target.subtitle,
+                clearTitle: target.clearTitle,
+                tintColor: type.tintColor,
+                rating: subcategoryRatingBinding(for: target.sourceID)
+            )
+            .presentationDetents([.fraction(0.58), .medium])
+            .presentationDragIndicator(.visible)
         }
         .onChange(of: selectedAppleWorkout) { _, newSelection in
             type = newSelection.activityType.mappedWorkoutType
@@ -327,6 +342,33 @@ struct EditWorkoutView: View {
         }
     }
 
+    private var subcategoryRatingsCard: some View {
+        SubcategoryRatingSection(
+            title: "Subcategory Ratings",
+            subcategories: selectedSubcategoriesForAssignment,
+            ratingsBySubcategoryID: $subcategoryRatings,
+            tintColor: type.tintColor,
+            onEditRating: { subcategory in
+                activeRatingTarget = RatingPickerTarget(
+                    context: "subcategory",
+                    sourceID: subcategory.id,
+                    title: subcategory.name,
+                    subtitle: "Rate how hard this subcategory was hit from 1 to 10.",
+                    clearTitle: "Clear"
+                )
+            }
+        )
+    }
+
+    private func subcategoryRatingBinding(for subcategoryID: UUID) -> Binding<Int?> {
+        Binding(
+            get: { subcategoryRatings[subcategoryID] },
+            set: { newValue in
+                subcategoryRatings[subcategoryID] = newValue.map { min(max($0, 1), 10) }
+            }
+        )
+    }
+
     private var exercisesCard: some View {
         WorkoutExerciseSectionView(
             entries: $exerciseEntries,
@@ -381,8 +423,16 @@ struct EditWorkoutView: View {
             notes: notes,
             categoryIDs: selectedCategoriesForAssignment.map(\.id),
             subcategoryIDs: selectedSubcategoriesForAssignment.map(\.id),
+            subcategoryRatingSignatures: subcategoryRatingSignatures,
             exerciseSignatures: exerciseEntries.map(EditWorkoutSnapshot.ExerciseSignature.init)
         )
+    }
+
+    private var subcategoryRatingSignatures: [EditWorkoutSnapshot.SubcategoryRatingSignature] {
+        subcategoryRatings.map {
+            EditWorkoutSnapshot.SubcategoryRatingSignature(subcategoryID: $0.key, rating: $0.value)
+        }
+        .sorted { $0.subcategoryID.uuidString < $1.subcategoryID.uuidString }
     }
 
     private var categoryAssignmentSummary: String {
@@ -499,6 +549,12 @@ struct EditWorkoutView: View {
         workout.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
         workout.categories = selectedCategoriesForAssignment
         workout.subcategories = selectedSubcategoriesForAssignment
+        WorkoutSubcategoryRatingStore.replaceRatings(
+            on: workout,
+            with: subcategoryRatings,
+            subcategories: selectedSubcategoriesForAssignment,
+            modelContext: modelContext
+        )
         (workout.exercises ?? []).forEach { modelContext.delete($0) }
         workout.exercises = exerciseEntries.enumerated().compactMap { index, entry in
             let name = entry.trimmedName
@@ -557,6 +613,11 @@ private struct EditWorkoutSnapshot: Equatable {
         }
     }
 
+    struct SubcategoryRatingSignature: Equatable {
+        let subcategoryID: UUID
+        let rating: Int
+    }
+
     let type: WorkoutType
     let appleWorkoutActivityTypeRawValue: Int
     let appleWorkoutLocationTypeRawValue: Int
@@ -567,6 +628,7 @@ private struct EditWorkoutSnapshot: Equatable {
     let notes: String
     let categoryIDs: [UUID]
     let subcategoryIDs: [UUID]
+    let subcategoryRatingSignatures: [SubcategoryRatingSignature]
     let exerciseSignatures: [ExerciseSignature]
 
     init(workout: Workout) {
@@ -580,6 +642,9 @@ private struct EditWorkoutSnapshot: Equatable {
         self.notes = workout.notes ?? ""
         self.categoryIDs = (workout.categories ?? []).map(\.id)
         self.subcategoryIDs = (workout.subcategories ?? []).map(\.id)
+        self.subcategoryRatingSignatures = WorkoutSubcategoryRatingStore.ratingsBySubcategoryID(for: workout)
+            .map { SubcategoryRatingSignature(subcategoryID: $0.key, rating: $0.value) }
+            .sorted { $0.subcategoryID.uuidString < $1.subcategoryID.uuidString }
         self.exerciseSignatures = (workout.exercises ?? [])
             .sorted { $0.orderIndex < $1.orderIndex }
             .map {
@@ -606,6 +671,7 @@ private struct EditWorkoutSnapshot: Equatable {
         notes: String,
         categoryIDs: [UUID],
         subcategoryIDs: [UUID],
+        subcategoryRatingSignatures: [SubcategoryRatingSignature],
         exerciseSignatures: [ExerciseSignature]
     ) {
         self.type = type
@@ -618,6 +684,7 @@ private struct EditWorkoutSnapshot: Equatable {
         self.notes = notes
         self.categoryIDs = categoryIDs
         self.subcategoryIDs = subcategoryIDs
+        self.subcategoryRatingSignatures = subcategoryRatingSignatures
         self.exerciseSignatures = exerciseSignatures
     }
 }

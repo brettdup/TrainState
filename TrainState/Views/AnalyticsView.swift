@@ -1085,5 +1085,5 @@ private struct WeeklyRecapShareImage: Transferable {
     NavigationStack {
         AnalyticsView()
     }
-    .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self], inMemory: true)
+    .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutSubcategoryRating.self, WorkoutExercise.self], inMemory: true)
 }

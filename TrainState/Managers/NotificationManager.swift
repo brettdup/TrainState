@@ -1,6 +1,14 @@
 import Foundation
 import UserNotifications
 
+struct HealthKitWorkoutImportNotificationDetail {
+    let workoutName: String
+    let startDate: Date
+    let duration: TimeInterval
+    let distanceKilometers: Double?
+    let calories: Double?
+}
+
 class NotificationManager {
     static let shared = NotificationManager()
     
@@ -54,7 +62,11 @@ class NotificationManager {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["workoutReminder"])
     }
 
-    func sendHealthKitWorkoutImportNotification(mergedCount: Int, importedCount: Int) {
+    func sendHealthKitWorkoutImportNotification(
+        mergedCount: Int,
+        importedCount: Int,
+        workoutDetails: [HealthKitWorkoutImportNotificationDetail] = []
+    ) {
         let totalCount = mergedCount + importedCount
         guard totalCount > 0 else { return }
 
@@ -68,7 +80,8 @@ class NotificationManager {
             )
             content.body = self.healthKitImportNotificationBody(
                 mergedCount: mergedCount,
-                importedCount: importedCount
+                importedCount: importedCount,
+                workoutDetails: workoutDetails
             )
             content.sound = .default
 
@@ -96,7 +109,25 @@ class NotificationManager {
         return importedCount == 1 ? "Workout imported" : "Workouts imported"
     }
 
-    private func healthKitImportNotificationBody(mergedCount: Int, importedCount: Int) -> String {
+    private func healthKitImportNotificationBody(
+        mergedCount: Int,
+        importedCount: Int,
+        workoutDetails: [HealthKitWorkoutImportNotificationDetail]
+    ) -> String {
+        let totalCount = mergedCount + importedCount
+        if totalCount == 1, let detail = workoutDetails.first {
+            let summary = healthKitWorkoutSummary(for: detail)
+            if mergedCount == 1 {
+                return "Updated your manual \(detail.workoutName.lowercased()) with \(summary) from Apple Health."
+            }
+            return "\(detail.workoutName) imported from Apple Health: \(summary)."
+        }
+
+        if let detail = workoutDetails.first {
+            let actionSummary = healthKitMultiWorkoutActionSummary(mergedCount: mergedCount, importedCount: importedCount)
+            return "\(actionSummary) Latest: \(detail.workoutName), \(healthKitWorkoutSummary(for: detail))."
+        }
+
         if mergedCount > 0 && importedCount > 0 {
             return "\(mergedCount) merged with manual workouts and \(importedCount) imported from Apple Health."
         }
@@ -108,6 +139,50 @@ class NotificationManager {
         return importedCount == 1
             ? "A workout was imported from Apple Health."
             : "\(importedCount) workouts were imported from Apple Health."
+    }
+
+    private func healthKitMultiWorkoutActionSummary(mergedCount: Int, importedCount: Int) -> String {
+        if mergedCount > 0 && importedCount > 0 {
+            return "\(mergedCount) merged and \(importedCount) imported from Apple Health."
+        }
+        if mergedCount > 0 {
+            return mergedCount == 1
+                ? "1 workout merged from Apple Health."
+                : "\(mergedCount) workouts merged from Apple Health."
+        }
+        return importedCount == 1
+            ? "1 workout imported from Apple Health."
+            : "\(importedCount) workouts imported from Apple Health."
+    }
+
+    private func healthKitWorkoutSummary(for detail: HealthKitWorkoutImportNotificationDetail) -> String {
+        var parts: [String] = []
+        parts.append(formatDuration(detail.duration))
+
+        if let distanceKilometers = detail.distanceKilometers, distanceKilometers > 0 {
+            parts.append(String(format: "%.2f km", distanceKilometers))
+        }
+
+        if let calories = detail.calories, calories > 0 {
+            parts.append("\(Int(calories.rounded())) kcal")
+        }
+
+        parts.append(detail.startDate.formatted(date: .abbreviated, time: .shortened))
+        return parts.joined(separator: " · ")
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let totalMinutes = max(1, Int((duration / 60).rounded()))
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+
+        if hours > 0 && minutes > 0 {
+            return "\(hours) hr \(minutes) min"
+        }
+        if hours > 0 {
+            return "\(hours) hr"
+        }
+        return "\(minutes) min"
     }
     
     func checkNotificationStatus(completion: @escaping (Bool) -> Void) {

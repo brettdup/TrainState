@@ -485,7 +485,7 @@ struct WorkoutRowView: View {
 private struct WorkoutRowPreview: View {
     var body: some View {
         let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-        let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, configurations: config)
+        let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutSubcategoryRating.self, configurations: config)
         let context = container.mainContext
 
         let longNameWorkout = Workout(

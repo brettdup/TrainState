@@ -104,7 +104,10 @@ struct CategoriesManagementView: View {
                 guard !search.isEmpty else { return true }
                 return template.name.localizedCaseInsensitiveContains(search) ||
                     (template.subcategory?.name.localizedCaseInsensitiveContains(search) ?? false) ||
-                    (template.subcategory?.category?.name.localizedCaseInsensitiveContains(search) ?? false)
+                    (template.subcategory?.category?.name.localizedCaseInsensitiveContains(search) ?? false) ||
+                    affectedSubcategoryNames(for: template).contains {
+                        $0.localizedCaseInsensitiveContains(search)
+                    }
             }
             .sorted {
                 let lhsName = $0.name.localizedCaseInsensitiveCompare($1.name)
@@ -437,7 +440,9 @@ struct CategoriesManagementView: View {
     }
 
     private func exerciseTemplateRow(_ template: SubcategoryExercise, showLocation: Bool = true) -> some View {
-        Button {
+        let affectedNames = affectedSubcategoryNames(for: template)
+
+        return Button {
             selectedExerciseTemplate = template
         } label: {
             HStack(spacing: 12) {
@@ -452,6 +457,11 @@ struct CategoriesManagementView: View {
                         .foregroundStyle(.primary)
                     if showLocation {
                         Text(exerciseTemplateSubtitle(for: template))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !affectedNames.isEmpty {
+                        Text("Affects: \(affectedNames.joined(separator: ", "))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -573,6 +583,23 @@ struct CategoriesManagementView: View {
             return "\(category) - \(subcategory)"
         }
         return subcategory
+    }
+
+    private func affectedSubcategoryNames(for template: SubcategoryExercise) -> [String] {
+        guard let primarySubcategory = template.subcategory,
+              let primaryWorkoutType = primarySubcategory.category?.resolvedWorkoutType else {
+            return []
+        }
+
+        return template.secondarySubcategoryIDs.compactMap { id -> String? in
+            guard let subcategory = subcategories.first(where: { $0.id == id }),
+                  subcategory.id != primarySubcategory.id,
+                  subcategory.category?.resolvedWorkoutType == primaryWorkoutType else {
+                return nil
+            }
+            return subcategory.name
+        }
+        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     private func categoryDisclosure(for category: WorkoutCategory) -> some View {
@@ -700,6 +727,8 @@ struct CategoriesManagementView: View {
                         .listRowBackground(Color.clear)
                     } else {
                         ForEach(templates) { template in
+                            let affectedNames = affectedSubcategoryNames(for: template)
+
                             Button {
                                 selectedExerciseTemplate = template
                             } label: {
@@ -715,6 +744,11 @@ struct CategoriesManagementView: View {
                                         Text("\(loggedExerciseMatches(for: template).count) logged uses")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
+                                        if !affectedNames.isEmpty {
+                                            Text("Affects: \(affectedNames.joined(separator: ", "))")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
                                     }
 
                                     Spacer()
@@ -1071,6 +1105,7 @@ private struct ExerciseTemplateEditorSheet: View {
     let availableSubcategories: [WorkoutSubcategory]
     @State private var draftName: String
     @State private var selectedSubcategoryID: UUID?
+    @State private var selectedSecondarySubcategoryIDs: Set<UUID>
     @State private var renameMatchingHistory = false
     @State private var showingRemoveConfirmation = false
 
@@ -1079,6 +1114,7 @@ private struct ExerciseTemplateEditorSheet: View {
         self.availableSubcategories = availableSubcategories
         _draftName = State(initialValue: template.name)
         _selectedSubcategoryID = State(initialValue: template.subcategory?.id)
+        _selectedSecondarySubcategoryIDs = State(initialValue: Set(template.secondarySubcategoryIDs))
     }
 
     private var trimmedName: String {
@@ -1107,6 +1143,18 @@ private struct ExerciseTemplateEditorSheet: View {
         return latest.formatted(date: .abbreviated, time: .omitted)
     }
 
+    private var selectedPrimarySubcategory: WorkoutSubcategory? {
+        guard let selectedSubcategoryID else { return nil }
+        return availableSubcategories.first { $0.id == selectedSubcategoryID }
+    }
+
+    private var secondaryLinkSubcategories: [WorkoutSubcategory] {
+        guard let primarySubcategory = selectedPrimarySubcategory else { return [] }
+        return availableSubcategories.filter {
+            isCompatibleSecondarySubcategory($0, with: primarySubcategory)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -1120,6 +1168,24 @@ private struct ExerciseTemplateEditorSheet: View {
                             Text(subcategory.name).tag(Optional(subcategory.id))
                         }
                     }
+                }
+
+                Section {
+                    if secondaryLinkSubcategories.isEmpty {
+                        Text("No matching subcategories available")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(secondaryLinkSubcategories) { subcategory in
+                            Toggle(
+                                subcategory.name,
+                                isOn: secondarySubcategoryBinding(for: subcategory.id)
+                            )
+                        }
+                    }
+                } header: {
+                    Text("Also Counts Toward")
+                } footer: {
+                    Text("Only subcategories from the same workout type can be linked.")
                 }
 
                 Section {
@@ -1177,7 +1243,40 @@ private struct ExerciseTemplateEditorSheet: View {
                     Text("\(template.name) appears in \(matchingExercises.count) logged workout exercise\(matchingExercises.count == 1 ? "" : "s"). Removing it from the library will keep workout history unchanged.")
                 }
             }
+            .onChange(of: selectedSubcategoryID) { _, _ in
+                removeInvalidSecondarySubcategorySelections()
+            }
         }
+    }
+
+    private func isCompatibleSecondarySubcategory(
+        _ candidate: WorkoutSubcategory,
+        with primarySubcategory: WorkoutSubcategory
+    ) -> Bool {
+        guard candidate.id != primarySubcategory.id else { return false }
+        guard let primaryWorkoutType = primarySubcategory.category?.resolvedWorkoutType,
+              let candidateWorkoutType = candidate.category?.resolvedWorkoutType else {
+            return false
+        }
+        return candidateWorkoutType == primaryWorkoutType
+    }
+
+    private func removeInvalidSecondarySubcategorySelections() {
+        let validIDs = Set(secondaryLinkSubcategories.map(\.id))
+        selectedSecondarySubcategoryIDs = selectedSecondarySubcategoryIDs.intersection(validIDs)
+    }
+
+    private func secondarySubcategoryBinding(for id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { selectedSecondarySubcategoryIDs.contains(id) },
+            set: { isSelected in
+                if isSelected {
+                    selectedSecondarySubcategoryIDs.insert(id)
+                } else {
+                    selectedSecondarySubcategoryIDs.remove(id)
+                }
+            }
+        )
     }
 
     private func save() {
@@ -1195,6 +1294,14 @@ private struct ExerciseTemplateEditorSheet: View {
 
         template.name = trimmedName
         template.subcategory = subcategory
+        let validSecondarySubcategoryIDs = Set(
+            availableSubcategories
+                .filter { isCompatibleSecondarySubcategory($0, with: subcategory) }
+                .map(\.id)
+        )
+        template.secondarySubcategoryIDs = Array(
+            selectedSecondarySubcategoryIDs.intersection(validSecondarySubcategoryIDs)
+        )
         try? modelContext.save()
         dismiss()
     }

@@ -25,12 +25,14 @@ struct AddWorkoutView: View {
     @State private var durationMinutes = 30.0
     @State private var distanceKilometers = 0.0
     @State private var workoutRating: Double?
+    @State private var subcategoryRatings: [UUID: Int] = [:]
     @State private var notes = ""
     @State private var exerciseEntries: [ExerciseLogEntry] = []
     @State private var showingWorkoutSession = false
     @State private var sessionStartsWithTimer = true
     @State private var expandedExerciseIDs: Set<UUID> = []
     @State private var activeExerciseSelection: ExerciseEditorSelection?
+    @State private var activeRatingTarget: RatingPickerTarget?
     @State private var showingPaywall = false
     @State private var isSaving = false
     @State private var hasAppliedSuggestedType = false
@@ -75,6 +77,21 @@ struct AddWorkoutView: View {
             get: { workoutRating ?? 5.0 },
             set: { workoutRating = min(max($0, 0), 10) }
         )
+    }
+    private var resolvedExerciseEntries: [ExerciseLogEntry] {
+        WorkoutClassificationBuilder.entriesWithInferredSubcategories(
+            exerciseEntries,
+            exerciseTemplates: exerciseTemplates,
+            quickAddOptions: quickAddOptions
+        )
+    }
+    private var workoutSubcategoriesForRating: [WorkoutSubcategory] {
+        guard isStrengthSessionType else { return [] }
+        return WorkoutClassificationBuilder.build(
+            from: resolvedExerciseEntries,
+            subcategories: allSubcategories,
+            exerciseTemplates: exerciseTemplates
+        ).subcategories
     }
     private var canAddWorkout: Bool {
         guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
@@ -196,6 +213,9 @@ struct AddWorkoutView: View {
                 if showsDistance { distanceCard }
                 if canPlanRoute { routePlannerCard }
                 exercisesCard
+                if isStrengthSessionType {
+                    subcategoryRatingsCard
+                }
                 advancedSectionCard
                 if showingAdvancedFields {
                     ratingCard
@@ -255,6 +275,29 @@ struct AddWorkoutView: View {
                 )
             } else {
                 EmptyView()
+            }
+        }
+        .sheet(item: $activeRatingTarget) { target in
+            if target.context == "exercise" {
+                RatingPickerSheet(
+                    title: target.title,
+                    subtitle: target.subtitle,
+                    clearTitle: target.clearTitle,
+                    tintColor: type.tintColor,
+                    rating: exerciseEffortScoreBinding(for: target.sourceID)
+                )
+                .presentationDetents([.fraction(0.58), .medium])
+                .presentationDragIndicator(.visible)
+            } else if target.context == "subcategory" {
+                RatingPickerSheet(
+                    title: target.title,
+                    subtitle: target.subtitle,
+                    clearTitle: target.clearTitle,
+                    tintColor: type.tintColor,
+                    rating: subcategoryRatingBinding(for: target.sourceID)
+                )
+                .presentationDetents([.fraction(0.58), .medium])
+                .presentationDragIndicator(.visible)
             }
         }
         .alert("Workout Type Already Logged", isPresented: $showingDuplicateTypeAlert) {
@@ -672,6 +715,24 @@ struct AddWorkoutView: View {
         }
     }
 
+    private var subcategoryRatingsCard: some View {
+        SubcategoryRatingSection(
+            title: "Subcategory Ratings",
+            subcategories: workoutSubcategoriesForRating,
+            ratingsBySubcategoryID: $subcategoryRatings,
+            tintColor: type.tintColor,
+            onEditRating: { subcategory in
+                activeRatingTarget = RatingPickerTarget(
+                    context: "subcategory",
+                    sourceID: subcategory.id,
+                    title: subcategory.name,
+                    subtitle: "Rate how hard this subcategory was hit from 1 to 10.",
+                    clearTitle: "Clear"
+                )
+            }
+        )
+    }
+
     private var exercisesCard: some View {
         Section("Exercises") {
             HStack {
@@ -692,61 +753,80 @@ struct AddWorkoutView: View {
                 VStack(spacing: 0) {
                     ForEach(exerciseEntries) { entry in
                         let subcategoryName = allSubcategories.first(where: { $0.id == entry.subcategoryID })?.name
-                        Button {
-                            activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
-                        } label: {
-                            HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: ExerciseIconMapper.icon(for: entry.trimmedName))
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(ExerciseIconMapper.iconColor(for: entry.trimmedName))
-                                    .frame(width: 24)
+                        HStack(alignment: .top, spacing: 12) {
+                            Button {
+                                activeExerciseSelection = ExerciseEditorSelection(id: entry.id)
+                            } label: {
+                                HStack(alignment: .top, spacing: 12) {
+                                    Image(systemName: ExerciseIconMapper.icon(for: entry.trimmedName))
+                                        .font(.system(size: 18))
+                                        .foregroundStyle(ExerciseIconMapper.iconColor(for: entry.trimmedName))
+                                        .frame(width: 24)
 
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(entry.trimmedName.isEmpty ? "Unnamed exercise" : entry.trimmedName)
+                                            .font(.body.weight(.semibold))
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(1)
 
-                                    if let subcategoryName, !subcategoryName.isEmpty {
-                                        Text(subcategoryName)
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    if let effortScore = entry.effortScore {
-                                        Label("\(effortScore)/10 tough", systemImage: "gauge.medium")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    if !entry.setSummaryLines.isEmpty {
-                                        Text(entry.setSummaryLines.joined(separator: "\n"))
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .multilineTextAlignment(.leading)
-                                    }
-                                }
-
-                                Spacer()
-
-                                HStack(spacing: 10) {
-                                    if let completionLabel = nextSetCompletionLabel(for: entry) {
-                                        Button(completionLabel) {
-                                            markNextSetDone(for: entry.id)
+                                        if let subcategoryName, !subcategoryName.isEmpty {
+                                            Text(subcategoryName)
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(.secondary)
                                         }
-                                        .font(.caption.weight(.semibold))
-                                        .buttonStyle(.bordered)
+
+                                        if let effortScore = entry.effortScore {
+                                            Label("\(effortScore)/10 tough", systemImage: "gauge.medium")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+
+                                        if !entry.setSummaryLines.isEmpty {
+                                            Text(entry.setSummaryLines.joined(separator: "\n"))
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .multilineTextAlignment(.leading)
+                                        }
                                     }
+
+                                    Spacer()
 
                                     Image(systemName: "chevron.right")
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(.tertiary)
                                 }
+                                .contentShape(Rectangle())
                             }
-                            .contentShape(Rectangle())
-                            .padding(.vertical, 10)
+                            .buttonStyle(.plain)
+
+                            VStack(alignment: .trailing, spacing: 8) {
+                                if let completionLabel = nextSetCompletionLabel(for: entry) {
+                                    Button(completionLabel) {
+                                        markNextSetDone(for: entry.id)
+                                    }
+                                    .font(.caption.weight(.semibold))
+                                    .buttonStyle(.bordered)
+                                }
+
+                                Button {
+                                    activeRatingTarget = RatingPickerTarget(
+                                        context: "exercise",
+                                        sourceID: entry.id,
+                                        title: entry.trimmedName.isEmpty ? "Toughness" : entry.trimmedName,
+                                        subtitle: "Rate how tough this exercise felt from 1 to 10.",
+                                        clearTitle: "Clear"
+                                    )
+                                } label: {
+                                    Label(
+                                        entry.effortScore.map { "\($0)/10" } ?? "Rate",
+                                        systemImage: "gauge.medium"
+                                    )
+                                }
+                                .font(.caption.weight(.semibold))
+                                .buttonStyle(.bordered)
+                            }
                         }
-                        .buttonStyle(.plain)
+                        .padding(.vertical, 10)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
                                 exerciseEntries.removeAll { $0.id == entry.id }
@@ -794,6 +874,27 @@ struct AddWorkoutView: View {
             TextField("Add notes (optional)", text: $notes, axis: .vertical)
                 .lineLimit(3...6)
         }
+    }
+
+    private func exerciseEffortScoreBinding(for entryID: UUID) -> Binding<Int?> {
+        Binding(
+            get: {
+                exerciseEntries.first { $0.id == entryID }?.effortScore
+            },
+            set: { newValue in
+                guard let index = exerciseEntries.firstIndex(where: { $0.id == entryID }) else { return }
+                exerciseEntries[index].effortScore = newValue.map { min(max($0, 1), 10) }
+            }
+        )
+    }
+
+    private func subcategoryRatingBinding(for subcategoryID: UUID) -> Binding<Int?> {
+        Binding(
+            get: { subcategoryRatings[subcategoryID] },
+            set: { newValue in
+                subcategoryRatings[subcategoryID] = newValue.map { min(max($0, 1), 10) }
+            }
+        )
     }
 
     private var advancedSectionCard: some View {
@@ -1015,7 +1116,8 @@ struct AddWorkoutView: View {
         )
         let classification = WorkoutClassificationBuilder.build(
             from: resolvedEntries,
-            subcategories: allSubcategories
+            subcategories: allSubcategories,
+            exerciseTemplates: exerciseTemplates
         )
         let workout = Workout(
             type: .strength,
@@ -1031,6 +1133,11 @@ struct AddWorkoutView: View {
             },
             hkActivityTypeRaw: Int(appleWorkoutActivityType.rawValue),
             hkLocationTypeRaw: appleWorkoutLocationType?.rawValue
+        )
+        workout.subcategoryRatings = WorkoutSubcategoryRatingStore.makeRatings(
+            from: subcategoryRatings,
+            subcategories: classification.subcategories,
+            workout: workout
         )
         attemptSaveWorkout(workout, persistTemplatesFrom: resolvedEntries)
     }
@@ -1355,5 +1462,5 @@ struct AddWorkoutView: View {
 // MARK: - Type Option Button
 #Preview {
     AddWorkoutView()
-        .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, SubcategoryExercise.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self], inMemory: true)
+        .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutSubcategoryRating.self, WorkoutExercise.self, SubcategoryExercise.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self], inMemory: true)
 }

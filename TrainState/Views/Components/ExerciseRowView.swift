@@ -4,6 +4,7 @@ import SwiftUI
 struct ExerciseRowView: View {
     let option: ExerciseQuickAddOption
     let subcategoryName: String?
+    var affectedSubcategoryNames: [String] = []
     let isSelected: Bool
     var lastUsed: Date?
     var tintColor: Color = .accentColor
@@ -28,7 +29,7 @@ struct ExerciseRowView: View {
 
                 HStack(spacing: 6) {
                     if let subcategoryName {
-                        Text(subcategoryName)
+                        Text("Main: \(subcategoryName)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -43,6 +44,13 @@ struct ExerciseRowView: View {
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
+                }
+
+                if !affectedSubcategoryNames.isEmpty {
+                    Text("Affects: \(affectedSubcategoryNames.joined(separator: ", "))")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
 
@@ -91,6 +99,7 @@ struct ExerciseRowView: View {
         ExerciseRowView(
             option: ExerciseQuickAddOption(name: "Back Squat", subcategoryID: UUID()),
             subcategoryName: "Legs",
+            affectedSubcategoryNames: ["Hamstrings", "Calves"],
             isSelected: false,
             tintColor: .orange
         )

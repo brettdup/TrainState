@@ -113,16 +113,23 @@ struct SetMetricStepperSheet: View {
 struct SetMetricCapsuleButton: View {
     let label: String
     let value: String
+    var minWidth: CGFloat? = nil
+    var valueMinWidth: CGFloat? = nil
 
     var body: some View {
         HStack(spacing: 4) {
             Text(label)
+                .foregroundStyle(.secondary)
             Text(value)
                 .monospacedDigit()
                 .fontWeight(.semibold)
+                .frame(minWidth: valueMinWidth, alignment: .trailing)
         }
+        .font(.caption.weight(.medium))
+        .lineLimit(1)
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 5)
+        .frame(minWidth: minWidth)
         .background(
             Capsule(style: .continuous)
                 .fill(Color.primary.opacity(0.08))

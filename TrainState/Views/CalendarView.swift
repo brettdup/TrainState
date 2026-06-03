@@ -274,7 +274,7 @@ private extension Calendar {
 
 #Preview {
     let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-    let container = try! ModelContainer(for: Workout.self, configurations: config)
+    let container = try! ModelContainer(for: Workout.self, WorkoutSubcategoryRating.self, configurations: config)
     let context = container.mainContext
     let calendar = Calendar.current
     func addWorkout(type: WorkoutType, daysAgo: Int, minutes: Double, distance: Double? = nil) {

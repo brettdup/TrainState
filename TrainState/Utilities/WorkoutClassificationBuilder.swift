@@ -10,9 +10,16 @@ enum WorkoutClassificationBuilder {
 
     static func build(
         from entries: [ExerciseLogEntry],
-        subcategories allSubcategories: [WorkoutSubcategory]
+        subcategories allSubcategories: [WorkoutSubcategory],
+        exerciseTemplates: [SubcategoryExercise] = []
     ) -> Classification {
-        let subcategoryIDs = Set(entries.compactMap(\.subcategoryID))
+        let subcategoryIDs = Set(entries.flatMap { entry in
+            classificationSubcategoryIDs(
+                for: entry,
+                allSubcategories: allSubcategories,
+                exerciseTemplates: exerciseTemplates
+            )
+        })
         guard !subcategoryIDs.isEmpty else {
             return Classification(categories: [], subcategories: [])
         }
@@ -42,6 +49,49 @@ enum WorkoutClassificationBuilder {
             categories: matchedCategories.sorted(by: sortCategories),
             subcategories: matchedSubcategories.sorted(by: sortSubcategories)
         )
+    }
+
+    private static func classificationSubcategoryIDs(
+        for entry: ExerciseLogEntry,
+        allSubcategories: [WorkoutSubcategory],
+        exerciseTemplates: [SubcategoryExercise]
+    ) -> [UUID] {
+        guard let primaryID = entry.subcategoryID else { return [] }
+        let trimmedName = entry.trimmedName
+        guard !trimmedName.isEmpty else { return [primaryID] }
+
+        guard let template = exerciseTemplates.first(where: {
+            $0.subcategory?.id == primaryID &&
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(trimmedName) == .orderedSame
+        }) else {
+            return [primaryID]
+        }
+
+        let secondaryIDs = compatibleSecondarySubcategoryIDs(
+            template.secondarySubcategoryIDs,
+            primaryID: primaryID,
+            allSubcategories: allSubcategories
+        )
+        return [primaryID] + secondaryIDs
+    }
+
+    private static func compatibleSecondarySubcategoryIDs(
+        _ secondaryIDs: [UUID],
+        primaryID: UUID,
+        allSubcategories: [WorkoutSubcategory]
+    ) -> [UUID] {
+        guard let primarySubcategory = allSubcategories.first(where: { $0.id == primaryID }),
+              let primaryWorkoutType = primarySubcategory.category?.resolvedWorkoutType else {
+            return []
+        }
+
+        return secondaryIDs.filter { id in
+            guard id != primaryID,
+                  let secondarySubcategory = allSubcategories.first(where: { $0.id == id }) else {
+                return false
+            }
+            return secondarySubcategory.category?.resolvedWorkoutType == primaryWorkoutType
+        }
     }
 
     /// Fills missing subcategory IDs from the exercise library before classification.

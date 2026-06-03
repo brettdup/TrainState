@@ -23,6 +23,7 @@ struct WorkoutDetailView: View {
     @State private var showingExercisePicker = false
     @State private var showingExerciseEditor = false
     @State private var showingCategoryAssignment = false
+    @State private var showingExerciseReorder = false
     @State private var editingExerciseID: UUID?
     @State private var exerciseDraftEntry = ExerciseLogEntry()
     @State private var originalExerciseDraftEntry = ExerciseLogEntry()
@@ -32,6 +33,7 @@ struct WorkoutDetailView: View {
     @State private var selectedCategoriesForAssignment: [WorkoutCategory] = []
     @State private var selectedSubcategoriesForAssignment: [WorkoutSubcategory] = []
     @State private var showingCategoriesManagement = false
+    @State private var activeRatingTarget: RatingPickerTarget?
 
     var body: some View {
         List {
@@ -73,6 +75,27 @@ struct WorkoutDetailView: View {
                 emptyStateText: ""
             )
 
+            if !(workout.subcategories ?? []).isEmpty {
+                SubcategoryRatingSection(
+                    title: "Subcategory Ratings",
+                    subcategories: (workout.subcategories ?? []).sorted {
+                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    },
+                    ratingsBySubcategoryID: subcategoryRatingsBinding,
+                    tintColor: workout.primaryWorkoutTintColor,
+                    showsBodyPartIcons: (workout.appleWorkoutActivityType?.mappedWorkoutType ?? workout.type) == .strength,
+                    onEditRating: { subcategory in
+                        activeRatingTarget = RatingPickerTarget(
+                            context: "subcategory",
+                            sourceID: subcategory.id,
+                            title: subcategory.name,
+                            subtitle: "Rate how hard this subcategory was hit from 1 to 10.",
+                            clearTitle: "Clear"
+                        )
+                    }
+                )
+            }
+
             Section {
                 addExercisesButton
 
@@ -82,12 +105,19 @@ struct WorkoutDetailView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                }
+            } header: {
+                Text("Exercises")
+            }
 
-                    ForEach(exercises.sorted(by: { $0.orderIndex < $1.orderIndex }), id: \.id) { exercise in
+            if let exercises = workout.exercises, !exercises.isEmpty {
+                ForEach(exercises.sorted(by: { $0.orderIndex < $1.orderIndex }), id: \.id) { exercise in
+                    Section {
                         ExerciseSessionCard(
                             entry: exerciseDraftBinding(for: exercise),
                             isExpanded: exerciseExpansionBinding(for: exercise.id),
                             subcategoryName: exercise.subcategory?.name,
+                            affectedSubcategoryNames: affectedSubcategoryNames(for: exercise),
                             tintColor: workout.primaryWorkoutTintColor,
                             measurementSystem: MeasurementSystem(rawValue: measurementSystemRaw) ?? .metric,
                             restTimerEnabled: restTimerEnabled,
@@ -97,32 +127,25 @@ struct WorkoutDetailView: View {
                             },
                             onStartRest: {
                                 restSecondsRemaining = max(restTimerDurationSeconds, 15)
-                            }
-                        )
-                        .contextMenu {
-                            Button {
-                                openExerciseEditor(for: exercise)
-                            } label: {
-                                Label("Edit Exercise", systemImage: "slider.horizontal.3")
-                            }
-
-                            Button {
+                            },
+                            onEditEffortScore: {
+                                activeRatingTarget = RatingPickerTarget(
+                                    context: "exercise",
+                                    sourceID: exercise.id,
+                                    title: exercise.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Toughness" : exercise.name,
+                                    subtitle: "Rate how tough this exercise felt from 1 to 10.",
+                                    clearTitle: "Clear"
+                                )
+                            },
+                            onViewExercisePage: {
                                 exerciseInsightTarget = ExerciseInsightTarget(
                                     id: exercise.id,
                                     exerciseName: exercise.name,
                                     subcategoryID: exercise.subcategory?.id
                                 )
-                            } label: {
-                                Label("View Exercise Page", systemImage: "chart.line.uptrend.xyaxis")
                             }
-                        }
+                        )
                     }
-                }
-            } header: {
-                Text("Exercises")
-            } footer: {
-                if workout.exercises?.isEmpty == false {
-                    Text("Expand an exercise to log or edit sets.")
                 }
             }
 
@@ -161,10 +184,20 @@ struct WorkoutDetailView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .listSectionSpacing(.custom(10))
         .navigationTitle("Workout")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if (workout.exercises ?? []).count > 1 {
+                    Button {
+                        showingExerciseReorder = true
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
+                    }
+                    .accessibilityLabel("Reorder Exercises")
+                }
+
                 NavigationLink {
                     EditWorkoutView(workout: workout)
                 } label: {
@@ -261,6 +294,35 @@ struct WorkoutDetailView: View {
                     workoutType: workout.type,
                     appleWorkoutActivityType: workout.appleWorkoutActivityType
                 )
+            }
+        }
+        .sheet(isPresented: $showingExerciseReorder) {
+            ExerciseReorderSheet(
+                exercises: workout.exercises ?? [],
+                onMove: moveExercises
+            )
+        }
+        .sheet(item: $activeRatingTarget) { target in
+            if target.context == "exercise" {
+                RatingPickerSheet(
+                    title: target.title,
+                    subtitle: target.subtitle,
+                    clearTitle: target.clearTitle,
+                    tintColor: workout.primaryWorkoutTintColor,
+                    rating: exerciseEffortScoreBinding(for: target.sourceID)
+                )
+                .presentationDetents([.fraction(0.58), .medium])
+                .presentationDragIndicator(.visible)
+            } else if target.context == "subcategory" {
+                RatingPickerSheet(
+                    title: target.title,
+                    subtitle: target.subtitle,
+                    clearTitle: target.clearTitle,
+                    tintColor: workout.primaryWorkoutTintColor,
+                    rating: subcategoryRatingBinding(for: target.sourceID)
+                )
+                .presentationDetents([.fraction(0.58), .medium])
+                .presentationDragIndicator(.visible)
             }
         }
         .onChange(of: exerciseDraftEntry) { _, _ in
@@ -379,9 +441,63 @@ struct WorkoutDetailView: View {
     }
 
     private func applyCategoryAssignment() {
+        let currentRatings = WorkoutSubcategoryRatingStore.ratingsBySubcategoryID(for: workout)
         workout.categories = selectedCategoriesForAssignment
         workout.subcategories = selectedSubcategoriesForAssignment
+        WorkoutSubcategoryRatingStore.replaceRatings(
+            on: workout,
+            with: currentRatings,
+            subcategories: selectedSubcategoriesForAssignment,
+            modelContext: modelContext
+        )
         try? modelContext.save()
+    }
+
+    private func moveExercises(from source: IndexSet, to destination: Int) {
+        var orderedExercises = (workout.exercises ?? []).sorted { $0.orderIndex < $1.orderIndex }
+        orderedExercises.move(fromOffsets: source, toOffset: destination)
+
+        for (index, exercise) in orderedExercises.enumerated() {
+            exercise.orderIndex = index
+        }
+
+        try? modelContext.save()
+    }
+
+    private var subcategoryRatingsBinding: Binding<[UUID: Int]> {
+        Binding(
+            get: {
+                WorkoutSubcategoryRatingStore.ratingsBySubcategoryID(for: workout)
+            },
+            set: { newRatings in
+                WorkoutSubcategoryRatingStore.replaceRatings(
+                    on: workout,
+                    with: newRatings,
+                    subcategories: workout.subcategories ?? [],
+                    modelContext: modelContext
+                )
+                try? modelContext.save()
+            }
+        )
+    }
+
+    private func subcategoryRatingBinding(for subcategoryID: UUID) -> Binding<Int?> {
+        Binding(
+            get: {
+                WorkoutSubcategoryRatingStore.ratingsBySubcategoryID(for: workout)[subcategoryID]
+            },
+            set: { newValue in
+                var ratings = WorkoutSubcategoryRatingStore.ratingsBySubcategoryID(for: workout)
+                ratings[subcategoryID] = newValue.map { min(max($0, 1), 10) }
+                WorkoutSubcategoryRatingStore.replaceRatings(
+                    on: workout,
+                    with: ratings,
+                    subcategories: workout.subcategories ?? [],
+                    modelContext: modelContext
+                )
+                try? modelContext.save()
+            }
+        )
     }
 
     private var categoryDetails: [WorkoutStructureSummaryItem] {
@@ -497,7 +613,7 @@ struct WorkoutDetailView: View {
     private func addExerciseToWorkout(from option: ExerciseQuickAddOption) {
         let nextOrderIndex = ((workout.exercises ?? []).map(\.orderIndex).max() ?? -1) + 1
         let linkedSubcategory = allSubcategories.first { $0.id == option.subcategoryID }
-        syncWorkoutClassification(for: linkedSubcategory)
+        syncWorkoutClassification(for: classificationSubcategories(for: option))
         let previousMatch = (workout.exercises ?? [])
             .sorted { $0.orderIndex < $1.orderIndex }
             .last { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(option.name) == .orderedSame }
@@ -544,22 +660,81 @@ struct WorkoutDetailView: View {
         try? modelContext.save()
     }
 
-    private func syncWorkoutClassification(for subcategory: WorkoutSubcategory?) {
-        guard let subcategory else { return }
-
-        if workout.subcategories == nil {
-            workout.subcategories = []
-        }
-        if !(workout.subcategories?.contains(where: { $0.id == subcategory.id }) ?? false) {
-            workout.subcategories?.append(subcategory)
+    private func classificationSubcategories(for option: ExerciseQuickAddOption) -> [WorkoutSubcategory] {
+        guard let primarySubcategory = allSubcategories.first(where: { $0.id == option.subcategoryID }) else {
+            return []
         }
 
-        if let category = subcategory.category {
-            if workout.categories == nil {
-                workout.categories = []
+        guard let primaryWorkoutType = primarySubcategory.category?.resolvedWorkoutType else {
+            return [primarySubcategory]
+        }
+
+        let template = exerciseTemplates.first {
+            $0.subcategory?.id == option.subcategoryID &&
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(option.name) == .orderedSame
+        }
+        let secondarySubcategories = (template?.secondarySubcategoryIDs ?? []).compactMap { id -> WorkoutSubcategory? in
+            guard let secondarySubcategory = allSubcategories.first(where: { $0.id == id }),
+                  secondarySubcategory.id != primarySubcategory.id,
+                  secondarySubcategory.category?.resolvedWorkoutType == primaryWorkoutType else {
+                return nil
             }
-            if !(workout.categories?.contains(where: { $0.id == category.id }) ?? false) {
-                workout.categories?.append(category)
+            return secondarySubcategory
+        }
+
+        return [primarySubcategory] + secondarySubcategories
+    }
+
+    private func affectedSubcategoryNames(for exercise: WorkoutExercise) -> [String] {
+        let entry = exerciseDraftsByID[exercise.id] ?? exerciseLogEntry(from: exercise)
+        return affectedSubcategoryNames(for: entry)
+    }
+
+    private func affectedSubcategoryNames(for entry: ExerciseLogEntry) -> [String] {
+        guard let primarySubcategoryID = entry.subcategoryID,
+              let primarySubcategory = allSubcategories.first(where: { $0.id == primarySubcategoryID }),
+              let primaryWorkoutType = primarySubcategory.category?.resolvedWorkoutType else {
+            return []
+        }
+
+        let trimmedName = entry.trimmedName
+        guard !trimmedName.isEmpty,
+              let template = exerciseTemplates.first(where: {
+                  $0.subcategory?.id == primarySubcategoryID &&
+                  $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(trimmedName) == .orderedSame
+              }) else {
+            return []
+        }
+
+        return template.secondarySubcategoryIDs.compactMap { id -> String? in
+            guard let subcategory = allSubcategories.first(where: { $0.id == id }),
+                  subcategory.id != primarySubcategory.id,
+                  subcategory.category?.resolvedWorkoutType == primaryWorkoutType else {
+                return nil
+            }
+            return subcategory.name
+        }
+        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func syncWorkoutClassification(for subcategories: [WorkoutSubcategory]) {
+        guard !subcategories.isEmpty else { return }
+
+        for subcategory in subcategories {
+            if workout.subcategories == nil {
+                workout.subcategories = []
+            }
+            if !(workout.subcategories?.contains(where: { $0.id == subcategory.id }) ?? false) {
+                workout.subcategories?.append(subcategory)
+            }
+
+            if let category = subcategory.category {
+                if workout.categories == nil {
+                    workout.categories = []
+                }
+                if !(workout.categories?.contains(where: { $0.id == category.id }) ?? false) {
+                    workout.categories?.append(category)
+                }
             }
         }
     }
@@ -681,6 +856,24 @@ struct WorkoutDetailView: View {
         )
     }
 
+    private func exerciseEffortScoreBinding(for exerciseID: UUID) -> Binding<Int?> {
+        Binding(
+            get: {
+                if let draft = exerciseDraftsByID[exerciseID] {
+                    return draft.effortScore
+                }
+                return workout.exercises?.first { $0.id == exerciseID }?.effortScore
+            },
+            set: { newValue in
+                guard let exercise = workout.exercises?.first(where: { $0.id == exerciseID }) else { return }
+                var draft = exerciseDraftsByID[exercise.id] ?? exerciseLogEntry(from: exercise)
+                draft.effortScore = newValue.map { min(max($0, 1), 10) }
+                exerciseDraftsByID[exercise.id] = draft
+                scheduleExerciseDraftPersistence(for: exercise.id)
+            }
+        )
+    }
+
     private func syncExerciseDraftsFromWorkout() {
         let exercises = (workout.exercises ?? []).sorted { $0.orderIndex < $1.orderIndex }
         var updated = exerciseDraftsByID
@@ -719,10 +912,59 @@ private struct ExerciseInsightTarget: Identifiable, Hashable {
     let subcategoryID: UUID?
 }
 
+private struct ExerciseReorderSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var orderedExercises: [WorkoutExercise]
+    let onMove: (IndexSet, Int) -> Void
+
+    init(exercises: [WorkoutExercise], onMove: @escaping (IndexSet, Int) -> Void) {
+        self._orderedExercises = State(initialValue: exercises.sorted { $0.orderIndex < $1.orderIndex })
+        self.onMove = onMove
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(orderedExercises, id: \.id) { exercise in
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(exercise.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Unnamed Exercise" : exercise.name)
+                                .font(.body)
+
+                            if let subcategoryName = exercise.subcategory?.name, !subcategoryName.isEmpty {
+                                Text(subcategoryName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } icon: {
+                        Image(systemName: ExerciseIconMapper.icon(for: exercise.name))
+                            .foregroundStyle(ExerciseIconMapper.iconColor(for: exercise.name))
+                    }
+                }
+                .onMove { source, destination in
+                    orderedExercises.move(fromOffsets: source, toOffset: destination)
+                    onMove(source, destination)
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Reorder Exercises")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 @MainActor
 private func makeWorkoutDetailPreviewData() -> (container: ModelContainer, workout: Workout) {
     let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-    let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self, configurations: config)
+    let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutSubcategoryRating.self, WorkoutExercise.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self, configurations: config)
     let context = container.mainContext
 
     let upperBody = WorkoutCategory(
@@ -766,15 +1008,10 @@ private func makeWorkoutDetailPreviewData() -> (container: ModelContainer, worko
     let exercises = [
         WorkoutExercise(
             name: "Barbell Bench Press",
-            sets: 4,
-            reps: 6,
-            weight: 95,
-            notes: """
-            Set 1: Done - 6 reps @ 95 kg
-            Set 2: Done - 6 reps @ 95 kg
-            Set 3: Done - 5 reps @ 97.5 kg
-            Set 4: 4 reps @ 97.5 kg
-            """,
+            sets: 0,
+            reps: 0,
+            weight: 0,
+            notes: nil,
             orderIndex: 0,
             workout: workout,
             subcategory: chest

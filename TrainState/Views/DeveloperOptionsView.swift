@@ -311,5 +311,5 @@ struct DeveloperOptionsView: View {
     NavigationStack {
         DeveloperOptionsView()
     }
-    .modelContainer(for: [Workout.self], inMemory: true)
+    .modelContainer(for: [Workout.self, WorkoutSubcategoryRating.self], inMemory: true)
 }

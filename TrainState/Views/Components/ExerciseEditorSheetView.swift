@@ -20,6 +20,7 @@ struct ExerciseEditorSheetView: View {
     @State private var isCreatingCustomExercise = false
     @State private var activePickerEditor: PickerEditor?
     @State private var showingCategoryBrowser = false
+    @State private var showingEffortScorePicker = false
 
     private var measurementSystem: MeasurementSystem {
         MeasurementSystem(rawValue: measurementSystemRaw) ?? .metric
@@ -145,21 +146,17 @@ struct ExerciseEditorSheetView: View {
                 }
 
                 Section {
-                    if let score = entry.effortScore {
-                        Stepper(value: effortScoreBinding, in: 1...10) {
-                            LabeledContent("Toughness", value: "\(score) / 10")
-                        }
-
-                        Button("Clear Toughness", role: .destructive) {
-                            entry.effortScore = nil
-                        }
-                    } else {
-                        Button {
-                            entry.effortScore = 5
-                        } label: {
-                            Label("Add Toughness Score", systemImage: "gauge.medium")
-                        }
+                    Button {
+                        showingEffortScorePicker = true
+                    } label: {
+                        RatingPickerRow(
+                            title: "Toughness",
+                            rating: entry.effortScore,
+                            placeholder: "Add",
+                            tintColor: .accentColor
+                        )
                     }
+                    .buttonStyle(.plain)
                 } footer: {
                     Text("Rate how tough this exercise felt from 1 to 10.")
                 }
@@ -332,6 +329,17 @@ struct ExerciseEditorSheetView: View {
                 }
             )
         }
+        .sheet(isPresented: $showingEffortScorePicker) {
+            RatingPickerSheet(
+                title: "Toughness",
+                subtitle: "Rate how tough this exercise felt from 1 to 10.",
+                clearTitle: "Clear",
+                tintColor: .accentColor,
+                rating: effortScoreBinding
+            )
+            .presentationDetents([.fraction(0.58), .medium])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     private var subcategoryMenuRow: some View {
@@ -442,7 +450,12 @@ struct ExerciseEditorSheetView: View {
                 HapticManager.lightImpact()
                 activePickerEditor = .reps(setEntry.id)
             } label: {
-                SetMetricCapsuleButton(label: "Reps", value: "\(setEntry.reps)")
+                SetMetricCapsuleButton(
+                    label: "Reps",
+                    value: "\(setEntry.reps)",
+                    minWidth: 62,
+                    valueMinWidth: 14
+                )
             }
             .buttonStyle(.plain)
 
@@ -456,7 +469,9 @@ struct ExerciseEditorSheetView: View {
                 )
                 SetMetricCapsuleButton(
                     label: MeasurementFormatting.weightUnitLabel(for: measurementSystem),
-                    value: MeasurementFormatting.displayWeight(display, system: measurementSystem)
+                    value: MeasurementFormatting.displayWeight(display, system: measurementSystem),
+                    minWidth: 78,
+                    valueMinWidth: 36
                 )
             }
             .buttonStyle(.plain)
@@ -478,19 +493,6 @@ struct ExerciseEditorSheetView: View {
                 Label("Delete", systemImage: "trash")
             }
             .tint(.red)
-        }
-        .contextMenu {
-            Button {
-                duplicateSet(setID: setEntry.id)
-            } label: {
-                Label("Duplicate", systemImage: "plus.square.on.square")
-            }
-
-            Button(role: .destructive) {
-                deleteSet(setEntry.id)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
         }
     }
 
@@ -547,10 +549,10 @@ struct ExerciseEditorSheetView: View {
         return Array(Set(names)).sorted()
     }
 
-    private var effortScoreBinding: Binding<Int> {
+    private var effortScoreBinding: Binding<Int?> {
         Binding(
-            get: { entry.effortScore ?? 5 },
-            set: { entry.effortScore = min(max($0, 1), 10) }
+            get: { entry.effortScore },
+            set: { entry.effortScore = $0.map { min(max($0, 1), 10) } }
         )
     }
 

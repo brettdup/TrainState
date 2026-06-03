@@ -80,6 +80,8 @@ final class Workout {
     
     @Relationship(deleteRule: .cascade)
     var exercises: [WorkoutExercise]?
+    @Relationship(deleteRule: .cascade, inverse: \WorkoutSubcategoryRating.workout)
+    var subcategoryRatings: [WorkoutSubcategoryRating]? = []
     
     init(
         type: WorkoutType = .other,
@@ -243,6 +245,7 @@ struct WorkoutExport: Codable {
     let hkUUID: String?
     let categoryIds: [UUID]?
     let subcategoryIds: [UUID]?
+    let subcategoryRatings: [WorkoutSubcategoryRatingExport]
     let exercises: [WorkoutExerciseExport]
     
     init(workout: Workout) {
@@ -271,6 +274,9 @@ struct WorkoutExport: Codable {
             self.subcategoryIds = nil
         }
 
+        self.subcategoryRatings = (workout.subcategoryRatings ?? [])
+            .compactMap { WorkoutSubcategoryRatingExport(rating: $0) }
+
         self.exercises = (workout.exercises ?? [])
             .sorted { $0.orderIndex < $1.orderIndex }
             .map(WorkoutExerciseExport.init)
@@ -290,6 +296,7 @@ struct WorkoutExport: Codable {
         case hkUUID
         case categoryIds
         case subcategoryIds
+        case subcategoryRatings
         case exercises
     }
 
@@ -308,7 +315,21 @@ struct WorkoutExport: Codable {
         hkUUID = try container.decodeIfPresent(String.self, forKey: .hkUUID)
         categoryIds = try container.decodeIfPresent([UUID].self, forKey: .categoryIds)
         subcategoryIds = try container.decodeIfPresent([UUID].self, forKey: .subcategoryIds)
+        subcategoryRatings = try container.decodeIfPresent([WorkoutSubcategoryRatingExport].self, forKey: .subcategoryRatings) ?? []
         exercises = try container.decodeIfPresent([WorkoutExerciseExport].self, forKey: .exercises) ?? []
+    }
+}
+
+struct WorkoutSubcategoryRatingExport: Codable {
+    let id: UUID
+    let rating: Int
+    let subcategoryId: UUID
+
+    init?(rating: WorkoutSubcategoryRating) {
+        guard let subcategoryId = rating.subcategory?.id else { return nil }
+        self.id = rating.id
+        self.rating = min(max(rating.rating, 1), 10)
+        self.subcategoryId = subcategoryId
     }
 }
 
@@ -391,12 +412,40 @@ struct SubcategoryExerciseExport: Codable {
     let name: String
     let orderIndex: Int
     let subcategoryId: UUID?
+    let secondarySubcategoryIds: [UUID]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case orderIndex
+        case subcategoryId
+        case secondarySubcategoryIds
+    }
 
     init(template: SubcategoryExercise) {
         self.id = template.id
         self.name = template.name
         self.orderIndex = template.orderIndex
         self.subcategoryId = template.subcategory?.id
+        self.secondarySubcategoryIds = template.secondarySubcategoryIDs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        orderIndex = try container.decode(Int.self, forKey: .orderIndex)
+        subcategoryId = try container.decodeIfPresent(UUID.self, forKey: .subcategoryId)
+        secondarySubcategoryIds = try container.decodeIfPresent([UUID].self, forKey: .secondarySubcategoryIds) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(orderIndex, forKey: .orderIndex)
+        try container.encodeIfPresent(subcategoryId, forKey: .subcategoryId)
+        try container.encode(secondarySubcategoryIds, forKey: .secondarySubcategoryIds)
     }
 }
 

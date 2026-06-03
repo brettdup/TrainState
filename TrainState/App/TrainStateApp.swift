@@ -22,6 +22,7 @@ struct TrainStateApp: App {
                 UserSettings.self,
                 WorkoutRoute.self,
                 WorkoutExercise.self,
+                WorkoutSubcategoryRating.self,
                 SubcategoryExercise.self,
                 StrengthWorkoutTemplate.self,
                 StrengthWorkoutTemplateExercise.self
@@ -48,6 +49,7 @@ struct TrainStateApp: App {
                     UserSettings.self,
                     WorkoutRoute.self,
                     WorkoutExercise.self,
+                    WorkoutSubcategoryRating.self,
                     SubcategoryExercise.self,
                     StrengthWorkoutTemplate.self,
                     StrengthWorkoutTemplateExercise.self
@@ -78,4 +80,3 @@ struct TrainStateApp: App {
         }
     }
 } 
-

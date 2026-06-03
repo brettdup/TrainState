@@ -4,18 +4,64 @@ struct ExerciseSessionCard: View {
     @Binding var entry: ExerciseLogEntry
     @Binding var isExpanded: Bool
     let subcategoryName: String?
+    let affectedSubcategoryNames: [String]
     let tintColor: Color
     let measurementSystem: MeasurementSystem
     let restTimerEnabled: Bool
     let restDurationSeconds: Int
     let onEditMetadata: () -> Void
     let onStartRest: () -> Void
+    let onEditEffortScore: (() -> Void)?
+    let onViewExercisePage: (() -> Void)?
+
+    init(
+        entry: Binding<ExerciseLogEntry>,
+        isExpanded: Binding<Bool>,
+        subcategoryName: String?,
+        affectedSubcategoryNames: [String] = [],
+        tintColor: Color,
+        measurementSystem: MeasurementSystem,
+        restTimerEnabled: Bool,
+        restDurationSeconds: Int,
+        onEditMetadata: @escaping () -> Void,
+        onStartRest: @escaping () -> Void,
+        onEditEffortScore: (() -> Void)? = nil,
+        onViewExercisePage: (() -> Void)? = nil
+    ) {
+        self._entry = entry
+        self._isExpanded = isExpanded
+        self.subcategoryName = subcategoryName
+        self.affectedSubcategoryNames = affectedSubcategoryNames
+        self.tintColor = tintColor
+        self.measurementSystem = measurementSystem
+        self.restTimerEnabled = restTimerEnabled
+        self.restDurationSeconds = restDurationSeconds
+        self.onEditMetadata = onEditMetadata
+        self.onStartRest = onStartRest
+        self.onEditEffortScore = onEditEffortScore
+        self.onViewExercisePage = onViewExercisePage
+    }
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
             exerciseContent
         } label: {
             exerciseLabel
+                .contextMenu {
+                    Button {
+                        onEditMetadata()
+                    } label: {
+                        Label("Edit Exercise", systemImage: "slider.horizontal.3")
+                    }
+
+                    if let onViewExercisePage {
+                        Button {
+                            onViewExercisePage()
+                        } label: {
+                            Label("View Exercise Page", systemImage: "chart.line.uptrend.xyaxis")
+                        }
+                    }
+                }
         }
         .tint(tintColor)
     }
@@ -31,6 +77,12 @@ struct ExerciseSessionCard: View {
 
                 if let subcategoryName, !subcategoryName.isEmpty {
                     Text(subcategoryName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !affectedSubcategoryNames.isEmpty {
+                    Text("Affects: \(affectedSubcategoryNames.joined(separator: ", "))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -53,12 +105,15 @@ struct ExerciseSessionCard: View {
     @ViewBuilder
     private var exerciseContent: some View {
         if entry.setEntries.isEmpty {
-            Picker("Quick start", selection: quickStartSelection) {
-                Text("3 sets").tag(3)
-                Text("4 sets").tag(4)
-                Text("5 sets").tag(5)
+            Label {
+                Text("No sets logged yet")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } icon: {
+                Image(systemName: "list.number")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24)
             }
-            .pickerStyle(.segmented)
         } else {
             ForEach($entry.setEntries) { $setEntry in
                 let index = entry.setEntries.firstIndex(where: { $0.id == setEntry.id }) ?? 0
@@ -69,7 +124,7 @@ struct ExerciseSessionCard: View {
                     showsCompletion: true,
                     onDuplicate: { duplicateSet(id: setEntry.id) },
                     onDelete: { deleteSet(id: setEntry.id) },
-                    onStartRest: restTimerEnabled ? onStartRest : nil
+                    onStartRest: nil
                 )
             }
 
@@ -82,44 +137,45 @@ struct ExerciseSessionCard: View {
         Button {
             ExerciseSessionActions.logNextSet(entry: &entry, measurementSystem: measurementSystem)
         } label: {
-            Label("Log Set", systemImage: "plus.circle.fill")
+            exerciseActionLabel(entry.setEntries.isEmpty ? "Log First Set" : "Log Set", systemImage: "plus.circle")
         }
+        .buttonStyle(.plain)
 
         if !entry.setEntries.isEmpty {
             Button {
                 ExerciseSessionActions.addSet(entry: &entry, measurementSystem: measurementSystem)
             } label: {
-                Label("Add Set", systemImage: "plus")
+                exerciseActionLabel("Add Set", systemImage: "plus")
             }
+            .buttonStyle(.plain)
         }
 
-        if let markLabel = ExerciseSessionActions.nextSetCompletionLabel(for: entry) {
+        if let onEditEffortScore {
             Button {
-                ExerciseSessionActions.markNextSetDone(entry: &entry)
+                onEditEffortScore()
             } label: {
-                Label(markLabel, systemImage: "checkmark.circle")
+                RatingPickerRow(
+                    title: "Toughness",
+                    rating: entry.effortScore,
+                    placeholder: "Add",
+                    tintColor: tintColor
+                )
             }
+            .buttonStyle(.plain)
         }
 
         Button(action: onEditMetadata) {
-            Label("Edit Exercise", systemImage: "pencil")
+            exerciseActionLabel("Edit Exercise", systemImage: "pencil")
         }
+        .buttonStyle(.plain)
     }
 
-    private var quickStartSelection: Binding<Int> {
-        Binding(
-            get: { entry.setEntries.isEmpty ? 3 : entry.setEntries.count },
-            set: { count in
-                guard (3...5).contains(count) else { return }
-                entry.setEntries = (0..<count).map { _ in
-                    ExerciseSetEntry(
-                        reps: entry.effectiveReps ?? 8,
-                        weight: entry.effectiveWeight ?? defaultWeight
-                    )
-                }
-                ExerciseSessionActions.syncLegacyMetrics(&entry)
-            }
-        )
+    private func exerciseActionLabel(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.subheadline)
+            .foregroundStyle(.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
     }
 
     private var summaryText: String {
@@ -132,10 +188,6 @@ struct ExerciseSessionCard: View {
             return "\(entry.completedSetCount)/\(entry.setEntries.count) sets · \(last.reps) × \(weightLabel) \(unit)"
         }
         return "\(entry.completedSetCount)/\(entry.setEntries.count) sets"
-    }
-
-    private var defaultWeight: Double {
-        measurementSystem == .imperial ? 45 / 2.20462 : 20
     }
 
     private func duplicateSet(id: UUID) {

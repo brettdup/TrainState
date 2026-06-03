@@ -6,6 +6,7 @@ import SwiftData
 struct UnifiedExercisePickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
+    @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
 
     let subcategories: [WorkoutSubcategory]
     let exerciseOptions: [ExerciseQuickAddOption]
@@ -68,7 +69,10 @@ struct UnifiedExercisePickerView: View {
                 let matchesName = option.name.localizedCaseInsensitiveContains(trimmedSearch)
                 let matchesSubcategory = subcategoryNameByID[option.subcategoryID]?
                     .localizedCaseInsensitiveContains(trimmedSearch) ?? false
-                guard matchesName || matchesSubcategory else { continue }
+                let matchesAffectedSubcategory = affectedSubcategoryNames(for: option).contains {
+                    $0.localizedCaseInsensitiveContains(trimmedSearch)
+                }
+                guard matchesName || matchesSubcategory || matchesAffectedSubcategory else { continue }
             }
 
             result.append(option)
@@ -301,6 +305,7 @@ struct UnifiedExercisePickerView: View {
     ) -> some View {
         let isSelected = selectedIDs.contains(option.id)
         let subcategoryName = showSubcategory ? subcategoryNameByID[option.subcategoryID] : nil
+        let affectedSubcategoryNames = showSubcategory ? affectedSubcategoryNames(for: option) : []
         let lastUsed = showLastUsed ? lastUsedDates[option.id] : nil
 
         Button {
@@ -309,6 +314,7 @@ struct UnifiedExercisePickerView: View {
             ExerciseRowView(
                 option: option,
                 subcategoryName: subcategoryName,
+                affectedSubcategoryNames: affectedSubcategoryNames,
                 isSelected: isSelected,
                 lastUsed: lastUsed,
                 tintColor: tintColor
@@ -378,6 +384,20 @@ struct UnifiedExercisePickerView: View {
             return "All Subcategories"
         }
         return name
+    }
+
+    private func affectedSubcategoryNames(for option: ExerciseQuickAddOption) -> [String] {
+        guard let template = exerciseTemplates.first(where: {
+            $0.subcategory?.id == option.subcategoryID &&
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(option.name) == .orderedSame
+        }) else {
+            return []
+        }
+
+        return template.secondarySubcategoryIDs
+            .compactMap { subcategoryNameByID[$0] }
+            .filter { $0.localizedCaseInsensitiveCompare(subcategoryNameByID[option.subcategoryID] ?? "") != .orderedSame }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 }
 

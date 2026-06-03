@@ -399,5 +399,5 @@ private struct LoggedExerciseEntry: Identifiable {
     NavigationStack {
         ExerciseInsightsView(exerciseName: "Bench Press", subcategoryID: nil)
     }
-    .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutExercise.self], inMemory: true)
+    .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutSubcategoryRating.self, WorkoutExercise.self], inMemory: true)
 }

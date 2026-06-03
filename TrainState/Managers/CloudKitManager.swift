@@ -398,9 +398,11 @@ private extension CloudKitManager {
         let templates = try context.fetch(FetchDescriptor<SubcategoryExercise>())
         let strengthTemplates = try context.fetch(FetchDescriptor<StrengthWorkoutTemplate>())
         let workoutExercises = try context.fetch(FetchDescriptor<WorkoutExercise>())
+        let subcategoryRatings = try context.fetch(FetchDescriptor<WorkoutSubcategoryRating>())
         let routes = try context.fetch(FetchDescriptor<WorkoutRoute>())
 
         routes.forEach { context.delete($0) }
+        subcategoryRatings.forEach { context.delete($0) }
         workoutExercises.forEach { context.delete($0) }
         workouts.forEach { context.delete($0) }
         strengthTemplates.forEach { context.delete($0) }
@@ -435,7 +437,12 @@ private extension CloudKitManager {
 
         for export in payload.exerciseTemplates {
             guard let subcategoryId = export.subcategoryId, let subcategory = subcategoryMap[subcategoryId] else { continue }
-            let template = SubcategoryExercise(name: export.name, subcategory: subcategory, orderIndex: export.orderIndex)
+            let template = SubcategoryExercise(
+                name: export.name,
+                subcategory: subcategory,
+                orderIndex: export.orderIndex,
+                secondarySubcategoryIDs: export.secondarySubcategoryIds
+            )
             template.id = export.id
             context.insert(template)
         }
@@ -510,6 +517,16 @@ private extension CloudKitManager {
                     return exercise
                 }
             workout.exercises = mappedExercises
+            workout.subcategoryRatings = export.subcategoryRatings.compactMap { ratingExport in
+                guard let subcategory = subcategoryMap[ratingExport.subcategoryId] else { return nil }
+                let rating = WorkoutSubcategoryRating(
+                    rating: ratingExport.rating,
+                    workout: workout,
+                    subcategory: subcategory
+                )
+                rating.id = ratingExport.id
+                return rating
+            }
 
             context.insert(workout)
             workoutMap[export.id] = workout
