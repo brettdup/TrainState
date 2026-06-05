@@ -636,7 +636,6 @@ struct WorkoutDetailView: View {
         workout.exercises?.append(exercise)
         modelContext.insert(exercise)
         exerciseDraftsByID[exercise.id] = exerciseLogEntry(from: exercise)
-        expandedExerciseIDs.insert(exercise.id)
         try? modelContext.save()
     }
 

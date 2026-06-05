@@ -513,7 +513,11 @@ struct SettingsView: View {
             try await CloudKitManager.shared.backupToCloud(context: modelContext)
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastSuccessfulBackupTimeInterval")
             statusMessage = "Backup complete."
-            await loadBackups()
+            do {
+                backups = try await CloudKitManager.shared.fetchAvailableBackups()
+            } catch {
+                statusMessage = "Backup complete. Refresh backups later to verify it appears here."
+            }
         } catch {
             handleError(error)
         }

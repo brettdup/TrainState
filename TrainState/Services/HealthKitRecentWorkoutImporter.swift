@@ -98,6 +98,8 @@ enum HealthKitImportError: LocalizedError {
 
 @MainActor
 final class HealthKitRecentWorkoutImporter {
+    private static var isImportingNewRecentWorkouts = false
+
     private let healthStore = HKHealthStore()
     private let workoutType = HKObjectType.workoutType()
     private let workoutRouteType = HKSeriesType.workoutRoute()
@@ -152,22 +154,25 @@ final class HealthKitRecentWorkoutImporter {
         guard !items.isEmpty else { return }
 
         let descriptor = FetchDescriptor<Workout>()
-        let existingWorkouts = try context.fetch(descriptor)
+        var existingWorkouts = try context.fetch(descriptor)
 
-        for item in items {
+        for item in uniqueWorkoutItems(items) {
             if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
                 if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
                     try await mergeImportedWorkout(importedWorkout, into: manualWorkout, using: item, in: context)
                 }
+                existingWorkouts = try context.fetch(descriptor)
                 continue
             }
 
             if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
                 try await attachWorkout(item, to: manualWorkout, in: context)
+                existingWorkouts = try context.fetch(descriptor)
                 continue
             }
 
             _ = try await createImportedWorkout(from: item, in: context)
+            existingWorkouts = try context.fetch(descriptor)
         }
 
         try context.save()
@@ -192,6 +197,7 @@ final class HealthKitRecentWorkoutImporter {
             hkLocationTypeRaw: item.locationTypeRaw
         )
         workout.hkUUID = item.hkUUID
+        context.insert(workout)
 
         if let sourceWorkout = try await findWorkout(uuidString: item.hkUUID),
            let importedRoute = try await fetchRouteLocations(for: sourceWorkout),
@@ -203,14 +209,17 @@ final class HealthKitRecentWorkoutImporter {
             context.insert(route)
         }
 
-        context.insert(workout)
         return workout
     }
 
     func importNewRecentWorkouts(into context: ModelContext, limit: Int = 10) async throws -> Int {
-        let recentWorkouts = try await fetchRecentWorkouts(limit: limit)
+        guard !Self.isImportingNewRecentWorkouts else { return 0 }
+        Self.isImportingNewRecentWorkouts = true
+        defer { Self.isImportingNewRecentWorkouts = false }
+
+        let recentWorkouts = uniqueWorkoutItems(try await fetchRecentWorkouts(limit: limit))
         let descriptor = FetchDescriptor<Workout>()
-        let existingWorkouts = try context.fetch(descriptor)
+        var existingWorkouts = try context.fetch(descriptor)
         var mergedCount = 0
         var importedCount = 0
         var notificationDetails: [HealthKitWorkoutImportNotificationDetail] = []
@@ -223,14 +232,17 @@ final class HealthKitRecentWorkoutImporter {
                 try await mergeImportedWorkout(importedWorkout, into: manualWorkout, using: item, in: context)
                 mergedCount += 1
                 notificationDetails.append(item.notificationDetail)
+                existingWorkouts = try context.fetch(descriptor)
             } else if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
                 try await attachWorkout(item, to: manualWorkout, in: context)
                 mergedCount += 1
                 notificationDetails.append(item.notificationDetail)
+                existingWorkouts = try context.fetch(descriptor)
             } else {
                 try await importWorkout(item, into: context)
                 importedCount += 1
                 notificationDetails.append(item.notificationDetail)
+                existingWorkouts = try context.fetch(descriptor)
             }
         }
 
@@ -241,6 +253,13 @@ final class HealthKitRecentWorkoutImporter {
         )
 
         return mergedCount + importedCount
+    }
+
+    private func uniqueWorkoutItems(_ items: [HealthKitRecentWorkoutMenuItem]) -> [HealthKitRecentWorkoutMenuItem] {
+        var seenUUIDs = Set<String>()
+        return items.filter { item in
+            seenUUIDs.insert(item.hkUUID).inserted
+        }
     }
 
     private func mergeImportedWorkout(

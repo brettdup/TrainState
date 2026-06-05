@@ -65,11 +65,12 @@ class CloudKitManager {
         updateDebug("Uploading to iCloud...")
         try await saveBackupRecord(payload: payload)
 
-        // Enforce max backup limit: delete oldest when exceeding limit
-        let allBackups = try await fetchAvailableBackups()
-        if allBackups.count > Self.maxBackupCount {
-            let toDelete = Array(allBackups.dropFirst(Self.maxBackupCount))
-            _ = try await deleteBackups(toDelete)
+        // Backup creation should not be reported as failed if cleanup/listing is
+        // blocked by a production CloudKit query index that has not caught up.
+        do {
+            try await enforceBackupLimit()
+        } catch {
+            updateDebug("Backup saved. Cleanup skipped: \(error.localizedDescription)")
         }
 
         updateDebug("Backup complete.")
@@ -81,46 +82,22 @@ class CloudKitManager {
             throw NSError(domain: "CloudKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "iCloud account is not available."])
         }
 
-        let query = CKQuery(recordType: "Backup", predicate: NSPredicate(value: true))
-        query.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
-
-        let result = try await privateDatabase.records(matching: query)
-        let records = result.matchResults.compactMap { try? $0.1.get() }
-
-        var backups = records.compactMap { record -> BackupInfo? in
-            guard
-                let name = record["name"] as? String,
-                let date = record["timestamp"] as? Date,
-                let workoutCount = record["workoutCount"] as? Int,
-                let categoryCount = record["categoryCount"] as? Int,
-                let subcategoryCount = record["subcategoryCount"] as? Int
-            else { return nil }
-
-            let deviceName = (record["deviceName"] as? String) ?? "Device"
-            let assignedSubcategoryCount = (record["assignedSubcategoryCount"] as? Int) ?? 0
-
-            return BackupInfo(
-                id: record.recordID.recordName,
-                name: name,
-                date: date,
-                workoutCount: workoutCount,
-                categoryCount: categoryCount,
-                subcategoryCount: subcategoryCount,
-                recordName: record.recordID.recordName,
-                deviceName: deviceName,
-                timestamp: date,
-                assignedSubcategoryCount: assignedSubcategoryCount
-            )
+        var records: [CKRecord]
+        do {
+            records = try await fetchBackupRecords(sortedByTimestamp: true)
+        } catch {
+            guard shouldRetryWithoutServerSort(error: error) else { throw userFacingCloudKitError(error) }
+            do {
+                records = try await fetchBackupRecords(sortedByTimestamp: false)
+            } catch {
+                throw userFacingCloudKitError(error)
+            }
         }
 
-        // Enforce max backup limit: delete oldest when exceeding limit
-        if backups.count > Self.maxBackupCount {
-            let toDelete = Array(backups.dropFirst(Self.maxBackupCount))
-            _ = try await deleteBackups(toDelete)
-            backups = Array(backups.prefix(Self.maxBackupCount))
-        }
+        var backups = records.compactMap(makeBackupInfo)
 
-        return backups
+        backups.sort { $0.date > $1.date }
+        return Array(backups.prefix(Self.maxBackupCount))
     }
 
     func fetchBackupPreview(backupInfo: BackupInfo) async throws -> BackupPreview {
@@ -167,6 +144,58 @@ class CloudKitManager {
         let recordIDs = backups.map { CKRecord.ID(recordName: $0.recordName) }
         _ = try await privateDatabase.modifyRecords(saving: [], deleting: recordIDs)
         return backups
+    }
+
+    private func enforceBackupLimit() async throws {
+        var backups = try await fetchAvailableBackupsWithoutDeleting()
+        backups.sort { $0.date > $1.date }
+
+        if backups.count > Self.maxBackupCount {
+            let toDelete = Array(backups.dropFirst(Self.maxBackupCount))
+            _ = try await deleteBackups(toDelete)
+        }
+    }
+
+    private func fetchAvailableBackupsWithoutDeleting() async throws -> [BackupInfo] {
+        let records: [CKRecord]
+        do {
+            records = try await fetchBackupRecords(sortedByTimestamp: true)
+        } catch {
+            guard shouldRetryWithoutServerSort(error: error) else { throw userFacingCloudKitError(error) }
+            do {
+                records = try await fetchBackupRecords(sortedByTimestamp: false)
+            } catch {
+                throw userFacingCloudKitError(error)
+            }
+        }
+
+        return records.compactMap(makeBackupInfo)
+    }
+
+    private func makeBackupInfo(from record: CKRecord) -> BackupInfo? {
+        guard
+            let name = record["name"] as? String,
+            let date = record["timestamp"] as? Date,
+            let workoutCount = record["workoutCount"] as? Int,
+            let categoryCount = record["categoryCount"] as? Int,
+            let subcategoryCount = record["subcategoryCount"] as? Int
+        else { return nil }
+
+        let deviceName = (record["deviceName"] as? String) ?? "Device"
+        let assignedSubcategoryCount = (record["assignedSubcategoryCount"] as? Int) ?? 0
+
+        return BackupInfo(
+            id: record.recordID.recordName,
+            name: name,
+            date: date,
+            workoutCount: workoutCount,
+            categoryCount: categoryCount,
+            subcategoryCount: subcategoryCount,
+            recordName: record.recordID.recordName,
+            deviceName: deviceName,
+            timestamp: date,
+            assignedSubcategoryCount: assignedSubcategoryCount
+        )
     }
 }
 
@@ -275,7 +304,7 @@ private extension CloudKitManager {
             } catch {
                 lastError = error
                 guard shouldRetryWithLegacySchema(error: error, format: format) else {
-                    throw error
+                    throw userFacingCloudKitError(error)
                 }
             }
         }
@@ -321,14 +350,61 @@ private extension CloudKitManager {
         let message = (error as NSError).localizedDescription.lowercased()
         switch format {
         case .archive:
-            return message.contains("cannot create or modify field 'archive'")
+            return message.contains("cannot create or modify field 'archive'") ||
+                   message.contains("unknown field 'archive'") ||
+                   message.contains("field 'archive'")
         case .legacyWithTemplates:
             return message.contains("cannot create or modify field 'exercisetemplates'") ||
                    message.contains("cannot create or modify field 'strengthtemplates'") ||
-                   message.contains("cannot create or modify field 'routes'")
+                   message.contains("cannot create or modify field 'routes'") ||
+                   message.contains("unknown field 'exercisetemplates'") ||
+                   message.contains("unknown field 'strengthtemplates'") ||
+                   message.contains("unknown field 'routes'") ||
+                   message.contains("field 'exercisetemplates'") ||
+                   message.contains("field 'strengthtemplates'") ||
+                   message.contains("field 'routes'")
         case .legacy:
             return false
         }
+    }
+
+    func fetchBackupRecords(sortedByTimestamp: Bool) async throws -> [CKRecord] {
+        let query = CKQuery(recordType: "Backup", predicate: NSPredicate(value: true))
+        if sortedByTimestamp {
+            query.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
+        }
+
+        let result = try await privateDatabase.records(matching: query)
+        return result.matchResults.compactMap { try? $0.1.get() }
+    }
+
+    func shouldRetryWithoutServerSort(error: Error) -> Bool {
+        let message = (error as NSError).localizedDescription.lowercased()
+        return message.contains("sort") ||
+               message.contains("sortable") ||
+               message.contains("timestamp") ||
+               message.contains("field 'timestamp'")
+    }
+
+    func userFacingCloudKitError(_ error: Error) -> Error {
+        let nsError = error as NSError
+        let message = nsError.localizedDescription.lowercased()
+        let looksLikeSchemaIssue = message.contains("record type") ||
+            message.contains("unknown field") ||
+            message.contains("cannot create or modify field") ||
+            message.contains("field '") ||
+            message.contains("not marked queryable") ||
+            message.contains("not marked sortable")
+
+        guard looksLikeSchemaIssue else { return error }
+
+        return NSError(
+            domain: "CloudKit",
+            code: nsError.code,
+            userInfo: [
+                NSLocalizedDescriptionKey: "iCloud backup is not fully configured for the production app. Deploy the CloudKit Production schema for the Backup record type and its fields, then try again. Original error: \(nsError.localizedDescription)"
+            ]
+        )
     }
 
     func payload(from record: CKRecord) throws -> BackupPayload {
