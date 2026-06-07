@@ -288,7 +288,7 @@ private extension CloudKitManager {
             let record = CKRecord(recordType: "Backup")
             record["name"] = "Backup \(Date().formatted(date: .abbreviated, time: .shortened))" as CKRecordValue
             record["timestamp"] = Date() as CKRecordValue
-            record["deviceName"] = UIDevice.current.name as CKRecordValue
+            record["deviceName"] = await UIDevice.current.name as CKRecordValue
             record["workoutCount"] = payload.workouts.count as CKRecordValue
             record["categoryCount"] = payload.categories.count as CKRecordValue
             record["subcategoryCount"] = payload.subcategories.count as CKRecordValue

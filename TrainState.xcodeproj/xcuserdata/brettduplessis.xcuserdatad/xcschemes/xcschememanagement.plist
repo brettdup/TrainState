@@ -12,16 +12,21 @@
 		<key>TrainStateWatch Watch App.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>1</integer>
+			<integer>4</integer>
 		</dict>
 		<key>TrainStateWidgetExtensionExtension.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>1</integer>
+			<integer>3</integer>
 		</dict>
 	</dict>
 	<key>SuppressBuildableAutocreation</key>
 	<dict>
+		<key>9E07EA1F2F44700100B490F3</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
 		<key>9E77B6F62DD1C6A0009B5253</key>
 		<dict>
 			<key>primary</key>
@@ -33,6 +38,11 @@
 			<true/>
 		</dict>
 		<key>9E77B7112DD1C6A1009B5253</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>9EDBB3592F3CF41900B136B2</key>
 		<dict>
 			<key>primary</key>
 			<true/>

@@ -588,6 +588,8 @@ struct SettingsView: View {
                 cloudStatusText = "iCloud: Restricted"
             case .couldNotDetermine:
                 cloudStatusText = "iCloud: Could not determine"
+            case .temporarilyUnavailable:
+                cloudStatusText = "iCloud: Temporarily unavailable"
             @unknown default:
                 cloudStatusText = "iCloud: Unknown"
             }

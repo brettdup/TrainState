@@ -11,6 +11,7 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
     let weight: Double?
     let effortScore: Int?
     let subcategoryID: UUID?
+    let source: String?
 
     var summary: String {
         let weightText = weight.map { ExerciseLogEntry.displayWeight($0) + " kg" }
@@ -26,7 +27,8 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
         reps: Int?,
         weight: Double?,
         effortScore: Int?,
-        subcategoryID: UUID?
+        subcategoryID: UUID?,
+        source: String? = nil
     ) {
         self.id = id
         self.exerciseName = exerciseName
@@ -36,6 +38,7 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
         self.weight = weight
         self.effortScore = effortScore
         self.subcategoryID = subcategoryID
+        self.source = source
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -47,6 +50,7 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
         case weight
         case effortScore
         case subcategoryID
+        case source
     }
 
     init(from decoder: Decoder) throws {
@@ -59,6 +63,7 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
         weight = try container.decodeIfPresent(Double.self, forKey: .weight)
         effortScore = try container.decodeIfPresent(Int.self, forKey: .effortScore)
         subcategoryID = try container.decodeIfPresent(UUID.self, forKey: .subcategoryID)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
     }
 
     private var setRepSummary: String? {
@@ -78,6 +83,7 @@ struct PendingQuickExerciseLog: Codable, Identifiable, Hashable {
 enum QuickExerciseLogStore {
     static let appGroupIdentifier = "group.brettduplessis.TrainState"
     static let pendingLogsKey = "pendingQuickExerciseLogs"
+    static let pendingLogsDidChangeNotification = Notification.Name("QuickExerciseLogStorePendingLogsDidChange")
 
     static func pendingLogs() -> [PendingQuickExerciseLog] {
         guard let defaults = UserDefaults(suiteName: appGroupIdentifier),
@@ -95,6 +101,7 @@ enum QuickExerciseLogStore {
         }
         defaults.set(data, forKey: pendingLogsKey)
         WidgetCenter.shared.reloadTimelines(ofKind: "QuickExerciseLogWidget")
+        NotificationCenter.default.post(name: pendingLogsDidChangeNotification, object: nil)
     }
 
     static func appendPendingLog(_ log: PendingQuickExerciseLog) {
@@ -117,22 +124,29 @@ enum QuickExerciseLogStore {
         var didAttachLog = false
 
         for log in logs {
-            guard let workout = matchingWorkout(for: log, in: workouts, calendar: calendar) else {
+            let linkedSubcategory = linkedSubcategory(for: log, from: availableSubcategories)
+            guard let workout = matchingWorkout(
+                for: log,
+                linkedSubcategory: linkedSubcategory,
+                in: workouts,
+                calendar: calendar
+            ) else {
                 remainingLogs.append(log)
                 continue
             }
 
             let nextOrderIndex = ((workout.exercises ?? []).map(\.orderIndex).max() ?? -1) + 1
+            let sourceLabel = log.source ?? "widget"
             let exercise = WorkoutExercise(
                 name: log.exerciseName,
                 sets: log.sets,
                 reps: log.reps,
                 weight: log.weight,
                 effortScore: log.effortScore,
-                notes: "Logged from widget on \(log.loggedAt.formatted(date: .abbreviated, time: .shortened))",
+                notes: "Logged from \(sourceLabel) on \(log.loggedAt.formatted(date: .abbreviated, time: .shortened))",
                 orderIndex: nextOrderIndex,
                 workout: workout,
-                subcategory: linkedSubcategory(for: log, from: availableSubcategories)
+                subcategory: linkedSubcategory
             )
 
             if workout.exercises == nil {
@@ -154,11 +168,38 @@ enum QuickExerciseLogStore {
         savePendingLogs(remainingLogs)
     }
 
-    private static func matchingWorkout(for log: PendingQuickExerciseLog, in workouts: [Workout], calendar: Calendar) -> Workout? {
+    private static func matchingWorkout(
+        for log: PendingQuickExerciseLog,
+        linkedSubcategory: WorkoutSubcategory?,
+        in workouts: [Workout],
+        calendar: Calendar
+    ) -> Workout? {
         workouts
-            .filter { calendar.isDate($0.startDate, inSameDayAs: log.loggedAt) }
+            .filter {
+                calendar.isDate($0.startDate, inSameDayAs: log.loggedAt) &&
+                canAttach(log, linkedSubcategory: linkedSubcategory, to: $0)
+            }
             .sorted { $0.startDate > $1.startDate }
             .first
+    }
+
+    private static func canAttach(
+        _ log: PendingQuickExerciseLog,
+        linkedSubcategory: WorkoutSubcategory?,
+        to workout: Workout
+    ) -> Bool {
+        guard log.subcategoryID != nil else {
+            return true
+        }
+
+        guard let category = linkedSubcategory?.category else {
+            return false
+        }
+
+        return category.matches(
+            appleWorkoutActivityType: workout.appleWorkoutActivityType,
+            fallbackWorkoutType: workout.type
+        )
     }
 
     private static func linkedSubcategory(

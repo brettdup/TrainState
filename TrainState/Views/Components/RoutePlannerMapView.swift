@@ -207,7 +207,7 @@ struct RoutePlannerMapView: UIViewRepresentable {
                     do {
                         let segment = try await self.cachedRouteSegment(from: pair.0.coordinate, to: pair.1.coordinate)
                         guard segment.count > 2 else {
-                            await self.scheduleRouteRetry(for: waypoints, signature: requestSignature, on: mapView, after: 2)
+                            self.scheduleRouteRetry(for: waypoints, signature: requestSignature, on: mapView, after: 2)
                             return
                         }
                         if routedLocations.isEmpty {
@@ -216,7 +216,7 @@ struct RoutePlannerMapView: UIViewRepresentable {
                             routedLocations.append(contentsOf: segment.dropFirst())
                         }
                     } catch {
-                        await self.scheduleRouteRetry(
+                        self.scheduleRouteRetry(
                             for: waypoints,
                             signature: requestSignature,
                             on: mapView,

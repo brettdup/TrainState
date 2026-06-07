@@ -43,7 +43,7 @@ struct HealthKitRecentWorkoutMenuItem: Identifiable, Hashable, Codable {
         self.locationTypeRaw = Self.locationTypeRawValue(for: workout)
         self.sourceName = workout.sourceRevision.source.name
         self.distanceKilometers = workout.totalDistance?.doubleValue(for: HKUnit.meterUnit(with: .kilo))
-        self.calories = workout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
+        self.calories = Self.activeEnergyKilocalories(for: workout)
         self.workoutRating = workoutRating
     }
 
@@ -77,6 +77,15 @@ struct HealthKitRecentWorkoutMenuItem: Identifiable, Hashable, Codable {
             ? HKWorkoutSessionLocationType.indoor.rawValue
             : HKWorkoutSessionLocationType.outdoor.rawValue
     }
+
+    private static func activeEnergyKilocalories(for workout: HKWorkout) -> Double? {
+        guard let activeEnergyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) else {
+            return nil
+        }
+        return workout.statistics(for: activeEnergyType)?
+            .sumQuantity()?
+            .doubleValue(for: .kilocalorie())
+    }
 }
 
 enum HealthKitImportError: LocalizedError {
@@ -99,6 +108,8 @@ enum HealthKitImportError: LocalizedError {
 @MainActor
 final class HealthKitRecentWorkoutImporter {
     private static var isImportingNewRecentWorkouts = false
+    private static var isImportingAnchoredWorkouts = false
+    private static let anchoredWorkoutSyncAnchorKey = "healthKitWorkoutAutoImportAnchor"
 
     private let healthStore = HKHealthStore()
     private let workoutType = HKObjectType.workoutType()
@@ -109,23 +120,7 @@ final class HealthKitRecentWorkoutImporter {
             throw HealthKitImportError.unavailable
         }
 
-        var readTypes: Set<HKObjectType> = [workoutType]
-        readTypes.insert(workoutRouteType)
-        if let effortScoreType = HKObjectType.quantityType(forIdentifier: .workoutEffortScore) {
-            readTypes.insert(effortScoreType)
-        }
-        if let estimatedEffortType = HKObjectType.quantityType(forIdentifier: .estimatedWorkoutEffortScore) {
-            readTypes.insert(estimatedEffortType)
-        }
-
-        do {
-            try await healthStore.requestAuthorization(toShare: [], read: readTypes)
-        } catch {
-            if isAuthorizationDenied(error) {
-                throw HealthKitImportError.authorizationDenied
-            }
-            throw error
-        }
+        try await requestReadAuthorization()
 
         return try await queryRecentWorkouts(limit: limit)
     }
@@ -218,13 +213,37 @@ final class HealthKitRecentWorkoutImporter {
         defer { Self.isImportingNewRecentWorkouts = false }
 
         let recentWorkouts = uniqueWorkoutItems(try await fetchRecentWorkouts(limit: limit))
+        return try await importUniqueWorkoutItems(recentWorkouts, into: context)
+    }
+
+    func importNewAnchoredWorkouts(into context: ModelContext, initialLookbackDays: Int = 14) async throws -> Int {
+        guard !Self.isImportingAnchoredWorkouts else { return 0 }
+        Self.isImportingAnchoredWorkouts = true
+        defer { Self.isImportingAnchoredWorkouts = false }
+
+        guard HKHealthStore.isHealthDataAvailable() else {
+            throw HealthKitImportError.unavailable
+        }
+
+        try await requestReadAuthorization()
+
+        let result = try await queryAnchoredWorkouts(initialLookbackDays: initialLookbackDays)
+        let workoutItems = uniqueWorkoutItems(result.items)
+        let importedCount = try await importUniqueWorkoutItems(workoutItems, into: context)
+        saveWorkoutAnchor(result.anchor)
+        return importedCount
+    }
+
+    private func importUniqueWorkoutItems(_ items: [HealthKitRecentWorkoutMenuItem], into context: ModelContext) async throws -> Int {
+        guard !items.isEmpty else { return 0 }
+
         let descriptor = FetchDescriptor<Workout>()
         var existingWorkouts = try context.fetch(descriptor)
         var mergedCount = 0
         var importedCount = 0
         var notificationDetails: [HealthKitWorkoutImportNotificationDetail] = []
 
-        for item in recentWorkouts {
+        for item in items {
             if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
                 guard let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) else {
                     continue
@@ -260,6 +279,86 @@ final class HealthKitRecentWorkoutImporter {
         return items.filter { item in
             seenUUIDs.insert(item.hkUUID).inserted
         }
+    }
+
+    private func requestReadAuthorization() async throws {
+        var readTypes: Set<HKObjectType> = [workoutType]
+        readTypes.insert(workoutRouteType)
+        if let effortScoreType = HKObjectType.quantityType(forIdentifier: .workoutEffortScore) {
+            readTypes.insert(effortScoreType)
+        }
+        if let estimatedEffortType = HKObjectType.quantityType(forIdentifier: .estimatedWorkoutEffortScore) {
+            readTypes.insert(estimatedEffortType)
+        }
+
+        do {
+            try await healthStore.requestAuthorization(toShare: [], read: readTypes)
+        } catch {
+            if isAuthorizationDenied(error) {
+                throw HealthKitImportError.authorizationDenied
+            }
+            throw error
+        }
+    }
+
+    private struct AnchoredWorkoutQueryResult {
+        let items: [HealthKitRecentWorkoutMenuItem]
+        let anchor: HKQueryAnchor
+    }
+
+    private func queryAnchoredWorkouts(initialLookbackDays: Int) async throws -> AnchoredWorkoutQueryResult {
+        let savedAnchor = loadWorkoutAnchor()
+        let initialCutoff = Calendar.current.date(byAdding: .day, value: -initialLookbackDays, to: Date()) ?? .distantPast
+
+        let result: ([HKWorkout], HKQueryAnchor) = try await withCheckedThrowingContinuation { continuation in
+            let query = HKAnchoredObjectQuery(
+                type: workoutType,
+                predicate: nil,
+                anchor: savedAnchor,
+                limit: HKObjectQueryNoLimit
+            ) { _, samples, _, newAnchor, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let newAnchor else {
+                    continuation.resume(throwing: HealthKitImportError.unexpectedData)
+                    return
+                }
+
+                let workouts = (samples as? [HKWorkout]) ?? []
+                continuation.resume(returning: (workouts, newAnchor))
+            }
+            healthStore.execute(query)
+        }
+
+        let workouts = savedAnchor == nil
+            ? result.0.filter { $0.startDate >= initialCutoff }
+            : result.0
+
+        var items: [HealthKitRecentWorkoutMenuItem] = []
+        items.reserveCapacity(workouts.count)
+        for workout in workouts.sorted(by: { $0.startDate > $1.startDate }) {
+            let rating = await fetchWorkoutRating(for: workout)
+            items.append(HealthKitRecentWorkoutMenuItem(workout: workout, workoutRating: rating))
+        }
+
+        return AnchoredWorkoutQueryResult(items: items, anchor: result.1)
+    }
+
+    private func loadWorkoutAnchor() -> HKQueryAnchor? {
+        guard let data = UserDefaults.standard.data(forKey: Self.anchoredWorkoutSyncAnchorKey) else {
+            return nil
+        }
+        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
+    }
+
+    private func saveWorkoutAnchor(_ anchor: HKQueryAnchor) {
+        guard let data = try? NSKeyedArchiver.archivedData(withRootObject: anchor, requiringSecureCoding: true) else {
+            return
+        }
+        UserDefaults.standard.set(data, forKey: Self.anchoredWorkoutSyncAnchorKey)
     }
 
     private func mergeImportedWorkout(
@@ -555,10 +654,7 @@ final class HealthKitWorkoutAutoImportService {
             defer { completion?() }
 
             do {
-                let importedCount = try await importer.importNewRecentWorkouts(
-                    into: modelContainer.mainContext,
-                    limit: 10
-                )
+                let importedCount = try await importer.importNewAnchoredWorkouts(into: modelContainer.mainContext)
                 if importedCount > 0 {
                     print("[HealthKitAutoImport] Imported \(importedCount) new workout(s).")
                 }

@@ -217,6 +217,9 @@ struct WorkoutListView: View {
             guard newPhase == .active else { return }
             attachPendingQuickExerciseLogs()
         }
+        .onReceive(NotificationCenter.default.publisher(for: QuickExerciseLogStore.pendingLogsDidChangeNotification)) { _ in
+            attachPendingQuickExerciseLogs()
+        }
         .onChange(of: quickLogSheetRequestToken) { _, _ in
             openQuickLogSheetIfRequested()
         }
@@ -385,12 +388,12 @@ struct WorkoutListView: View {
 
     private var todayQuickLogsFooter: String {
         if !todaysPendingQuickLogs.isEmpty && todaysAttachedQuickExercises.isEmpty {
-            return "These are queued from the widget and will attach when you create or import a workout for today."
+            return "These are queued from quick log and will attach when you create or import a compatible workout for today."
         }
         if todaysPendingQuickLogs.isEmpty {
             return "Attached quick logs are saved to today's workout and will clear from this queue shortly."
         }
-        return "Queued logs will attach to today's workout; attached logs are already saved."
+        return "Queued logs will attach to a compatible workout; attached logs are already saved."
     }
 
     private func workoutSection(for entry: (date: Date, items: [Workout])) -> some View {
@@ -473,7 +476,7 @@ struct WorkoutListView: View {
     private var todaysAttachedQuickExercises: [WorkoutExercise] {
         todayWorkouts
             .flatMap { $0.exercises ?? [] }
-            .filter { $0.notes?.contains("Logged from widget") == true }
+            .filter { isQuickLogExercise($0) }
             .sorted { $0.orderIndex < $1.orderIndex }
     }
 
@@ -574,6 +577,11 @@ struct WorkoutListView: View {
             parts.append("\(ExerciseLogEntry.displayWeight(weight)) kg")
         }
         return parts.isEmpty ? "Attached to today's workout" : parts.joined(separator: " - ")
+    }
+
+    private func isQuickLogExercise(_ exercise: WorkoutExercise) -> Bool {
+        guard let notes = exercise.notes else { return false }
+        return notes.contains("Logged from widget") || notes.contains("Logged from Apple Watch")
     }
 
     @ToolbarContentBuilder

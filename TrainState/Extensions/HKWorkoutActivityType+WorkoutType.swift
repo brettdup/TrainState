@@ -51,7 +51,7 @@ extension HKWorkoutActivityType {
             return "figure.elliptical"
         case .stairClimbing, .stairs, .stepTraining:
             return "figure.stair.stepper"
-        case .highIntensityIntervalTraining, .mixedCardio, .mixedMetabolicCardioTraining, .cardioDance:
+        case .highIntensityIntervalTraining, .mixedCardio:
             return "heart.fill"
         case .cooldown, .preparationAndRecovery:
             return "figure.cooldown"
@@ -81,7 +81,7 @@ extension HKWorkoutActivityType {
             return "figure.skating"
         case .surfingSports, .paddleSports, .sailing:
             return "figure.sailing"
-        case .dance, .danceInspiredTraining, .socialDance:
+        case .cardioDance, .socialDance:
             return "figure.dance"
         default:
             return mappedWorkoutType.systemImage
@@ -90,10 +90,10 @@ extension HKWorkoutActivityType {
 
     static let allKnownCases: [HKWorkoutActivityType] = [
         .americanFootball, .archery, .australianFootball, .badminton, .baseball, .basketball,
-        .bowling, .boxing, .climbing, .cricket, .crossTraining, .curling, .cycling, .dance,
-        .danceInspiredTraining, .elliptical, .equestrianSports, .fencing, .fishing,
+        .bowling, .boxing, .climbing, .cricket, .crossTraining, .curling, .cycling,
+        .cardioDance, .socialDance, .elliptical, .equestrianSports, .fencing, .fishing,
         .functionalStrengthTraining, .golf, .gymnastics, .handball, .hiking, .hockey,
-        .hunting, .lacrosse, .martialArts, .mindAndBody, .mixedMetabolicCardioTraining,
+        .hunting, .lacrosse, .martialArts, .mindAndBody, .mixedCardio,
         .paddleSports, .play, .preparationAndRecovery, .racquetball, .rowing, .rugby,
         .running, .sailing, .skatingSports, .snowSports, .soccer, .softball, .squash,
         .stairClimbing, .surfingSports, .swimming, .tableTennis, .tennis, .trackAndField,
@@ -101,8 +101,8 @@ extension HKWorkoutActivityType {
         .waterSports, .wrestling, .yoga, .barre, .coreTraining, .crossCountrySkiing,
         .downhillSkiing, .flexibility, .highIntensityIntervalTraining, .jumpRope,
         .kickboxing, .pilates, .snowboarding, .stairs, .stepTraining, .wheelchairWalkPace,
-        .wheelchairRunPace, .taiChi, .mixedCardio, .handCycling, .discSports, .fitnessGaming,
-        .cardioDance, .socialDance, .pickleball, .cooldown, .swimBikeRun, .transition,
+        .wheelchairRunPace, .taiChi, .handCycling, .discSports, .fitnessGaming,
+        .pickleball, .cooldown, .swimBikeRun, .transition,
         .underwaterDiving, .other
     ]
 
@@ -134,8 +134,6 @@ extension HKWorkoutActivityType {
              .climbing,
              .cricket,
              .curling,
-             .dance,
-             .danceInspiredTraining,
              .elliptical,
              .equestrianSports,
              .fencing,
@@ -148,7 +146,6 @@ extension HKWorkoutActivityType {
              .hunting,
              .lacrosse,
              .martialArts,
-             .mixedMetabolicCardioTraining,
              .paddleSports,
              .play,
              .racquetball,
@@ -194,7 +191,7 @@ extension HKWorkoutActivityType {
         case .other:
             return .other
 
-        @unknown default:
+        default:
             return .other
         }
     }
@@ -214,8 +211,6 @@ extension HKWorkoutActivityType {
         case .crossTraining: return "Cross Training"
         case .curling: return "Curling"
         case .cycling: return "Cycling"
-        case .dance: return "Dance"
-        case .danceInspiredTraining: return "Dance Inspired Training"
         case .elliptical: return "Elliptical"
         case .equestrianSports: return "Equestrian Sports"
         case .fencing: return "Fencing"
@@ -230,7 +225,6 @@ extension HKWorkoutActivityType {
         case .lacrosse: return "Lacrosse"
         case .martialArts: return "Martial Arts"
         case .mindAndBody: return "Mind and Body"
-        case .mixedMetabolicCardioTraining: return "Mixed Metabolic Cardio Training"
         case .paddleSports: return "Paddle Sports"
         case .play: return "Play"
         case .preparationAndRecovery: return "Preparation and Recovery"
@@ -285,7 +279,7 @@ extension HKWorkoutActivityType {
         case .transition: return "Transition"
         case .underwaterDiving: return "Underwater Diving"
         case .other: return "Other"
-        @unknown default: return "Other"
+        default: return "Other"
         }
     }
 }

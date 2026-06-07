@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct TrainStateWatch_Watch_AppApp: App {
+    init() {
+        WatchHealthKitWorkoutSyncService.shared.start()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
