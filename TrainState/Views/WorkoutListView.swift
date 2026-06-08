@@ -1513,7 +1513,17 @@ private struct WorkoutQuickExerciseLogSheet: View {
 struct WorkoutListView_Previews: PreviewProvider {
     static var previews: some View {
         let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-        let container = try! ModelContainer(for: Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutSubcategoryRating.self, configurations: config)
+        let container = try! ModelContainer(
+            for: Workout.self,
+            WorkoutCategory.self,
+            WorkoutSubcategory.self,
+            WorkoutSubcategoryRating.self,
+            WorkoutExercise.self,
+            SubcategoryExercise.self,
+            StrengthWorkoutTemplate.self,
+            StrengthWorkoutTemplateExercise.self,
+            configurations: config
+        )
         let context = container.mainContext
         let calendar = Calendar.current
 
@@ -1528,19 +1538,44 @@ struct WorkoutListView_Previews: PreviewProvider {
         context.insert(upper)
         context.insert(endurance)
 
-        let benchPress = WorkoutSubcategory(name: "Bench Press", category: push)
-        context.insert(benchPress)
-
-        let squat = WorkoutSubcategory(name: "Squat", category: legs)
-        context.insert(squat)
+        let chest = WorkoutSubcategory(name: "Chest", category: push)
+        let shoulders = WorkoutSubcategory(name: "Shoulders", category: push)
+        let triceps = WorkoutSubcategory(name: "Triceps", category: push)
+        let back = WorkoutSubcategory(name: "Back", category: pull)
+        let biceps = WorkoutSubcategory(name: "Biceps", category: pull)
+        let quads = WorkoutSubcategory(name: "Quads", category: legs)
+        let hamstrings = WorkoutSubcategory(name: "Hamstrings", category: legs)
+        let glutes = WorkoutSubcategory(name: "Glutes", category: legs)
+        let calves = WorkoutSubcategory(name: "Calves", category: legs)
+        let upperChest = WorkoutSubcategory(name: "Upper Chest", category: upper)
+        let lats = WorkoutSubcategory(name: "Lats", category: upper)
+        let delts = WorkoutSubcategory(name: "Delts", category: upper)
+        [chest, shoulders, triceps, back, biceps, quads, hamstrings, glutes, calves, upperChest, lats, delts].forEach { context.insert($0) }
 
         let tempo = WorkoutSubcategory(name: "Tempo", category: endurance)
         context.insert(tempo)
 
-        func addWorkout(type: WorkoutType, daysAgo: Int, durationMinutes: Double, distance: Double? = nil, categories: [WorkoutCategory] = [], subcategories: [WorkoutSubcategory] = []) {
+        func addWorkout(type: WorkoutType, daysAgo: Int, durationMinutes: Double, distance: Double? = nil, categories: [WorkoutCategory] = [], subcategories: [WorkoutSubcategory] = []) -> Workout {
             let date = calendar.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
             let workout = Workout(type: type, startDate: date, duration: durationMinutes * 60, distance: distance, categories: categories.isEmpty ? nil : categories, subcategories: subcategories.isEmpty ? nil : subcategories)
             context.insert(workout)
+            return workout
+        }
+
+        func addExercises(_ exerciseData: [(String, Int, Int, Double, WorkoutSubcategory?)], to workout: Workout) {
+            let exercises = exerciseData.enumerated().map { index, data in
+                WorkoutExercise(
+                    name: data.0,
+                    sets: data.1,
+                    reps: data.2,
+                    weight: data.3,
+                    orderIndex: index,
+                    workout: workout,
+                    subcategory: data.4
+                )
+            }
+            workout.exercises = exercises
+            exercises.forEach { context.insert($0) }
         }
 
         let longNameWorkout = Workout(
@@ -1548,17 +1583,49 @@ struct WorkoutListView_Previews: PreviewProvider {
             startDate: Date(),
             duration: 71 * 60,
             distance: nil,
+            categories: [push],
+            subcategories: [chest, shoulders, triceps],
             hkActivityTypeRaw: Int(HKWorkoutActivityType.traditionalStrengthTraining.rawValue)
         )
         longNameWorkout.hkUUID = UUID().uuidString
         context.insert(longNameWorkout)
+        addExercises([
+            ("Barbell Bench Press", 4, 8, 82.5, chest),
+            ("Incline Dumbbell Press", 3, 10, 34, chest),
+            ("Seated Shoulder Press", 3, 8, 28, shoulders),
+            ("Cable Fly", 3, 12, 22.5, chest),
+            ("Triceps Rope Pushdown", 3, 12, 32, triceps)
+        ], to: longNameWorkout)
 
-        addWorkout(type: .running, daysAgo: 0, durationMinutes: 45, distance: 6.2, categories: [endurance], subcategories: [tempo])
-        addWorkout(type: .strength, daysAgo: 0, durationMinutes: 60, categories: [push, pull], subcategories: [benchPress])
-        addWorkout(type: .yoga, daysAgo: 1, durationMinutes: 30)
-        addWorkout(type: .cycling, daysAgo: 3, durationMinutes: 50, distance: 18.4)
-        addWorkout(type: .strength, daysAgo: 2, durationMinutes: 45, categories: [legs], subcategories: [squat])
-        addWorkout(type: .strength, daysAgo: 4, durationMinutes: 50, categories: [upper])
+        _ = addWorkout(type: .running, daysAgo: 0, durationMinutes: 45, distance: 6.2, categories: [endurance], subcategories: [tempo])
+        let pushPullWorkout = addWorkout(type: .strength, daysAgo: 0, durationMinutes: 60, categories: [push, pull], subcategories: [chest, back, shoulders, biceps])
+        addExercises([
+            ("Bench Press", 4, 6, 90, chest),
+            ("Pull-Up", 4, 8, 0, back),
+            ("Dumbbell Row", 3, 10, 36, back),
+            ("Arnold Press", 3, 10, 24, shoulders),
+            ("EZ-Bar Curl", 3, 12, 30, biceps)
+        ], to: pushPullWorkout)
+        _ = addWorkout(type: .yoga, daysAgo: 1, durationMinutes: 30)
+        _ = addWorkout(type: .cycling, daysAgo: 3, durationMinutes: 50, distance: 18.4)
+        let legWorkout = addWorkout(type: .strength, daysAgo: 2, durationMinutes: 45, categories: [legs], subcategories: [quads, hamstrings, glutes, calves])
+        addExercises([
+            ("Back Squat", 5, 5, 125, quads),
+            ("Romanian Deadlift", 4, 8, 105, hamstrings),
+            ("Leg Press", 3, 12, 180, quads),
+            ("Walking Lunge", 3, 12, 22, glutes),
+            ("Standing Calf Raise", 4, 15, 80, calves)
+        ], to: legWorkout)
+        let upperWorkout = addWorkout(type: .strength, daysAgo: 4, durationMinutes: 50, categories: [upper], subcategories: [upperChest, lats, delts, shoulders])
+        addExercises([
+            ("Incline Bench Press", 4, 8, 75, upperChest),
+            ("Lat Pulldown", 4, 10, 68, lats),
+            ("Machine Chest Press", 3, 10, 70, upperChest),
+            ("Lateral Raise", 3, 15, 12, delts),
+            ("Face Pull", 3, 15, 28, shoulders)
+        ], to: upperWorkout)
+
+        try? context.save()
 
         return NavigationStack {
             WorkoutListView()

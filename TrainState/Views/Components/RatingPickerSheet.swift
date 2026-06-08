@@ -38,6 +38,7 @@ struct RatingPickerSheet: View {
             Text(draftRating.map { "\($0)" } ?? "No Rating")
                 .font(.system(size: draftRating == nil ? 34 : 56, weight: .bold, design: .rounded))
                 .monospacedDigit()
+                .frame(height: 68)
 
             HStack(spacing: 16) {
                 Button {
@@ -129,10 +130,12 @@ struct RatingPickerRow: View {
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(.primary)
+                    .frame(width: 44, alignment: .trailing)
             } else {
                 Text(placeholder)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .trailing)
             }
 
             Image(systemName: "chevron.up")

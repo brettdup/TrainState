@@ -39,12 +39,7 @@ struct WorkoutRowView: View {
             VStack(alignment: .leading, spacing: 8) {
                 workoutTitle(font: .headline, lineLimit: 2)
 
-                if let classificationSummary {
-                    Text(classificationSummary)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                classificationLines
 
                 if shouldShowDateLabel {
                     dateLabel
@@ -330,17 +325,34 @@ struct WorkoutRowView: View {
     }
 
     private var categorySummaryText: String {
-        summarizedText(from: categoryNames, limit: 2)
+        categoryNames.joined(separator: ", ")
     }
 
     private var subcategorySummaryText: String {
-        summarizedText(from: subcategoryNames, limit: 3)
+        subcategoryNames.joined(separator: ", ")
     }
 
     private var classificationSummary: String? {
         let parts = [categorySummaryText, subcategorySummaryText].filter { !$0.isEmpty }
         let summary = parts.joined(separator: " · ")
         return summary.isEmpty ? nil : summary
+    }
+
+    @ViewBuilder
+    private var classificationLines: some View {
+        if !categorySummaryText.isEmpty {
+            Text(categorySummaryText)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+
+        if !subcategorySummaryText.isEmpty {
+            Text(subcategorySummaryText)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
     }
 
     private var dateLabel: some View {
