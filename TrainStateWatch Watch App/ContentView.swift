@@ -374,22 +374,27 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
     }
 
     func loadCurrentWeek() {
+        Task {
+            await refresh()
+        }
+    }
+
+    func refresh() async {
         guard !isLoadingWeek else { return }
         isLoadingWeek = true
+        exercises = loadPersistedExercises()
 
-        Task {
-            do {
-                if let phoneWorkouts = try await requestPhoneWeekSnapshot() {
-                    weekWorkouts = phoneWorkouts
-                } else if HKHealthStore.isHealthDataAvailable() {
-                    try await requestAuthorization()
-                    weekWorkouts = try await queryCurrentWeekWorkouts()
-                }
-            } catch {
-                errorMessage = error.localizedDescription
+        do {
+            if let phoneWorkouts = try await requestPhoneWeekSnapshot() {
+                weekWorkouts = phoneWorkouts
+            } else if HKHealthStore.isHealthDataAvailable() {
+                try await requestAuthorization()
+                weekWorkouts = try await queryCurrentWeekWorkouts()
             }
-            isLoadingWeek = false
+        } catch {
+            errorMessage = error.localizedDescription
         }
+        isLoadingWeek = false
     }
 
     private func activateWatchConnectivity() {
@@ -705,7 +710,7 @@ struct ContentView: View {
                 workoutManager.loadCurrentWeek()
             }
             .refreshable {
-                workoutManager.loadCurrentWeek()
+                await workoutManager.refresh()
             }
             .sheet(isPresented: $isShowingLogSheet) {
                 LogExerciseSheet(
