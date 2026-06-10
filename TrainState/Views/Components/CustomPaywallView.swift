@@ -106,9 +106,9 @@ struct CustomPaywallView: View {
     private var background: some View {
         LinearGradient(
             colors: [
-                Color.accentColor.opacity(colorScheme == .dark ? 0.28 : 0.16),
-                Color(.systemBackground),
-                Color(.secondarySystemBackground).opacity(0.8)
+                Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
+                ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
+                ThemeColor.primaryUi01()
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing

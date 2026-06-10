@@ -174,13 +174,13 @@ class CloudKitManager {
 
     private func makeBackupInfo(from record: CKRecord) -> BackupInfo? {
         guard
-            let name = record["name"] as? String,
             let date = record["timestamp"] as? Date,
             let workoutCount = record["workoutCount"] as? Int,
             let categoryCount = record["categoryCount"] as? Int,
             let subcategoryCount = record["subcategoryCount"] as? Int
         else { return nil }
 
+        let name = (record["name"] as? String) ?? "Backup \(date.formatted(date: .abbreviated, time: .shortened))"
         let deviceName = (record["deviceName"] as? String) ?? "Device"
         let assignedSubcategoryCount = (record["assignedSubcategoryCount"] as? Int) ?? 0
 
@@ -250,6 +250,11 @@ private extension CloudKitManager {
         case legacy
     }
 
+    enum BackupMetadataMode {
+        case full
+        case withoutOptionalFields
+    }
+
     func exportPayload(context: ModelContext) throws -> BackupPayload {
         // Ensure newly created/edited categories and subcategories are persisted
         // before reading a backup snapshot.
@@ -285,26 +290,30 @@ private extension CloudKitManager {
                 }
             }
 
-            let record = CKRecord(recordType: "Backup")
-            record["name"] = "Backup \(Date().formatted(date: .abbreviated, time: .shortened))" as CKRecordValue
-            record["timestamp"] = Date() as CKRecordValue
-            record["deviceName"] = await UIDevice.current.name as CKRecordValue
-            record["workoutCount"] = payload.workouts.count as CKRecordValue
-            record["categoryCount"] = payload.categories.count as CKRecordValue
-            record["subcategoryCount"] = payload.subcategories.count as CKRecordValue
-            record["assignedSubcategoryCount"] = payload.subcategories.filter { $0.categoryId != nil }.count as CKRecordValue
+            let timestamp = Date()
+            let metadataModes: [BackupMetadataMode] = [.full, .withoutOptionalFields]
 
-            for (key, fileURL) in files {
-                record[key] = CKAsset(fileURL: fileURL)
-            }
+            for metadataMode in metadataModes {
+                let record = await makeBackupRecord(
+                    payload: payload,
+                    files: files,
+                    timestamp: timestamp,
+                    metadataMode: metadataMode
+                )
 
-            do {
-                _ = try await privateDatabase.save(record)
-                return
-            } catch {
-                lastError = error
-                guard shouldRetryWithLegacySchema(error: error, format: format) else {
-                    throw userFacingCloudKitError(error)
+                do {
+                    _ = try await privateDatabase.save(record)
+                    return
+                } catch {
+                    lastError = error
+                    guard shouldRetryWithReducedMetadata(error: error, metadataMode: metadataMode) ||
+                            shouldRetryWithLegacySchema(error: error, format: format) else {
+                        throw userFacingCloudKitError(error)
+                    }
+
+                    if shouldRetryWithLegacySchema(error: error, format: format) {
+                        break
+                    }
                 }
             }
         }
@@ -344,6 +353,43 @@ private extension CloudKitManager {
             .appendingPathComponent("ExercisePal-Backup-\(UUID().uuidString)-\(label).json")
         try data.write(to: fileURL, options: [.atomic])
         return fileURL
+    }
+
+    func makeBackupRecord(
+        payload: BackupPayload,
+        files: [String: URL],
+        timestamp: Date,
+        metadataMode: BackupMetadataMode
+    ) async -> CKRecord {
+        let record = CKRecord(recordType: "Backup")
+        record["timestamp"] = timestamp as CKRecordValue
+        record["workoutCount"] = payload.workouts.count as CKRecordValue
+        record["categoryCount"] = payload.categories.count as CKRecordValue
+        record["subcategoryCount"] = payload.subcategories.count as CKRecordValue
+
+        if metadataMode == .full {
+            record["name"] = "Backup \(timestamp.formatted(date: .abbreviated, time: .shortened))" as CKRecordValue
+            record["deviceName"] = await UIDevice.current.name as CKRecordValue
+            record["assignedSubcategoryCount"] = payload.subcategories.filter { $0.categoryId != nil }.count as CKRecordValue
+        }
+
+        for (key, fileURL) in files {
+            record[key] = CKAsset(fileURL: fileURL)
+        }
+
+        return record
+    }
+
+    func shouldRetryWithReducedMetadata(error: Error, metadataMode: BackupMetadataMode) -> Bool {
+        guard metadataMode == .full else { return false }
+
+        let message = (error as NSError).localizedDescription.lowercased()
+        return message.contains("cannot create or modify field 'name'") ||
+               message.contains("cannot create or modify field 'devicename'") ||
+               message.contains("cannot create or modify field 'assignedsubcategorycount'") ||
+               message.contains("unknown field 'name'") ||
+               message.contains("unknown field 'devicename'") ||
+               message.contains("unknown field 'assignedsubcategorycount'")
     }
 
     func shouldRetryWithLegacySchema(error: Error, format: BackupStorageFormat) -> Bool {

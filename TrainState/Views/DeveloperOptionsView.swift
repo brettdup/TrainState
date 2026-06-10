@@ -11,9 +11,9 @@ struct DeveloperOptionsView: View {
         ZStack {
             LinearGradient(
                 gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                    Color(.systemBackground)
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
+                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
+                    ThemeColor.primaryUi01()
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -21,15 +21,18 @@ struct DeveloperOptionsView: View {
             .ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 24) {
+                GlassEffectContainerWrapper(spacing: 16) {
+                    VStack(spacing: 16) {
                     #if DEBUG
                     premiumOverrideCard
                     #endif
                     
                     dataCard
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 24)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
             }
         }
         .navigationTitle("Developer")

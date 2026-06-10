@@ -28,9 +28,9 @@ struct SubscriptionInfoView: View {
         ZStack {
             LinearGradient(
                 gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                    Color(.systemBackground)
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
+                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
+                    ThemeColor.primaryUi01()
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -38,7 +38,8 @@ struct SubscriptionInfoView: View {
             .ignoresSafeArea()
 
             ScrollView {
-                LazyVStack(spacing: 20) {
+                GlassEffectContainerWrapper(spacing: 16) {
+                    LazyVStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Status")
                             .font(.subheadline.weight(.semibold))
@@ -110,8 +111,10 @@ struct SubscriptionInfoView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .glassCard()
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 24)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
             }
         }
         .navigationTitle("Subscription")

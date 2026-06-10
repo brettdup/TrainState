@@ -117,9 +117,9 @@ struct SubcategoryLastLoggedView: View {
         ZStack {
             LinearGradient(
                 gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                    Color(.systemBackground)
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
+                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
+                    ThemeColor.primaryUi01()
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -127,20 +127,15 @@ struct SubcategoryLastLoggedView: View {
             .ignoresSafeArea()
 
             ScrollView {
-                LazyVStack(spacing: 16) {
-                    summaryCard
-                    tabPicker
+                GlassEffectContainerWrapper(spacing: 16) {
+                    LazyVStack(spacing: 16) {
+                        summaryCard
+                        tabPicker
 
-                    if strengthSubcategories.isEmpty {
-                        Text("No strength subcategories found.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(24)
-                            .glassCard()
-                    } else {
-                        if selectedTab == .categories {
-                            sectionHeader(title: "Strength Subcategories", count: filteredSubcategories.count)
+                        if strengthSubcategories.isEmpty {
+                            emptyStateCard("No strength subcategories found.")
+                        } else if selectedTab == .categories {
+                            sectionHeader(title: "Strength Categories", count: filteredSubcategories.count)
 
                             ForEach(filteredSubcategories, id: \.subcategory.id) { item in
                                 NavigationLink {
@@ -149,20 +144,13 @@ struct SubcategoryLastLoggedView: View {
                                         workouts: workouts
                                     )
                                 } label: {
-                                    HStack(spacing: 12) {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text(item.subcategory.name)
-                                                .font(.body.weight(.semibold))
-                                            Text(lastTrainedLine(for: item.lastLogged))
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
-                                        }
-
-                                        Spacer()
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(20)
-                                    .glassCard()
+                                    lastTrainedRow(
+                                        title: item.subcategory.name,
+                                        subtitle: item.subcategory.category?.name,
+                                        lastLogged: item.lastLogged,
+                                        color: item.subcategory.category.flatMap { Color(hex: $0.color) } ?? Color.accentColor,
+                                        systemImage: "square.grid.2x2"
+                                    )
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -170,29 +158,20 @@ struct SubcategoryLastLoggedView: View {
                             sectionHeader(title: "Strength Exercises", count: filteredExercises.count)
 
                             ForEach(filteredExercises) { item in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(item.name)
-                                        .font(.body.weight(.semibold))
-
-                                    if !item.linkedSubcategories.isEmpty {
-                                        Text(item.linkedSubcategories.joined(separator: " · "))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    Text(lastTrainedLine(for: item.lastLogged))
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(20)
-                                .glassCard()
+                                lastTrainedRow(
+                                    title: item.name,
+                                    subtitle: item.linkedSubcategories.isEmpty ? nil : item.linkedSubcategories.joined(separator: " · "),
+                                    lastLogged: item.lastLogged,
+                                    color: Color.accentColor,
+                                    systemImage: "dumbbell.fill"
+                                )
                             }
                         }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 24)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
             }
         }
         .navigationTitle("Last Trained")
@@ -207,23 +186,33 @@ struct SubcategoryLastLoggedView: View {
             }
         }
         .pickerStyle(.segmented)
+        .padding(10)
+        .glassCard(prominence: .regular)
     }
 
     private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Full Strength List")
-                .font(.headline)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 42, height: 42)
+                .background(Circle().fill(Color.accentColor.opacity(0.12)))
 
-            Text("\(strengthSubcategories.count) subcategories · \(allStrengthExercises.count) exercises")
-                .font(.subheadline)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Strength Coverage")
+                    .font(.headline)
+                Text("\(strengthSubcategories.count) categories · \(allStrengthExercises.count) exercises")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text("Never-trained entries stay visible so gaps are easy to spot.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
-            Text("Includes never-trained entries so gaps are visible.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -238,6 +227,69 @@ struct SubcategoryLastLoggedView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 4)
+    }
+
+    private func emptyStateCard(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .glassCard(prominence: .regular)
+    }
+
+    private func lastTrainedRow(
+        title: String,
+        subtitle: String?,
+        lastLogged: Date?,
+        color: Color,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 40, height: 40)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(color.opacity(0.12))
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Text(lastTrainedLine(for: lastLogged))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+
+            Spacer()
+
+            Text(lastLogged == nil ? "Never" : relativeDateText(for: lastLogged!))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(lastLogged == nil ? Color.secondary : color)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill((lastLogged == nil ? Color.secondary : color).opacity(0.12))
+                )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .glassCard()
     }
 
     private func lastTrainedLine(for date: Date?) -> String {
@@ -342,9 +394,9 @@ private struct SubcategoryHistoryView: View {
         ZStack {
             LinearGradient(
                 gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                    Color(.systemBackground)
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
+                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
+                    ThemeColor.primaryUi01()
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -396,8 +448,9 @@ private struct SubcategoryHistoryView: View {
                     }
                 }
                 .glassEffectContainer(spacing: 16)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 24)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
             }
         }
         .navigationTitle(subcategory.name)
@@ -405,22 +458,32 @@ private struct SubcategoryHistoryView: View {
     }
 
     private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("History")
-                .font(.headline)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 42, height: 42)
+                .background(Circle().fill(Color.accentColor.opacity(0.12)))
 
-            Text("\(matchingWorkouts.count) logged session\(matchingWorkouts.count == 1 ? "" : "s")")
-                .font(.subheadline)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("History")
+                    .font(.headline)
 
-            if let lastWorkout = matchingWorkouts.first {
-                Text("Last trained \(lastWorkout.startDate.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption)
+                Text("\(matchingWorkouts.count) logged session\(matchingWorkouts.count == 1 ? "" : "s")")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
+
+                if let lastWorkout = matchingWorkouts.first {
+                    Text("Last trained \(lastWorkout.startDate.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
+
+            Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(16)
         .glassCard()
     }
 
@@ -438,7 +501,6 @@ private struct SubcategoryHistoryView: View {
             HStack {
                 Text("Exercises")
                     .font(.headline)
-                    .foregroundStyle(.secondary)
                 Spacer()
                 Text("\(groupedExercises.count)")
                     .font(.subheadline.weight(.semibold))

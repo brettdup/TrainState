@@ -128,9 +128,9 @@ struct ExerciseInsightsView: View {
         ZStack {
             LinearGradient(
                 gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.4 : 0.2),
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1),
-                    Color(.systemBackground)
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
+                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
+                    ThemeColor.primaryUi01()
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -138,7 +138,7 @@ struct ExerciseInsightsView: View {
             .ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 16) {
                     summaryCard
                     if historyPoints.isEmpty {
                         emptyStateCard
@@ -149,9 +149,10 @@ struct ExerciseInsightsView: View {
                         individualEntriesCard
                     }
                 }
-                .glassEffectContainer(spacing: 20)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 24)
+                .glassEffectContainer(spacing: 16)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
             }
         }
         .navigationTitle(exerciseName)
@@ -159,16 +160,21 @@ struct ExerciseInsightsView: View {
     }
 
     private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Overview")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            exerciseInsightsHeader(
+                title: "Overview",
+                subtitle: latestPoint.map { "Last trained \($0.date.formatted(date: .abbreviated, time: .omitted))" } ?? "No logged data yet",
+                icon: "dumbbell.fill"
+            )
 
             if let latestPoint {
+                HStack(spacing: 12) {
+                    insightMetricTile(title: "Sessions", value: "\(historyPoints.count)", icon: "calendar")
+                    insightMetricTile(title: "Entries", value: "\(loggedEntries.count)", icon: "list.bullet")
+                    insightMetricTile(title: "Top Set", value: metricString(bestTopSet, suffix: "kg"), icon: "trophy")
+                }
+
                 statRow(label: "Last Trained", value: latestPoint.date.formatted(date: .abbreviated, time: .omitted))
-                statRow(label: "Sessions Logged", value: "\(historyPoints.count)")
-                statRow(label: "Entries Logged", value: "\(loggedEntries.count)")
-                statRow(label: "Best Top Set", value: metricString(bestTopSet, suffix: "kg"))
                 statRow(label: "Best Est. 1RM", value: metricString(bestEstimatedOneRepMax, suffix: "kg"))
                 statRow(label: "Max Reps @ Max Weight", value: maxRepsAtMaxWeightSummary)
             } else {
@@ -183,9 +189,7 @@ struct ExerciseInsightsView: View {
 
     private var metricCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Metric")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            exerciseInsightsHeader(title: "Metric", subtitle: "Choose the progression line to inspect.", icon: "slider.horizontal.3")
 
             Picker("Metric", selection: $selectedMetric) {
                 ForEach(ExerciseInsightMetric.allCases, id: \.self) { metric in
@@ -207,9 +211,7 @@ struct ExerciseInsightsView: View {
 
     private var chartCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Progress")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            exerciseInsightsHeader(title: "Progress", subtitle: selectedMetric.title, icon: "chart.xyaxis.line")
 
             Chart(sortedHistoryPoints) { point in
                 LineMark(
@@ -236,9 +238,7 @@ struct ExerciseInsightsView: View {
 
     private var historyCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("History")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            exerciseInsightsHeader(title: "History", subtitle: "\(sortedHistoryPoints.count) session\(sortedHistoryPoints.count == 1 ? "" : "s")", icon: "clock.arrow.circlepath")
 
             ForEach(sortedHistoryPoints.reversed()) { point in
                 VStack(alignment: .leading, spacing: 4) {
@@ -273,9 +273,7 @@ struct ExerciseInsightsView: View {
 
     private var individualEntriesCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Individual Entries")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            exerciseInsightsHeader(title: "Individual Entries", subtitle: "\(loggedEntries.count) logged set entr\(loggedEntries.count == 1 ? "y" : "ies")", icon: "list.bullet.rectangle")
 
             ForEach(loggedEntries) { entry in
                 VStack(alignment: .leading, spacing: 6) {
@@ -309,6 +307,54 @@ struct ExerciseInsightsView: View {
             Text(value)
                 .font(.subheadline.weight(.semibold))
         }
+    }
+
+    private func exerciseInsightsHeader(title: String, subtitle: String, icon: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 34, height: 34)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.accentColor.opacity(0.12))
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+    }
+
+    private func insightMetricTile(title: String, value: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+            Text(value)
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .monospacedDigit()
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(ThemeColor.primaryUi03())
+        )
     }
 
     private func metricString(_ value: Double, suffix: String) -> String {
