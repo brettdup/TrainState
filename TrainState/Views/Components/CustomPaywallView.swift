@@ -3,7 +3,6 @@ import SwiftUI
 
 struct CustomPaywallView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var selectedPackageID: String?
     @State private var purchaseErrorMessage: String?
@@ -26,46 +25,42 @@ struct CustomPaywallView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                background
+            ScrollView {
+                VStack(spacing: 24) {
+                    hero
 
-                ScrollView {
-                    VStack(spacing: 24) {
-                        hero
-
-                        VStack(spacing: 12) {
-                            ForEach(packages, id: \.identifier) { package in
-                                PackageOptionView(
-                                    package: package,
-                                    isSelected: selectedPackage?.identifier == package.identifier,
-                                    badgeText: badgeText(for: package),
-                                    isCurrentPlan: package.storeProduct.productIdentifier == currentPackageProductID
-                                ) {
-                                    selectedPackageID = package.identifier
-                                }
+                    VStack(spacing: 12) {
+                        ForEach(packages, id: \.identifier) { package in
+                            PackageOptionView(
+                                package: package,
+                                isSelected: selectedPackage?.identifier == package.identifier,
+                                badgeText: badgeText(for: package),
+                                isCurrentPlan: package.storeProduct.productIdentifier == currentPackageProductID
+                            ) {
+                                selectedPackageID = package.identifier
                             }
                         }
-
-                        purchaseButton
-
-                        Button {
-                            Task { await restorePurchases() }
-                        } label: {
-                            if purchaseManager.isRestoringPurchases {
-                                ProgressView()
-                            } else {
-                                Text("Restore purchases")
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .disabled(purchaseManager.isRestoringPurchases || purchaseManager.isProcessingPurchase)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 26)
-                    .padding(.bottom, 32)
+
+                    purchaseButton
+
+                    Button {
+                        Task { await restorePurchases() }
+                    } label: {
+                        if purchaseManager.isRestoringPurchases {
+                            ProgressView()
+                        } else {
+                            Text("Restore purchases")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .disabled(purchaseManager.isRestoringPurchases || purchaseManager.isProcessingPurchase)
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 26)
+                .padding(.bottom, 32)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -101,19 +96,6 @@ struct CustomPaywallView: View {
                 Text(restoreMessage ?? "")
             }
         }
-    }
-
-    private var background: some View {
-        LinearGradient(
-            colors: [
-                Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                ThemeColor.primaryUi01()
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
     }
 
     private var hero: some View {
@@ -312,9 +294,9 @@ private struct PackageOptionView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
                     .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: isSelected ? 2 : 1)
             }
         }

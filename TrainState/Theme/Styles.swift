@@ -1,15 +1,5 @@
 import SwiftUI
 
-// MARK: - View Constants Access
-extension View {
-    /// Apply default theme settings (background and text color)
-    func applyDefaultThemeOptions(backgroundStyle: Color = ThemeColor.primaryUi01()) -> some View {
-        self
-            .background(backgroundStyle.ignoresSafeArea())
-            .foregroundColor(ThemeColor.primaryText01())
-    }
-}
-
 // MARK: - Text Modifiers
 struct PrimaryText: ViewModifier {
     func body(content: Content) -> some View {

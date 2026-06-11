@@ -32,35 +32,21 @@ struct AnalyticsView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                        ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                        ThemeColor.primaryUi01()
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-
-                ScrollView {
-                    GlassEffectContainerWrapper(spacing: 16) {
-                        LazyVStack(spacing: 16) {
-                            filterCard
-                            weeklySummaryCard
-                            goalsCard
-                            streakCard
-                            strengthHistoryCard
-                            personalBestsCard
-                            moreInsightsCard
-                        }
+            ScrollView {
+                    LazyVStack(spacing: 16) {
+                        filterCard
+                        weeklySummaryCard
+                        goalsCard
+                        streakCard
+                        strengthHistoryCard
+                        personalBestsCard
+                        moreInsightsCard
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-                    .padding(.bottom, 24)
-                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Analytics")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -115,7 +101,7 @@ struct AnalyticsView: View {
                         .foregroundStyle(Color.accentColor)
                         .frame(width: 36, height: 36)
                         .background(
-                            RoundedRectangle(cornerRadius: 10)
+                            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                                 .fill(Color.accentColor.opacity(0.12))
                         )
 
@@ -191,7 +177,7 @@ struct AnalyticsView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                             .fill(ThemeColor.primaryUi03())
                     )
             }
@@ -276,7 +262,7 @@ struct AnalyticsView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 11)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                                 .fill(Color.accentColor.opacity(0.12))
                         )
                 }
@@ -839,7 +825,7 @@ struct AnalyticsView: View {
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 34, height: 34)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                         .fill(Color.accentColor.opacity(0.12))
                 )
 
@@ -878,7 +864,7 @@ struct AnalyticsView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                 .fill(ThemeColor.primaryUi03())
         )
     }
@@ -933,7 +919,7 @@ struct AnalyticsView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 11)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                                 .fill(Color.accentColor)
                         )
                 }
@@ -997,7 +983,7 @@ struct AnalyticsView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                 .fill(ThemeColor.primaryUi03())
         )
     }
@@ -1021,7 +1007,7 @@ struct AnalyticsView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                 .fill(ThemeColor.primaryUi03())
         )
     }
@@ -1081,7 +1067,7 @@ struct AnalyticsView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                 .fill(ThemeColor.primaryUi03())
         )
     }
@@ -1513,10 +1499,10 @@ struct AnalyticsView: View {
             Text(text)
                 .font(.caption2.weight(.semibold))
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(.white.opacity(0.15), in: Capsule())
+        .background(ThemeColor.primaryUi03(), in: Capsule())
     }
 
     private var weeklyRecapShareSignature: String {
@@ -1726,42 +1712,44 @@ struct AnalyticsView: View {
     }
 
     private var weeklyRecapShareSnapshot: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Label("Weekly Recap", systemImage: "sparkles")
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.95))
-                Spacer()
-                Text(Date.now.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.9))
-            }
+        ZStack {
+            Color(.systemGroupedBackground)
 
-            Text(weeklyRecapHeadline)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Label("Weekly Recap", systemImage: "sparkles")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text(Date.now.formatted(date: .abbreviated, time: .omitted))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
 
-            HStack(spacing: 8) {
-                shareMetricPill(icon: "figure.run", text: "\(workoutsThisWeek.count) workouts")
-                shareMetricPill(icon: "clock.fill", text: "\(weeklyMinutes) min")
-                shareMetricPill(icon: "flame.fill", text: "\(currentDailyStreak)d streak")
+                Text(weeklyRecapHeadline)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    shareMetricPill(icon: "figure.run", text: "\(workoutsThisWeek.count) workouts")
+                    shareMetricPill(icon: "clock.fill", text: "\(weeklyMinutes) min")
+                    shareMetricPill(icon: "flame.fill", text: "\(currentDailyStreak)d streak")
+                }
             }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.14) : Color.white.opacity(0.94))
+                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: colorScheme == .dark ? 9 : 6, x: 0, y: 3)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+                    .strokeBorder(colorScheme == .dark ? Color.white.opacity(0.18) : Color.black.opacity(0.09), lineWidth: 0.8)
+            )
+            .padding(16)
         }
         .frame(width: shareCardWidth, alignment: .leading)
-        .padding(20)
-        .background(
-            LinearGradient(
-                colors: [Color.accentColor.opacity(0.88), Color.blue.opacity(0.78)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 32, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .strokeBorder(.white.opacity(0.24), lineWidth: 0.8)
-        )
     }
 
     private var shareCardWidth: CGFloat {

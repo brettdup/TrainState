@@ -338,7 +338,7 @@ struct SettingsView: View {
             .padding(.vertical, 14)
             .padding(.horizontal, 8)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                     .fill(isSelected ? option.color.opacity(0.15) : Color.primary.opacity(0.04))
             )
         }
@@ -391,7 +391,7 @@ struct SettingsView: View {
             .padding(.vertical, 14)
             .padding(.horizontal, 8)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                     .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.04))
             )
         }

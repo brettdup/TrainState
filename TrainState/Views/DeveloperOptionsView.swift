@@ -4,37 +4,24 @@ import HealthKit
 
 struct DeveloperOptionsView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var purchaseManager = PurchaseManager.shared
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                    ThemeColor.primaryUi01()
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            ScrollView {
-                GlassEffectContainerWrapper(spacing: 16) {
-                    VStack(spacing: 16) {
+        ScrollView {
+            GlassEffectContainerWrapper(spacing: 16) {
+                VStack(spacing: 16) {
                     #if DEBUG
                     premiumOverrideCard
                     #endif
                     
                     dataCard
                 }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Developer")
     }
     

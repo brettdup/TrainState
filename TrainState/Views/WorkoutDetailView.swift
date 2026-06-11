@@ -5,7 +5,6 @@ import HealthKit
 
 struct WorkoutDetailView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \WorkoutSubcategory.name) private var allSubcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
     @Query(sort: \Workout.startDate, order: .reverse) private var allWorkouts: [Workout]
@@ -186,19 +185,6 @@ struct WorkoutDetailView: View {
         }
         .listStyle(.insetGrouped)
         .listSectionSpacing(.custom(10))
-        .scrollContentBackground(.hidden)
-        .background(
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                    ThemeColor.primaryUi01()
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        )
         .navigationTitle("Workout")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {

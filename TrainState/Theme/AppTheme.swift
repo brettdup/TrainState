@@ -9,36 +9,7 @@ enum AppTheme {
     static let accentPurple = ThemeColor.workoutStrength()
     static let accentMint = ThemeColor.support02()
     
-    // MARK: - Gradients
-    static let heroGradient = LinearGradient(
-        colors: [
-            ThemeColor.primaryUi01(),
-            ThemeColor.primaryUi02()
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-    
-    static let backgroundGradient = LinearGradient(
-        colors: [
-            ThemeColor.primaryUi01(),
-            ThemeColor.primaryUi01()
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-    
-    static let cardGradient = LinearGradient(
-        colors: [
-            ThemeColor.primaryUi01(),
-            ThemeColor.primaryUi01()
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-    
     // MARK: - Corner Radius (use ViewConstants instead)
     @available(*, deprecated, message: "Use ViewConstants.cornerRadius or ViewConstants.cardCornerRadius instead")
     static let cornerRadius: CGFloat = ViewConstants.cardCornerRadius
 }
-

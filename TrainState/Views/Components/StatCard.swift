@@ -24,11 +24,11 @@ struct StatCard: View {
         .background(
                     ZStack {
                         Color.clear
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
                             .fill(.ultraThinMaterial.opacity(0.1))
                     }
                 )        .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                         .stroke(Color.gray.opacity(0.1), lineWidth: 1)
                 )
     }
@@ -41,4 +41,4 @@ struct StatCard: View {
         StatCard(icon: "calendar", value: "12", color: .purple)
     }
     .padding()
-} 
+}

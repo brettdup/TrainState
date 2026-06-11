@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct SubscriptionInfoView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var restoreStatusMessage: String?
@@ -25,21 +24,9 @@ struct SubscriptionInfoView: View {
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                    ThemeColor.primaryUi01()
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            ScrollView {
-                GlassEffectContainerWrapper(spacing: 16) {
-                    LazyVStack(spacing: 16) {
+        ScrollView {
+            GlassEffectContainerWrapper(spacing: 16) {
+                LazyVStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Status")
                             .font(.subheadline.weight(.semibold))
@@ -111,12 +98,12 @@ struct SubscriptionInfoView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .glassCard()
                 }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Subscription")
         .onAppear {
             Task {

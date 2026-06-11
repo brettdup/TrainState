@@ -44,20 +44,6 @@ struct PerformantCardView<Content: View>: View {
     }
 }
 
-// Optimized gradient background that doesn't recalculate
-struct StaticGradientBackground: View {
-    let gradient: LinearGradient
-    
-    init(colors: [Color], startPoint: UnitPoint = .topLeading, endPoint: UnitPoint = .bottomTrailing) {
-        self.gradient = LinearGradient(colors: colors, startPoint: startPoint, endPoint: endPoint)
-    }
-    
-    var body: some View {
-        gradient
-            .ignoresSafeArea()
-    }
-}
-
 // Performance-optimized text with reduced recomputation
 struct OptimizedText: View {
     let text: String
@@ -132,21 +118,18 @@ extension View {
 }
 
 #Preview {
-    StaticGradientBackground(colors: [.blue.opacity(0.25), .mint.opacity(0.2)])
-        .overlay {
-            VStack(spacing: 16) {
-                OptimizedText("Performance Components", font: .headline)
-                PerformantCardView {
-                    HStack(spacing: 10) {
-                        OptimizedIcon("bolt.fill", color: .yellow)
-                        Text("Sample card content")
-                        OptimizedSpacer()
-                    }
-                    .padding(16)
-                }
-                Button("Tap me") {}
-                    .buttonStyle(LightweightButtonStyle())
+    VStack(spacing: 16) {
+        OptimizedText("Performance Components", font: .headline)
+        PerformantCardView {
+            HStack(spacing: 10) {
+                OptimizedIcon("bolt.fill", color: .yellow)
+                Text("Sample card content")
+                OptimizedSpacer()
             }
-            .padding()
+            .padding(16)
         }
+        Button("Tap me") {}
+            .buttonStyle(LightweightButtonStyle())
+    }
+    .padding()
 }

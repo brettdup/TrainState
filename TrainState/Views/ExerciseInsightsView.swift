@@ -3,7 +3,6 @@ import SwiftData
 import SwiftUI
 
 struct ExerciseInsightsView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \Workout.startDate, order: .forward) private var workouts: [Workout]
 
     let exerciseName: String
@@ -125,36 +124,24 @@ struct ExerciseInsightsView: View {
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                    ThemeColor.primaryUi01()
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            ScrollView {
-                VStack(spacing: 16) {
-                    summaryCard
-                    if historyPoints.isEmpty {
-                        emptyStateCard
-                    } else {
-                        metricCard
-                        chartCard
-                        historyCard
-                        individualEntriesCard
-                    }
+        ScrollView {
+            VStack(spacing: 16) {
+                summaryCard
+                if historyPoints.isEmpty {
+                    emptyStateCard
+                } else {
+                    metricCard
+                    chartCard
+                    historyCard
+                    individualEntriesCard
                 }
-                .glassEffectContainer(spacing: 16)
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
             }
+            .glassEffectContainer(spacing: 16)
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle(exerciseName)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -316,7 +303,7 @@ struct ExerciseInsightsView: View {
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 34, height: 34)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                         .fill(Color.accentColor.opacity(0.12))
                 )
 
@@ -352,7 +339,7 @@ struct ExerciseInsightsView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                 .fill(ThemeColor.primaryUi03())
         )
     }

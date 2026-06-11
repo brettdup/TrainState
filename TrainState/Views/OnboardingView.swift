@@ -9,7 +9,6 @@ struct OnboardingView: View {
     @AppStorage("hasSetWeeklyGoal") private var hasSetWeeklyGoal = false
     @AppStorage("weeklyGoalWorkouts") private var weeklyGoalWorkouts: Int = 4
     @AppStorage("weeklyGoalMinutes") private var weeklyGoalMinutes: Int = 180
-    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \StrengthWorkoutTemplate.updatedAt, order: .reverse) private var strengthTemplates: [StrengthWorkoutTemplate]
     @State private var currentPage = 0
     @State private var appeared = false
@@ -28,8 +27,6 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            backgroundGradient
-
             VStack(spacing: 0) {
                 ZStack(alignment: .topLeading) {
                     TabView(selection: $currentPage) {
@@ -116,21 +113,6 @@ struct OnboardingView: View {
             .padding(.top, 8)
             .padding(.trailing, 8)
         }
-    }
-
-    // MARK: - Background
-
-    private var backgroundGradient: some View {
-        LinearGradient(
-            gradient: Gradient(colors: [
-                Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                ThemeColor.primaryUi01()
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
     }
 
     // MARK: - Pages

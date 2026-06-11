@@ -2,7 +2,6 @@ import SwiftUI
 import SwiftData
 
 struct CalendarView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
     @State private var selectedWeekStart: Date = Calendar.current.startOfWeek(for: Date())
     @State private var weekPickerDate: Date = Date()
@@ -11,36 +10,23 @@ struct CalendarView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                        ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                        ThemeColor.primaryUi01()
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-
-                ScrollView {
-                    GlassEffectContainerWrapper(spacing: 16) {
-                        LazyVStack(spacing: 16) {
-                            weekNavigatorCard
-                            displayModePicker
-                            weekStripCard
-                            weekSummaryCard
-
-                            ForEach(displayedDays, id: \.self) { day in
-                                daySection(for: day)
-                            }
-                        }
+            List {
+                Section {
+                    VStack(spacing: 12) {
+                        weekNavigatorCard
+                        displayModePicker
+                        weekStripCard
+                        weekSummaryCard
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-                    .padding(.bottom, 24)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                    .listRowBackground(Color.clear)
+                }
+
+                ForEach(displayedDays, id: \.self) { day in
+                    daySection(for: day)
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Calendar")
             .navigationBarTitleDisplayMode(.large)
             .sheet(isPresented: $showingWeekPicker) {
@@ -53,56 +39,45 @@ struct CalendarView: View {
     private func daySection(for day: Date) -> some View {
         let dayWorkouts = workoutsForDay(day)
 
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(sectionHeaderTitle(for: day))
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-
-                    Text(daySubtitle(for: dayWorkouts))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                Text(dayNumberText(for: day))
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(Calendar.current.isDateInToday(day) ? Color.accentColor : Color.secondary)
-            }
-            .padding(.horizontal, 4)
-
+        return Section {
             if dayWorkouts.isEmpty {
                 restDayRow
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(dayWorkouts.enumerated()), id: \.element.id) { index, workout in
-                        NavigationLink {
-                            WorkoutDetailView(workout: workout)
-                        } label: {
-                            WorkoutRowView(workout: workout, showsChevron: false)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-
-                        if index < dayWorkouts.count - 1 {
-                            Divider()
-                                .padding(.leading, 72)
-                        }
+                ForEach(dayWorkouts, id: \.id) { workout in
+                    NavigationLink {
+                        WorkoutDetailView(workout: workout)
+                    } label: {
+                        WorkoutRowView(workout: workout, showsChevron: false)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(.secondarySystemGroupedBackground))
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
+        } header: {
+            daySectionHeader(for: day, workouts: dayWorkouts)
         }
+    }
+
+    private func daySectionHeader(for day: Date, workouts: [Workout]) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(sectionHeaderTitle(for: day))
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Text(daySubtitle(for: workouts))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Text(dayNumberText(for: day))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(Calendar.current.isDateInToday(day) ? Color.accentColor : Color.secondary)
+        }
+        .textCase(nil)
     }
 
     private var restDayRow: some View {
@@ -112,7 +87,7 @@ struct CalendarView: View {
                 .foregroundStyle(.tertiary)
                 .frame(width: 36, height: 36)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                         .fill(ThemeColor.primaryUi03())
                 )
 
@@ -127,9 +102,7 @@ struct CalendarView: View {
 
             Spacer()
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(prominence: .regular)
     }
 
     private var weekNavigatorCard: some View {
@@ -140,7 +113,10 @@ struct CalendarView: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
                     .frame(width: 36, height: 36)
-                    .background(Circle().fill(ThemeColor.primaryUi03()))
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(ThemeColor.primaryUi03())
+                    )
             }
             .buttonStyle(.plain)
             .disabled(displayMode == .last7Days)
@@ -182,7 +158,10 @@ struct CalendarView: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 16, weight: .semibold))
                     .frame(width: 36, height: 36)
-                    .background(Circle().fill(ThemeColor.primaryUi03()))
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(ThemeColor.primaryUi03())
+                    )
             }
             .buttonStyle(.plain)
             .disabled(displayMode == .last7Days || selectedWeekStart >= Calendar.current.startOfWeek(for: Date()))
@@ -195,7 +174,10 @@ struct CalendarView: View {
                 Image(systemName: "calendar.badge.clock")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 36, height: 36)
-                    .background(Circle().fill(ThemeColor.primaryUi03()))
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(ThemeColor.primaryUi03())
+                    )
             }
             .buttonStyle(.plain)
             .opacity(displayMode == .week && isShowingCurrentWeek ? 0.5 : 1)
@@ -212,8 +194,8 @@ struct CalendarView: View {
             }
         }
         .pickerStyle(.segmented)
-        .padding(10)
-        .glassCard(prominence: .regular)
+        .padding(16)
+        .glassCard()
     }
 
     private var weekPickerSheet: some View {
@@ -291,7 +273,7 @@ struct CalendarView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                         .fill(isToday ? Color.accentColor.opacity(0.12) : Color.clear)
                 )
             }

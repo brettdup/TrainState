@@ -2,7 +2,6 @@ import SwiftUI
 import SwiftData
 
 struct SubcategoryLastLoggedView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Query(sort: \WorkoutSubcategory.name) private var subcategories: [WorkoutSubcategory]
     @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
 
@@ -114,66 +113,54 @@ struct SubcategoryLastLoggedView: View {
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                    ThemeColor.primaryUi01()
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+        ScrollView {
+            GlassEffectContainerWrapper(spacing: 16) {
+                LazyVStack(spacing: 16) {
+                    summaryCard
+                    tabPicker
 
-            ScrollView {
-                GlassEffectContainerWrapper(spacing: 16) {
-                    LazyVStack(spacing: 16) {
-                        summaryCard
-                        tabPicker
+                    if strengthSubcategories.isEmpty {
+                        emptyStateCard("No strength subcategories found.")
+                    } else if selectedTab == .categories {
+                        sectionHeader(title: "Strength Categories", count: filteredSubcategories.count)
 
-                        if strengthSubcategories.isEmpty {
-                            emptyStateCard("No strength subcategories found.")
-                        } else if selectedTab == .categories {
-                            sectionHeader(title: "Strength Categories", count: filteredSubcategories.count)
-
-                            ForEach(filteredSubcategories, id: \.subcategory.id) { item in
-                                NavigationLink {
-                                    SubcategoryHistoryView(
-                                        subcategory: item.subcategory,
-                                        workouts: workouts
-                                    )
-                                } label: {
-                                    lastTrainedRow(
-                                        title: item.subcategory.name,
-                                        subtitle: item.subcategory.category?.name,
-                                        lastLogged: item.lastLogged,
-                                        color: item.subcategory.category.flatMap { Color(hex: $0.color) } ?? Color.accentColor,
-                                        systemImage: "square.grid.2x2"
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        } else {
-                            sectionHeader(title: "Strength Exercises", count: filteredExercises.count)
-
-                            ForEach(filteredExercises) { item in
+                        ForEach(filteredSubcategories, id: \.subcategory.id) { item in
+                            NavigationLink {
+                                SubcategoryHistoryView(
+                                    subcategory: item.subcategory,
+                                    workouts: workouts
+                                )
+                            } label: {
                                 lastTrainedRow(
-                                    title: item.name,
-                                    subtitle: item.linkedSubcategories.isEmpty ? nil : item.linkedSubcategories.joined(separator: " · "),
+                                    title: item.subcategory.name,
+                                    subtitle: item.subcategory.category?.name,
                                     lastLogged: item.lastLogged,
-                                    color: Color.accentColor,
-                                    systemImage: "dumbbell.fill"
+                                    color: item.subcategory.category.flatMap { Color(hex: $0.color) } ?? Color.accentColor,
+                                    systemImage: "square.grid.2x2"
                                 )
                             }
+                            .buttonStyle(.plain)
+                        }
+                    } else {
+                        sectionHeader(title: "Strength Exercises", count: filteredExercises.count)
+
+                        ForEach(filteredExercises) { item in
+                            lastTrainedRow(
+                                title: item.name,
+                                subtitle: item.linkedSubcategories.isEmpty ? nil : item.linkedSubcategories.joined(separator: " · "),
+                                lastLogged: item.lastLogged,
+                                color: Color.accentColor,
+                                systemImage: "dumbbell.fill"
+                            )
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Last Trained")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $searchText, prompt: "Search strength list")
@@ -251,7 +238,7 @@ struct SubcategoryLastLoggedView: View {
                 .foregroundStyle(color)
                 .frame(width: 40, height: 40)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
                         .fill(color.opacity(0.12))
                 )
 
@@ -332,8 +319,6 @@ private enum StrengthLastTrainedTab: String, CaseIterable, Identifiable {
 }
 
 private struct SubcategoryHistoryView: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let subcategory: WorkoutSubcategory
     let workouts: [Workout]
 
@@ -391,68 +376,56 @@ private struct SubcategoryHistoryView: View {
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                    ThemeColor.primaryUi01()
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+        ScrollView {
+            VStack(spacing: 16) {
+                summaryCard
+                exercisesCard
 
-            ScrollView {
-                VStack(spacing: 16) {
-                    summaryCard
-                    exercisesCard
+                if matchingWorkouts.isEmpty {
+                    Text("No workout history for this subcategory yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(20)
+                        .glassCard()
+                } else {
+                    ForEach(matchingWorkouts) { workout in
+                        NavigationLink {
+                            WorkoutDetailView(workout: workout)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Text(workout.startDate.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                }
 
-                    if matchingWorkouts.isEmpty {
-                        Text("No workout history for this subcategory yet.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                                Text(workout.primaryWorkoutDisplayName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+
+                                if let exercises = exercisesSummary(for: workout), !exercises.isEmpty {
+                                    Text(exercises)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(20)
                             .glassCard()
-                    } else {
-                        ForEach(matchingWorkouts) { workout in
-                            NavigationLink {
-                                WorkoutDetailView(workout: workout)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    HStack {
-                                        Text(workout.startDate.formatted(date: .abbreviated, time: .shortened))
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.primary)
-                                        Spacer()
-                                    }
-
-                                    Text(workout.primaryWorkoutDisplayName)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-
-                                    if let exercises = exercisesSummary(for: workout), !exercises.isEmpty {
-                                        Text(exercises)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(2)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(20)
-                                .glassCard()
-                            }
-                            .buttonStyle(.plain)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .glassEffectContainer(spacing: 16)
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
             }
+            .glassEffectContainer(spacing: 16)
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle(subcategory.name)
         .navigationBarTitleDisplayMode(.inline)
     }

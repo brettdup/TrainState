@@ -1,24 +1,10 @@
 import SwiftUI
 
 struct TermsOfUseView: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color.accentColor.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                    ThemeColor.primaryUi02().opacity(colorScheme == .dark ? 0.35 : 0.65),
-                    ThemeColor.primaryUi01()
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            ScrollView {
-                GlassEffectContainerWrapper(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 16) {
+        ScrollView {
+            GlassEffectContainerWrapper(spacing: 16) {
+                VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Terms of Use")
                             .font(.title2.weight(.bold))
@@ -39,12 +25,12 @@ struct TermsOfUseView: View {
                     termsSection("7. Changes to Terms", "We reserve the right to modify these terms at any time. We will notify users of any material changes.")
                     termsSection("8. Contact Information", "For questions about these Terms of Use, please contact us at support@trainstate.app")
                 }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Terms of Use")
         .navigationBarTitleDisplayMode(.inline)
     }
