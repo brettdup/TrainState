@@ -40,7 +40,6 @@ struct AnalyticsView: View {
                         streakCard
                         strengthHistoryCard
                         personalBestsCard
-                        moreInsightsCard
                     }
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
@@ -173,15 +172,21 @@ struct AnalyticsView: View {
                 )
             ) {
                 Label("Share Weekly Recap", systemImage: "square.and.arrow.up")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
+                    .padding(.vertical, 13)
                     .background(
-                        RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
-                            .fill(ThemeColor.primaryUi03())
+                        RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+                            .fill(Color.accentColor)
+                            .shadow(color: Color.accentColor.opacity(0.24), radius: 10, x: 0, y: 5)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+                            .stroke(Color.white.opacity(0.18), lineWidth: 1)
                     )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ScaleButtonStyle())
         } else {
             HStack {
                 Label("Preparing share card", systemImage: "square.and.arrow.up")
@@ -412,22 +417,6 @@ struct AnalyticsView: View {
         .glassCard()
     }
 
-    private var moreInsightsCard: some View {
-        DisclosureGroup {
-            nextSessionGuidanceRows
-            smartPROpportunityRows
-            adaptivePlanRows
-            untrainedCategoryRows
-            persistentSurfaceRows
-            allTimeRows
-        } label: {
-            Label("More Insights", systemImage: "chart.line.uptrend.xyaxis")
-                .font(.headline)
-        }
-        .padding(16)
-        .glassCard(prominence: .regular)
-    }
-
     private var filterSection: some View {
         Section {
             Menu {
@@ -478,7 +467,21 @@ struct AnalyticsView: View {
                     )
                 ) {
                     Label("Share Weekly Recap", systemImage: "square.and.arrow.up")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(
+                            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+                                .fill(Color.accentColor)
+                                .shadow(color: Color.accentColor.opacity(0.24), radius: 10, x: 0, y: 5)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius, style: .continuous)
+                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                        )
                 }
+                .buttonStyle(ScaleButtonStyle())
             } else {
                 HStack {
                     Label("Preparing share card", systemImage: "square.and.arrow.up")
@@ -1178,6 +1181,28 @@ struct AnalyticsView: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    private var insightWorkouts: [Workout] {
+        switch selectedFilter {
+        case .all:
+            let strengthWorkouts = filteredWorkouts.filter { $0.type == .strength }
+            return strengthWorkouts.isEmpty ? filteredWorkouts : strengthWorkouts
+        case .apple:
+            return filteredWorkouts
+        }
+    }
+
+    private var trainedInsightSubcategories: [WorkoutSubcategory] {
+        let subcategoriesByID = insightWorkouts.reduce(into: [UUID: WorkoutSubcategory]()) { result, workout in
+            for subcategory in workout.subcategories ?? [] {
+                result[subcategory.id] = subcategory
+            }
+        }
+
+        return subcategoriesByID.values.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
     private var weeklySummary: (count: Int, duration: String, distance: Double) {
         let calendar = Calendar.current
         guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: Date()) else {
@@ -1378,12 +1403,37 @@ struct AnalyticsView: View {
         showAllPersonalBests ? exercisePRs : Array(exercisePRs.prefix(5))
     }
 
+    private var insightExercisePRs: [ExercisePR] {
+        var bestByExercise: [String: ExercisePR] = [:]
+
+        for workout in insightWorkouts {
+            for exercise in workout.exercises ?? [] {
+                let name = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty, let weight = exercise.weight, weight > 0 else { continue }
+                let reps = max(exercise.reps ?? 1, 1)
+                let estimatedOneRepMax = weight * (1 + Double(reps) / 30.0)
+
+                let current = bestByExercise[name]
+                if current == nil || estimatedOneRepMax > current!.estimatedOneRepMax {
+                    bestByExercise[name] = ExercisePR(
+                        exerciseName: name,
+                        topSetWeight: weight,
+                        estimatedOneRepMax: estimatedOneRepMax,
+                        date: workout.startDate
+                    )
+                }
+            }
+        }
+
+        return bestByExercise.values.sorted { $0.estimatedOneRepMax > $1.estimatedOneRepMax }
+    }
+
     private var smartPROpportunities: [SmartPROpportunity] {
         let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? .distantPast
-        let prs = Dictionary(uniqueKeysWithValues: exercisePRs.map { ($0.exerciseName, $0) })
+        let prs = Dictionary(uniqueKeysWithValues: insightExercisePRs.map { ($0.exerciseName, $0) })
         var recentBest: [String: Double] = [:]
 
-        for workout in filteredWorkouts where workout.startDate >= twoWeeksAgo {
+        for workout in insightWorkouts where workout.startDate >= twoWeeksAgo {
             for exercise in workout.exercises ?? [] {
                 let name = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !name.isEmpty, let weight = exercise.weight, weight > 0 else { continue }
@@ -1407,9 +1457,9 @@ struct AnalyticsView: View {
 
     private var adaptiveRecommendations: [AdaptiveRecommendation] {
         let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? .distantPast
-        let recentWorkouts = filteredWorkouts.filter { $0.startDate >= twoWeeksAgo }
+        let recentWorkouts = insightWorkouts.filter { $0.startDate >= twoWeeksAgo }
 
-        let counts: [UUID: Int] = filteredSubcategories.reduce(into: [:]) { result, subcategory in
+        let counts: [UUID: Int] = trainedInsightSubcategories.reduce(into: [:]) { result, subcategory in
             let count = recentWorkouts.reduce(0) { partial, workout in
                 let hasSubcategory = (workout.subcategories ?? []).contains { $0.id == subcategory.id }
                 return partial + (hasSubcategory ? 1 : 0)
@@ -1417,14 +1467,14 @@ struct AnalyticsView: View {
             result[subcategory.id] = count
         }
 
-        return filteredSubcategories
+        return trainedInsightSubcategories
             .sorted { (counts[$0.id] ?? 0) < (counts[$1.id] ?? 0) }
             .prefix(3)
             .map { subcategory in
                 let hits = counts[subcategory.id] ?? 0
                 let reason = hits == 0
-                    ? "No sessions in the last 14 days. Add this to your next workout."
-                    : "Only \(hits) session\(hits == 1 ? "" : "s") in the last 14 days. Consider increasing frequency."
+                    ? "You have trained this before, but not in the last 14 days."
+                    : "Only \(hits) session\(hits == 1 ? "" : "s") in the last 14 days. Consider bringing it back."
                 return AdaptiveRecommendation(name: subcategory.name, reason: reason)
             }
     }
