@@ -132,7 +132,12 @@ class CloudKitManager {
 
         updateDebug("Restoring data...")
         let payload = try payload(from: record)
-        try restorePayload(payload, context: context)
+        let mergedPayload = try payloadPreservingNewerHealthKitWorkouts(
+            payload,
+            backupDate: backupInfo.timestamp,
+            context: context
+        )
+        try restorePayload(mergedPayload, context: context)
         updateDebug("Restore complete.")
     }
     
@@ -276,6 +281,94 @@ private extension CloudKitManager {
             strengthTemplates: strengthTemplates.map(StrengthWorkoutTemplateExport.init),
             routes: routes.map(WorkoutRouteExport.init)
         )
+    }
+
+    func payloadPreservingNewerHealthKitWorkouts(
+        _ backupPayload: BackupPayload,
+        backupDate: Date,
+        context: ModelContext
+    ) throws -> BackupPayload {
+        let currentWorkouts = try context.fetch(FetchDescriptor<Workout>())
+        let backupWorkoutIDs = Set(backupPayload.workouts.map(\.id))
+        let backupHealthKitUUIDs = Set(backupPayload.workouts.compactMap(\.hkUUID))
+
+        let workoutsToPreserve = currentWorkouts.filter { workout in
+            guard
+                workout.startDate > backupDate,
+                let hkUUID = workout.hkUUID,
+                !hkUUID.isEmpty
+            else {
+                return false
+            }
+
+            return !backupWorkoutIDs.contains(workout.id)
+                && !backupHealthKitUUIDs.contains(hkUUID)
+        }
+
+        guard !workoutsToPreserve.isEmpty else { return backupPayload }
+
+        let preservedWorkoutIDs = Set(workoutsToPreserve.map(\.id))
+        let preservedCategories = workoutsToPreserve.flatMap { $0.categories ?? [] }
+        let preservedSubcategories = workoutsToPreserve.flatMap { workout in
+            let assigned = workout.subcategories ?? []
+            let exerciseSubcategories = (workout.exercises ?? []).compactMap(\.subcategory)
+            return assigned + exerciseSubcategories
+        }
+
+        let requiredCategories = preservedCategories
+            + preservedSubcategories.compactMap(\.category)
+        let subcategoryIDs = Set(preservedSubcategories.map(\.id))
+
+        let currentTemplates = try context.fetch(FetchDescriptor<SubcategoryExercise>())
+        let currentRoutes = try context.fetch(FetchDescriptor<WorkoutRoute>())
+
+        return BackupPayload(
+            workouts: appendingUnique(
+                backupPayload.workouts,
+                workoutsToPreserve.map(WorkoutExport.init),
+                id: \.id
+            ),
+            categories: appendingUnique(
+                backupPayload.categories,
+                requiredCategories.map(WorkoutCategoryExport.init),
+                id: \.id
+            ),
+            subcategories: appendingUnique(
+                backupPayload.subcategories,
+                preservedSubcategories.map(WorkoutSubcategoryExport.init),
+                id: \.id
+            ),
+            exerciseTemplates: appendingUnique(
+                backupPayload.exerciseTemplates,
+                currentTemplates
+                    .filter { template in
+                        guard let subcategoryID = template.subcategory?.id else { return false }
+                        return subcategoryIDs.contains(subcategoryID)
+                    }
+                    .map(SubcategoryExerciseExport.init),
+                id: \.id
+            ),
+            strengthTemplates: backupPayload.strengthTemplates,
+            routes: appendingUnique(
+                backupPayload.routes,
+                currentRoutes
+                    .filter { route in
+                        guard let workoutID = route.workout?.id else { return false }
+                        return preservedWorkoutIDs.contains(workoutID)
+                    }
+                    .map(WorkoutRouteExport.init),
+                id: \.id
+            )
+        )
+    }
+
+    func appendingUnique<Element, ID: Hashable>(
+        _ original: [Element],
+        _ additions: [Element],
+        id: KeyPath<Element, ID>
+    ) -> [Element] {
+        var existingIDs = Set(original.map { $0[keyPath: id] })
+        return original + additions.filter { existingIDs.insert($0[keyPath: id]).inserted }
     }
 
     func saveBackupRecord(payload: BackupPayload) async throws {

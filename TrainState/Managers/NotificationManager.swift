@@ -11,6 +11,7 @@ struct HealthKitWorkoutImportNotificationDetail {
 
 class NotificationManager {
     static let shared = NotificationManager()
+    static let healthKitImportNotificationsEnabledKey = "healthKitImportNotificationsEnabled"
     
     private init() {}
     
@@ -67,6 +68,8 @@ class NotificationManager {
         importedCount: Int,
         workoutDetails: [HealthKitWorkoutImportNotificationDetail] = []
     ) {
+        guard healthKitImportNotificationsEnabled else { return }
+
         let totalCount = mergedCount + importedCount
         guard totalCount > 0 else { return }
 
@@ -97,6 +100,14 @@ class NotificationManager {
                 }
             }
         }
+    }
+
+    private var healthKitImportNotificationsEnabled: Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: Self.healthKitImportNotificationsEnabledKey) != nil else {
+            return true
+        }
+        return defaults.bool(forKey: Self.healthKitImportNotificationsEnabledKey)
     }
 
     private func healthKitImportNotificationTitle(mergedCount: Int, importedCount: Int) -> String {

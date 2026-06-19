@@ -11,6 +11,8 @@ struct SettingsView: View {
     @AppStorage("measurementSystem") private var measurementSystemRaw = MeasurementSystem.metric.rawValue
     @AppStorage("restTimerEnabled") private var restTimerEnabled = false
     @AppStorage("restTimerDurationSeconds") private var restTimerDurationSeconds = 90
+    @AppStorage(NotificationManager.healthKitImportNotificationsEnabledKey)
+    private var healthKitImportNotificationsEnabled = true
     @Query private var userSettingsList: [UserSettings]
 
     private var themeMode: AppThemeMode {
@@ -48,7 +50,6 @@ struct SettingsView: View {
                 preferencesCard
                 dataCard
                 premiumCard
-                developerCard
                 legalCard
             }
             .navigationTitle("Settings")
@@ -83,7 +84,7 @@ struct SettingsView: View {
                 }
             } message: {
                 if let backup = backupToRestore {
-                    Text("This will replace all current workouts, categories, and subcategories with \"\(backup.name)\" (\(backup.workoutCount) workouts). This cannot be undone.")
+                    Text("This will replace current data with \"\(backup.name)\" (\(backup.workoutCount) workouts). Workouts imported from Apple Health after this backup was created will be kept. This cannot be undone.")
                 }
             }
             .alert("Delete Backup", isPresented: $showDeleteBackupAlert) {
@@ -232,13 +233,34 @@ struct SettingsView: View {
         Section("Preferences") {
             appearanceSection
             workoutLoggingSection
+            notificationSection
+            #if DEBUG
             Toggle("Show Onboarding", isOn: $hasCompletedOnboarding.inverse)
+            #endif
         }
         .onChange(of: measurementSystemRaw) { _, newValue in
             if let settings = userSettingsList.first,
                let system = MeasurementSystem(rawValue: newValue) {
                 settings.measurementSystem = system
                 try? modelContext.save()
+            }
+        }
+    }
+
+    private var notificationSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Notifications")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            Toggle(
+                "Notify when Apple Health workouts are imported",
+                isOn: $healthKitImportNotificationsEnabled
+            )
+            .onChange(of: healthKitImportNotificationsEnabled) { _, isEnabled in
+                if isEnabled {
+                    NotificationManager.shared.requestAuthorization()
+                }
             }
         }
     }
@@ -456,16 +478,6 @@ struct SettingsView: View {
                 SettingsRow(icon: "star.bubble", title: "Rate Exercise Pal")
             }
             .buttonStyle(.borderless)
-        }
-    }
-
-    private var developerCard: some View {
-        Section("Developer") {
-            NavigationLink {
-                DeveloperOptionsView()
-            } label: {
-                SettingsRow(icon: "wrench.and.screwdriver", title: "Developer Options")
-            }
         }
     }
 

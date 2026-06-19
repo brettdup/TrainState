@@ -98,10 +98,7 @@ struct OnboardingView: View {
     private var skipButton: some View {
         if currentPage < totalPages - 1 {
             Button {
-                withAnimation(.easeOut(duration: 0.3)) {
-                    persistOnboardingPreferences()
-                    hasCompletedOnboarding = true
-                }
+                completeOnboarding(showCelebration: false)
             } label: {
                 Text("Skip")
                     .font(.subheadline.weight(.medium))
@@ -293,13 +290,7 @@ struct OnboardingView: View {
                 }
             } else {
                 HapticManager.success()
-                persistOnboardingPreferences()
-                showCelebration = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        hasCompletedOnboarding = true
-                    }
-                }
+                completeOnboarding(showCelebration: true)
             }
         } label: {
             HStack(spacing: 10) {
@@ -325,6 +316,25 @@ struct OnboardingView: View {
         onboardingTrainingStyleRawValue = selectedTrainingStyle.rawValue
         applyRecommendedWeeklyGoals(for: selectedGoal)
         preloadStarterTemplatesIfNeeded()
+    }
+
+    private func completeOnboarding(showCelebration: Bool) {
+        persistOnboardingPreferences()
+        NotificationManager.shared.requestAuthorization()
+
+        guard showCelebration else {
+            withAnimation(.easeOut(duration: 0.3)) {
+                hasCompletedOnboarding = true
+            }
+            return
+        }
+
+        self.showCelebration = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation(.easeOut(duration: 0.3)) {
+                hasCompletedOnboarding = true
+            }
+        }
     }
 
     private func applyRecommendedWeeklyGoals(for goal: OnboardingGoal) {
