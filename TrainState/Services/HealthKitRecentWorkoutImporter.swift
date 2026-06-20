@@ -110,10 +110,12 @@ final class HealthKitRecentWorkoutImporter {
     private static var isImportingNewRecentWorkouts = false
     private static var isImportingAnchoredWorkouts = false
     private static let anchoredWorkoutSyncAnchorKey = "healthKitWorkoutAutoImportAnchor"
+    private static let hasCompletedFullHistoryImportKey = "healthKitHasCompletedFullHistoryImport"
 
     private let healthStore = HKHealthStore()
     private let workoutType = HKObjectType.workoutType()
     private let workoutRouteType = HKSeriesType.workoutRoute()
+    private var sourceWorkoutsByUUID: [String: HKWorkout] = [:]
 
     func fetchRecentWorkouts(limit: Int = 30) async throws -> [HealthKitRecentWorkoutMenuItem] {
         guard HKHealthStore.isHealthDataAvailable() else {
@@ -194,7 +196,8 @@ final class HealthKitRecentWorkoutImporter {
         workout.hkUUID = item.hkUUID
         context.insert(workout)
 
-        if let sourceWorkout = try await findWorkout(uuidString: item.hkUUID),
+        if shouldFetchRoute(for: item),
+           let sourceWorkout = try await findWorkout(uuidString: item.hkUUID),
            let importedRoute = try await fetchRouteLocations(for: sourceWorkout),
            !importedRoute.isEmpty {
             let route = WorkoutRoute()
@@ -216,6 +219,32 @@ final class HealthKitRecentWorkoutImporter {
         return try await importUniqueWorkoutItems(recentWorkouts, into: context)
     }
 
+    func importFullHistoryOnce(
+        into context: ModelContext,
+        progress: @escaping (_ completed: Int, _ total: Int) -> Void = { _, _ in }
+    ) async throws -> Int {
+        guard !UserDefaults.standard.bool(forKey: Self.hasCompletedFullHistoryImportKey) else {
+            return 0
+        }
+
+        guard HKHealthStore.isHealthDataAvailable() else {
+            throw HealthKitImportError.unavailable
+        }
+
+        try await requestReadAuthorization()
+
+        let workouts = uniqueWorkoutItems(try await queryAllWorkouts(includeRatings: false))
+        progress(0, workouts.count)
+        defer { sourceWorkoutsByUUID.removeAll(keepingCapacity: false) }
+        let importedCount = try await importUniqueWorkoutItems(
+            workouts,
+            into: context,
+            progress: progress
+        )
+        UserDefaults.standard.set(true, forKey: Self.hasCompletedFullHistoryImportKey)
+        return importedCount
+    }
+
     func importNewAnchoredWorkouts(into context: ModelContext, initialLookbackDays: Int = 14) async throws -> Int {
         guard !Self.isImportingAnchoredWorkouts else { return 0 }
         Self.isImportingAnchoredWorkouts = true
@@ -234,7 +263,11 @@ final class HealthKitRecentWorkoutImporter {
         return importedCount
     }
 
-    private func importUniqueWorkoutItems(_ items: [HealthKitRecentWorkoutMenuItem], into context: ModelContext) async throws -> Int {
+    private func importUniqueWorkoutItems(
+        _ items: [HealthKitRecentWorkoutMenuItem],
+        into context: ModelContext,
+        progress: ((_ completed: Int, _ total: Int) -> Void)? = nil
+    ) async throws -> Int {
         guard !items.isEmpty else { return 0 }
 
         let descriptor = FetchDescriptor<Workout>()
@@ -242,8 +275,15 @@ final class HealthKitRecentWorkoutImporter {
         var mergedCount = 0
         var importedCount = 0
         var notificationDetails: [HealthKitWorkoutImportNotificationDetail] = []
+        var completedCount = 0
+        var pendingInsertCount = 0
 
         for item in items {
+            defer {
+                completedCount += 1
+                progress?(completedCount, items.count)
+            }
+
             if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
                 guard let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) else {
                     continue
@@ -258,11 +298,21 @@ final class HealthKitRecentWorkoutImporter {
                 notificationDetails.append(item.notificationDetail)
                 existingWorkouts = try context.fetch(descriptor)
             } else {
-                try await importWorkout(item, into: context)
+                let workout = try await createImportedWorkout(from: item, in: context)
+                existingWorkouts.append(workout)
                 importedCount += 1
+                pendingInsertCount += 1
                 notificationDetails.append(item.notificationDetail)
-                existingWorkouts = try context.fetch(descriptor)
+
+                if pendingInsertCount >= 25 {
+                    try context.save()
+                    pendingInsertCount = 0
+                }
             }
+        }
+
+        if pendingInsertCount > 0 {
+            try context.save()
         }
 
         NotificationManager.shared.sendHealthKitWorkoutImportNotification(
@@ -447,7 +497,42 @@ final class HealthKitRecentWorkoutImporter {
         var menuItems: [HealthKitRecentWorkoutMenuItem] = []
         menuItems.reserveCapacity(workouts.count)
         for workout in workouts {
+            sourceWorkoutsByUUID[workout.uuid.uuidString] = workout
             let rating = await fetchWorkoutRating(for: workout)
+            menuItems.append(HealthKitRecentWorkoutMenuItem(workout: workout, workoutRating: rating))
+        }
+        return menuItems
+    }
+
+    private func queryAllWorkouts(includeRatings: Bool) async throws -> [HealthKitRecentWorkoutMenuItem] {
+        let workouts: [HKWorkout] = try await withCheckedThrowingContinuation { continuation in
+            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+            let query = HKSampleQuery(
+                sampleType: workoutType,
+                predicate: nil,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [sortDescriptor]
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let workouts = samples as? [HKWorkout] else {
+                    continuation.resume(throwing: HealthKitImportError.unexpectedData)
+                    return
+                }
+
+                continuation.resume(returning: workouts)
+            }
+            healthStore.execute(query)
+        }
+
+        var menuItems: [HealthKitRecentWorkoutMenuItem] = []
+        menuItems.reserveCapacity(workouts.count)
+        for workout in workouts {
+            sourceWorkoutsByUUID[workout.uuid.uuidString] = workout
+            let rating = includeRatings ? await fetchWorkoutRating(for: workout) : nil
             menuItems.append(HealthKitRecentWorkoutMenuItem(workout: workout, workoutRating: rating))
         }
         return menuItems
@@ -476,12 +561,44 @@ final class HealthKitRecentWorkoutImporter {
             .first
     }
 
+    private func shouldFetchRoute(for item: HealthKitRecentWorkoutMenuItem) -> Bool {
+        guard item.distanceKilometers != nil,
+              item.locationType == .outdoor else {
+            return false
+        }
+
+        switch item.activityType {
+        case .walking,
+             .running,
+             .cycling,
+             .hiking,
+             .wheelchairWalkPace,
+             .wheelchairRunPace,
+             .crossCountrySkiing,
+             .downhillSkiing,
+             .snowboarding,
+             .skatingSports,
+             .paddleSports,
+             .rowing,
+             .sailing,
+             .surfingSports,
+             .swimming:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func isAuthorizationDenied(_ error: Error) -> Bool {
         let nsError = error as NSError
         return nsError.domain == HKErrorDomain && nsError.code == HKError.errorAuthorizationDenied.rawValue
     }
 
     private func findWorkout(uuidString: String) async throws -> HKWorkout? {
+        if let sourceWorkout = sourceWorkoutsByUUID[uuidString] {
+            return sourceWorkout
+        }
+
         guard let uuid = UUID(uuidString: uuidString) else { return nil }
         return try await withCheckedThrowingContinuation { continuation in
             let predicate = HKQuery.predicateForObject(with: uuid)

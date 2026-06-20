@@ -4,7 +4,6 @@ import SwiftData
 struct MainTabView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
     @Query private var subcategories: [WorkoutSubcategory]
     @StateObject private var purchaseManager = PurchaseManager.shared
     @AppStorage("quickLogSheetRequestToken") private var quickLogSheetRequestToken = ""
@@ -22,66 +21,63 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            WorkoutListView()
+            lazyTabContent(for: "workouts") {
+                WorkoutListView()
+            }
                 .tabItem {
                     Label("Workouts", systemImage: "figure.run")
                 }
                 .tag("workouts")
 
-            CalendarView()
+            lazyTabContent(for: "calendar") {
+                CalendarView()
+            }
                 .tabItem {
                     Label("Calendar", systemImage: "calendar")
                 }
                 .tag("calendar")
 
-            SavedRoutesView()
+            lazyTabContent(for: "routes") {
+                SavedRoutesView()
+            }
                 .tabItem {
                     Label("Routes", systemImage: "map")
                 }
                 .tag("routes")
 
-            if !purchaseManager.hasCompletedInitialPremiumCheck || purchaseManager.hasActiveSubscription {
-                AnalyticsView()
+            if purchaseManager.hasCompletedInitialPremiumCheck && purchaseManager.hasActiveSubscription {
+                lazyTabContent(for: "analytics") {
+                    AnalyticsView()
+                }
                     .tabItem {
                         Label("Analytics", systemImage: "chart.bar")
                     }
                     .tag("analytics")
             }
 
-            SettingsView()
+            lazyTabContent(for: "settings") {
+                SettingsView()
+            }
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
                 .tag("settings")
         }
         .onAppear {
-            WorkoutWidgetSnapshotWriter.writeSnapshot(for: workouts)
-            QuickExerciseLogStore.attachPendingLogs(
-                to: workouts,
-                availableSubcategories: subcategories,
-                in: modelContext
-            )
+            synchronizeWorkoutConsumers()
             guard !hasCheckedBackupReminder else { return }
             hasCheckedBackupReminder = true
             Task { await evaluateBackupReminderIfNeeded() }
         }
-        .onChange(of: widgetSnapshotFingerprint) { _, _ in
-            QuickExerciseLogStore.attachPendingLogs(
-                to: workouts,
-                availableSubcategories: subcategories,
-                in: modelContext
-            )
-            WorkoutWidgetSnapshotWriter.writeSnapshot(for: workouts)
-        }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
-            QuickExerciseLogStore.attachPendingLogs(
-                to: workouts,
-                availableSubcategories: subcategories,
-                in: modelContext
-            )
-            WorkoutWidgetSnapshotWriter.writeSnapshot(for: workouts)
+            synchronizeWorkoutConsumers()
             Task { await evaluateBackupReminderIfNeeded() }
+        }
+        .onChange(of: purchaseManager.hasActiveSubscription) { _, hasActiveSubscription in
+            if !hasActiveSubscription && selectedTab == "analytics" {
+                selectedTab = "workouts"
+            }
         }
         .onOpenURL { url in
             handleDeepLink(url)
@@ -107,6 +103,37 @@ struct MainTabView: View {
             selectedTab = "workouts"
             quickLogSheetRequestToken = UUID().uuidString
         }
+    }
+
+    @ViewBuilder
+    private func lazyTabContent<Content: View>(
+        for tab: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        if selectedTab == tab {
+            content()
+        } else {
+            Color.clear
+        }
+    }
+
+    private func synchronizeWorkoutConsumers() {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? .distantPast
+        var descriptor = FetchDescriptor<Workout>(
+            predicate: #Predicate { workout in
+                workout.startDate >= cutoff
+            },
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 500
+        guard let workouts = try? modelContext.fetch(descriptor) else { return }
+
+        QuickExerciseLogStore.attachPendingLogs(
+            to: workouts,
+            availableSubcategories: subcategories,
+            in: modelContext
+        )
+        WorkoutWidgetSnapshotWriter.writeSnapshot(for: workouts)
     }
 
     @MainActor
@@ -160,21 +187,6 @@ struct MainTabView: View {
         }
     }
 
-    private var widgetSnapshotFingerprint: String {
-        workouts.map { workout in
-            [
-                workout.id.uuidString,
-                String(workout.startDate.timeIntervalSince1970),
-                String(workout.duration),
-                String(workout.calories ?? 0),
-                String(workout.distance ?? 0),
-                workout.typeRawValue,
-                String(workout.hkActivityTypeRaw ?? 0),
-                String(workout.hkLocationTypeRaw ?? 0)
-            ].joined(separator: ":")
-        }
-        .joined(separator: "|")
-    }
 }
 
 #Preview {

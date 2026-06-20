@@ -27,6 +27,7 @@ final class WatchHealthKitSyncBridge: NSObject {
 
     private func scheduleImport(reason: String) {
         guard let modelContainer else { return }
+        guard UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") else { return }
 
         syncTask?.cancel()
         syncTask = Task { @MainActor in
@@ -60,14 +61,23 @@ final class WatchHealthKitSyncBridge: NSObject {
         guard let modelContainer else { return nil }
 
         do {
-            let workouts = try modelContainer.mainContext.fetch(FetchDescriptor<Workout>())
-            let categories = try modelContainer.mainContext.fetch(FetchDescriptor<WorkoutCategory>())
             let calendar = Calendar.current
             let weekStart = calendar.dateInterval(of: .weekOfYear, for: Date())?.start ?? calendar.startOfDay(for: Date())
-            let weekWorkouts = workouts
-                .filter { $0.startDate >= weekStart && $0.startDate <= Date() }
-                .sorted { $0.startDate > $1.startDate }
-                .prefix(12)
+            let now = Date()
+            var descriptor = FetchDescriptor<Workout>(
+                predicate: #Predicate { workout in
+                    workout.startDate >= weekStart && workout.startDate <= now
+                },
+                sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+            )
+            descriptor.fetchLimit = 12
+            let weekWorkouts = try modelContainer.mainContext.fetch(descriptor)
+            var recentDescriptor = FetchDescriptor<Workout>(
+                sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+            )
+            recentDescriptor.fetchLimit = 100
+            let recentWorkouts = try modelContainer.mainContext.fetch(recentDescriptor)
+            let categories = try modelContainer.mainContext.fetch(FetchDescriptor<WorkoutCategory>())
 
             let workoutPayloads = weekWorkouts.map { workout -> [String: Any] in
                 [
@@ -86,7 +96,7 @@ final class WatchHealthKitSyncBridge: NSObject {
                 "event": "phoneWeekSnapshot",
                 "sentAt": Date().timeIntervalSince1970,
                 "workouts": Array(workoutPayloads),
-                "quickLogExercises": quickLogExercisePayloads(from: workouts),
+                "quickLogExercises": quickLogExercisePayloads(from: recentWorkouts),
                 "quickLogCategories": quickLogCategoryPayloads(from: categories)
             ]
         } catch {
@@ -250,7 +260,13 @@ final class WatchHealthKitSyncBridge: NSObject {
 
         do {
             let context = modelContainer.mainContext
-            let workouts = try context.fetch(FetchDescriptor<Workout>())
+            let dayStart = Calendar.current.startOfDay(for: Date())
+            let workouts = try context.fetch(FetchDescriptor<Workout>(
+                predicate: #Predicate { workout in
+                    workout.startDate >= dayStart
+                },
+                sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+            ))
             let subcategories = try context.fetch(FetchDescriptor<WorkoutSubcategory>())
             QuickExerciseLogStore.attachPendingLogs(
                 to: workouts,

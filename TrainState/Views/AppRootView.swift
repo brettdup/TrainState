@@ -7,6 +7,7 @@ struct AppRootView: View {
     @AppStorage("themeMode") private var themeModeRaw = AppThemeMode.system.rawValue
     @AppStorage("accentColor") private var accentColorRaw = AppAccentColor.blue.rawValue
     @AppStorage("measurementSystem") private var measurementSystemRaw = MeasurementSystem.metric.rawValue
+    @StateObject private var purchaseManager = PurchaseManager.shared
 
     private var themeMode: AppThemeMode {
         AppThemeMode(rawValue: themeModeRaw) ?? .system
@@ -19,7 +20,11 @@ struct AppRootView: View {
     var body: some View {
         Group {
             if hasCompletedOnboarding {
-                MainTabView()
+                if purchaseManager.hasCompletedInitialPremiumCheck {
+                    MainTabView()
+                } else {
+                    premiumStatusLoadingView
+                }
             } else {
                 OnboardingView()
             }
@@ -30,6 +35,16 @@ struct AppRootView: View {
             if let settings = userSettings.first {
                 measurementSystemRaw = settings.measurementSystem.rawValue
             }
+        }
+    }
+
+    private var premiumStatusLoadingView: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+
+            ProgressView("Loading Exercise Pal…")
+                .tint(accentColor.color)
         }
     }
 }

@@ -9,7 +9,7 @@ struct WorkoutListView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
-    @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
+    @Query private var workouts: [Workout]
     @Query private var categories: [WorkoutCategory]
     @Query private var subcategories: [WorkoutSubcategory]
     @Query(sort: \SubcategoryExercise.name) private var exerciseTemplates: [SubcategoryExercise]
@@ -52,6 +52,7 @@ struct WorkoutListView: View {
     @State private var attachedQuickLogDismissTask: Task<Void, Never>?
     @State private var showingQuickLogSheet = false
     @State private var showingContinueSession = false
+    @State private var visibleWorkoutLimit = 200
     @State private var draftSessionEntries: [ExerciseLogEntry] = []
     @State private var continueSessionConfiguration = WorkoutSessionConfiguration(
         isTimerRunning: true,
@@ -60,6 +61,14 @@ struct WorkoutListView: View {
     )
     @State private var handledQuickLogSheetRequestToken = ""
     private let healthKitImporter = HealthKitRecentWorkoutImporter()
+
+    init() {
+        var descriptor = FetchDescriptor<Workout>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 500
+        _workouts = Query(descriptor)
+    }
 
     private var canAddWorkout: Bool {
         guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
@@ -275,6 +284,17 @@ struct WorkoutListView: View {
 
             ForEach(groupedVisibleWorkouts, id: \.date) { entry in
                 workoutSection(for: entry)
+            }
+
+            if hasOlderFilteredWorkouts {
+                Section {
+                    Button("Load Older Workouts") {
+                        visibleWorkoutLimit = min(visibleWorkoutLimit + 200, 500)
+                    }
+                    .frame(maxWidth: .infinity)
+                } footer: {
+                    Text("Showing \(visibleFilteredWorkouts.count) of \(filteredWorkouts.count) workouts")
+                }
             }
 
             Section {
@@ -607,6 +627,7 @@ struct WorkoutListView: View {
                     ForEach(availableFilters, id: \.self) { filter in
                         Button {
                             selectedFilter = filter
+                            visibleWorkoutLimit = 200
                         } label: {
                             if selectedFilter == filter {
                                 Label(filter.title, systemImage: "checkmark")
@@ -1063,10 +1084,21 @@ struct WorkoutListView: View {
         if !availableFilters.contains(selectedFilter) {
             selectedFilter = .all
         }
+        visibleWorkoutLimit = 200
+    }
+
+    private var visibleFilteredWorkouts: ArraySlice<Workout> {
+        filteredWorkouts.prefix(visibleWorkoutLimit)
+    }
+
+    private var hasOlderFilteredWorkouts: Bool {
+        filteredWorkouts.count > visibleWorkoutLimit
     }
 
     private var groupedVisibleWorkouts: [(date: Date, items: [Workout])] {
-        let grouped = Dictionary(grouping: filteredWorkouts) { Calendar.current.startOfDay(for: $0.startDate) }
+        let grouped = Dictionary(grouping: visibleFilteredWorkouts) {
+            Calendar.current.startOfDay(for: $0.startDate)
+        }
         return grouped.keys.sorted(by: >).map { (date: $0, items: grouped[$0] ?? []) }
     }
 

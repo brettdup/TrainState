@@ -66,7 +66,10 @@ struct TrainStateApp: App {
         let container = self.modelContainer
         Task { @MainActor in
             WatchHealthKitSyncBridge.shared.start(modelContainer: container)
-            await HealthKitWorkoutAutoImportService.shared.start(modelContainer: container)
+            if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding"),
+               UserDefaults.standard.bool(forKey: "hasRequestedOnboardingHealthKitAccess") {
+                await HealthKitWorkoutAutoImportService.shared.start(modelContainer: container)
+            }
         }
         print("[App] App initialization completed")
     }

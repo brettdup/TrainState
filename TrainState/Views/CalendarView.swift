@@ -2,7 +2,8 @@ import SwiftUI
 import SwiftData
 
 struct CalendarView: View {
-    @Query(sort: \Workout.startDate, order: .reverse) private var workouts: [Workout]
+    @Environment(\.modelContext) private var modelContext
+    @State private var workouts: [Workout] = []
     @State private var selectedWeekStart: Date = Calendar.current.startOfWeek(for: Date())
     @State private var weekPickerDate: Date = Date()
     @State private var showingWeekPicker = false
@@ -33,6 +34,15 @@ struct CalendarView: View {
                 weekPickerSheet
                     .presentationDetents([.medium, .large])
             }
+        }
+        .onAppear {
+            loadDisplayedWorkouts()
+        }
+        .onChange(of: selectedWeekStart) { _, _ in
+            loadDisplayedWorkouts()
+        }
+        .onChange(of: displayMode) { _, _ in
+            loadDisplayedWorkouts()
         }
     }
 
@@ -347,23 +357,50 @@ struct CalendarView: View {
     }
 
     private var workoutsInDisplayedWeek: [Workout] {
-        let start = selectedWeekStart
-        guard let end = Calendar.current.date(byAdding: .day, value: 7, to: start) else { return [] }
-        return workouts.filter { $0.startDate >= start && $0.startDate < end }
+        workouts
     }
 
     private var workoutsInDisplayedPeriod: [Workout] {
         switch displayMode {
         case .week:
-            return workoutsInDisplayedWeek
+            return workouts
         case .last7Days:
-            let days = displayedDays
-            guard let start = days.first,
-                  let lastDay = days.last,
-                  let end = Calendar.current.date(byAdding: .day, value: 1, to: lastDay) else {
-                return []
+            return workouts
+        }
+    }
+
+    private func loadDisplayedWorkouts() {
+        guard let interval = displayedDateInterval else {
+            workouts = []
+            return
+        }
+
+        let start = interval.start
+        let end = interval.end
+        let descriptor = FetchDescriptor<Workout>(
+            predicate: #Predicate { workout in
+                workout.startDate >= start && workout.startDate < end
+            },
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        workouts = (try? modelContext.fetch(descriptor)) ?? []
+    }
+
+    private var displayedDateInterval: DateInterval? {
+        let calendar = Calendar.current
+        switch displayMode {
+        case .week:
+            guard let end = calendar.date(byAdding: .day, value: 7, to: selectedWeekStart) else {
+                return nil
             }
-            return workouts.filter { $0.startDate >= start && $0.startDate < end }
+            return DateInterval(start: selectedWeekStart, end: end)
+        case .last7Days:
+            let today = calendar.startOfDay(for: Date())
+            guard let start = calendar.date(byAdding: .day, value: -6, to: today),
+                  let end = calendar.date(byAdding: .day, value: 1, to: today) else {
+                return nil
+            }
+            return DateInterval(start: start, end: end)
         }
     }
 

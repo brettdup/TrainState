@@ -13,6 +13,9 @@ struct OnboardingView: View {
     @State private var currentPage = 0
     @State private var appeared = false
     @State private var showCelebration = false
+    @State private var isCompletingOnboarding = false
+    @State private var healthImportCompleted = 0
+    @State private var healthImportTotal = 0
     @State private var selectedGoal: OnboardingGoal = .buildStrength
     @State private var selectedTrainingStyle: OnboardingTrainingStyle = .balanced
     @State private var onboardingDemoExpanded = true
@@ -51,6 +54,13 @@ struct OnboardingView: View {
                 primaryButton
                     .padding(.horizontal, 24)
                     .padding(.bottom, 40)
+
+                if isCompletingOnboarding {
+                    healthImportProgress
+                        .padding(.horizontal, 24)
+                        .padding(.top, -28)
+                        .padding(.bottom, 16)
+                }
             }
             .overlay(alignment: .topTrailing) {
                 skipButton
@@ -98,7 +108,9 @@ struct OnboardingView: View {
     private var skipButton: some View {
         if currentPage < totalPages - 1 {
             Button {
-                completeOnboarding(showCelebration: false)
+                Task {
+                    await skipOnboarding()
+                }
             } label: {
                 Text("Skip")
                     .font(.subheadline.weight(.medium))
@@ -290,14 +302,21 @@ struct OnboardingView: View {
                 }
             } else {
                 HapticManager.success()
-                completeOnboarding(showCelebration: true)
+                Task {
+                    await completeOnboarding(showCelebration: true)
+                }
             }
         } label: {
             HStack(spacing: 10) {
-                Text(currentPage < totalPages - 1 ? "Continue" : "Get Started")
+                Text(primaryButtonTitle)
                     .fontWeight(.semibold)
-                Image(systemName: currentPage < totalPages - 1 ? "arrow.right" : "checkmark")
-                    .font(.system(size: 14, weight: .semibold))
+                if isCompletingOnboarding {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: currentPage < totalPages - 1 ? "arrow.right" : "checkmark")
+                        .font(.system(size: 14, weight: .semibold))
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
@@ -309,6 +328,25 @@ struct OnboardingView: View {
             .shadow(color: Color.accentColor.opacity(0.35), radius: 12, x: 0, y: 6)
         }
         .buttonStyle(.plain)
+        .disabled(isCompletingOnboarding)
+    }
+
+    private var primaryButtonTitle: String {
+        if isCompletingOnboarding {
+            return healthImportTotal > 0
+                ? "Importing \(healthImportCompleted) of \(healthImportTotal)"
+                : "Preparing Health Data"
+        }
+        return currentPage < totalPages - 1 ? "Continue" : "Get Started"
+    }
+
+    private var healthImportProgress: some View {
+        ProgressView(
+            value: Double(healthImportCompleted),
+            total: Double(max(healthImportTotal, 1))
+        )
+        .tint(Color.accentColor)
+        .animation(.easeOut(duration: 0.2), value: healthImportCompleted)
     }
 
     private func persistOnboardingPreferences() {
@@ -318,14 +356,39 @@ struct OnboardingView: View {
         preloadStarterTemplatesIfNeeded()
     }
 
-    private func completeOnboarding(showCelebration: Bool) {
+    private func skipOnboarding() async {
+        guard !isCompletingOnboarding else { return }
         persistOnboardingPreferences()
+        withAnimation(.easeOut(duration: 0.3)) {
+            hasCompletedOnboarding = true
+        }
+    }
+
+    private func completeOnboarding(showCelebration: Bool) async {
+        guard !isCompletingOnboarding else { return }
+        isCompletingOnboarding = true
+
+        persistOnboardingPreferences()
+        UserDefaults.standard.set(true, forKey: "hasRequestedOnboardingHealthKitAccess")
         NotificationManager.shared.requestAuthorization()
+
+        do {
+            let importer = HealthKitRecentWorkoutImporter()
+            let importedCount = try await importer.importFullHistoryOnce(into: modelContext) { completed, total in
+                healthImportCompleted = completed
+                healthImportTotal = total
+            }
+            print("[HealthKitOnboardingImport] Imported \(importedCount) workout(s) from full history.")
+        } catch {
+            print("[HealthKitOnboardingImport] Full-history import failed: \(error.localizedDescription)")
+        }
 
         guard showCelebration else {
             withAnimation(.easeOut(duration: 0.3)) {
                 hasCompletedOnboarding = true
             }
+            await HealthKitWorkoutAutoImportService.shared.start(modelContainer: modelContext.container)
+            isCompletingOnboarding = false
             return
         }
 
@@ -334,6 +397,10 @@ struct OnboardingView: View {
             withAnimation(.easeOut(duration: 0.3)) {
                 hasCompletedOnboarding = true
             }
+            Task {
+                await HealthKitWorkoutAutoImportService.shared.start(modelContainer: modelContext.container)
+            }
+            isCompletingOnboarding = false
         }
     }
 
