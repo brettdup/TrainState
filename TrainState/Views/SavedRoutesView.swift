@@ -4,14 +4,20 @@ import CoreLocation
 
 struct SavedRoutesView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \WorkoutRoute.updatedAt, order: .reverse) private var routes: [WorkoutRoute]
+    @Query(
+        filter: #Predicate<WorkoutRoute> { route in
+            route.workout == nil
+        },
+        sort: \WorkoutRoute.updatedAt,
+        order: .reverse
+    ) private var routes: [WorkoutRoute]
     @State private var showingCreateRoute = false
     @State private var editingRoute: WorkoutRoute?
     @State private var routeToDelete: WorkoutRoute?
     @State private var showingDeleteConfirmation = false
 
     private var savedRoutes: [WorkoutRoute] {
-        routes.filter { $0.workout == nil && !($0.name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
+        routes.filter { !($0.name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
     }
 
     var body: some View {

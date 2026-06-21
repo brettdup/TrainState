@@ -10,6 +10,7 @@ struct MainTabView: View {
     @AppStorage("lastBackupReminderPromptTimeInterval") private var lastBackupReminderPromptTimeInterval: Double = 0
     @AppStorage("lastSuccessfulBackupTimeInterval") private var lastSuccessfulBackupTimeInterval: Double = 0
     @State private var selectedTab = "workouts"
+    @State private var loadedTabs: Set<String> = ["workouts"]
     @State private var showBackupReminder = false
     @State private var backupReminderMessage = ""
     @State private var showBackupError = false
@@ -74,6 +75,9 @@ struct MainTabView: View {
             synchronizeWorkoutConsumers()
             Task { await evaluateBackupReminderIfNeeded() }
         }
+        .onChange(of: selectedTab) { _, newTab in
+            loadedTabs.insert(newTab)
+        }
         .onChange(of: purchaseManager.hasActiveSubscription) { _, hasActiveSubscription in
             if !hasActiveSubscription && selectedTab == "analytics" {
                 selectedTab = "workouts"
@@ -110,7 +114,7 @@ struct MainTabView: View {
         for tab: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        if selectedTab == tab {
+        if loadedTabs.contains(tab) {
             content()
         } else {
             Color.clear

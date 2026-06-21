@@ -5,6 +5,7 @@ import HealthKit
 /// Manager responsible for initializing default data when the app is first launched
 class DataInitializationManager {
     static let shared = DataInitializationManager()
+    private static let workoutTypeMigrationKey = "hasCompletedWorkoutTypeBackedDataMigration"
     
     private init() {}
 
@@ -427,6 +428,8 @@ class DataInitializationManager {
     }
 
     func migrateWorkoutTypeBackedDataIfNeeded(context: ModelContext) {
+        guard !UserDefaults.standard.bool(forKey: Self.workoutTypeMigrationKey) else { return }
+
         do {
             let workouts = try context.fetch(FetchDescriptor<Workout>())
             let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())
@@ -455,6 +458,7 @@ class DataInitializationManager {
                 try context.save()
                 print("Migrated workout-type-backed category and template data to Apple workout activities")
             }
+            UserDefaults.standard.set(true, forKey: Self.workoutTypeMigrationKey)
         } catch {
             print("Error migrating workout type backed data: \(error)")
         }
