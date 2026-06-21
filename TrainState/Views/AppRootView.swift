@@ -43,9 +43,22 @@ struct AppRootView: View {
             Color(.systemBackground)
                 .ignoresSafeArea()
 
-            ProgressView("Loading Exercise Pal…")
-                .tint(accentColor.color)
+            VStack(spacing: 20) {
+                Image(currentAppIcon.previewImageName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 112, height: 112)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: .black.opacity(0.15), radius: 12, y: 6)
+
+                ProgressView("Loading Exercise Pal…")
+                    .tint(accentColor.color)
+            }
         }
+    }
+
+    private var currentAppIcon: AppIconOption {
+        AppIconOption.option(for: AppIconManager.shared.getCurrentAppIcon())
     }
 }
 

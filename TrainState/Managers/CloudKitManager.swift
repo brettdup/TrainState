@@ -42,6 +42,7 @@ class CloudKitManager {
     }
     
     private func updateDebug(_ message: String) {
+        print("[CloudKitBackup] \(Date().formatted(date: .omitted, time: .standard)) \(message)")
         DispatchQueue.main.async {
             self.debugMessage = message
             self.debugCallback?(message)
@@ -50,6 +51,7 @@ class CloudKitManager {
     
     // MARK: - Backup/Restore
 
+    @MainActor
     func backupToCloud(context: ModelContext) async throws {
         setSyncState(true)
         defer { setSyncState(false) }
@@ -61,19 +63,24 @@ class CloudKitManager {
 
         updateDebug("Preparing backup...")
         let payload = try exportPayload(context: context)
+        updateDebug("Prepared \(payload.workouts.count) workouts and \(payload.routes.count) routes.")
 
         updateDebug("Uploading to iCloud...")
         try await saveBackupRecord(payload: payload)
 
-        // Backup creation should not be reported as failed if cleanup/listing is
-        // blocked by a production CloudKit query index that has not caught up.
-        do {
-            try await enforceBackupLimit()
-        } catch {
-            updateDebug("Backup saved. Cleanup skipped: \(error.localizedDescription)")
-        }
-
         updateDebug("Backup complete.")
+
+        // Retention cleanup is maintenance work and must not keep a successful
+        // backup operation spinning in the UI.
+        Task {
+            do {
+                updateDebug("Cleaning up old backups in the background...")
+                try await enforceBackupLimit()
+                updateDebug("Background backup cleanup complete.")
+            } catch {
+                updateDebug("Backup saved. Cleanup skipped: \(error.localizedDescription)")
+            }
+        }
     }
     
     func fetchAvailableBackups() async throws -> [BackupInfo] {
@@ -117,6 +124,7 @@ class CloudKitManager {
         )
     }
     
+    @MainActor
     func restoreFromCloud(backupInfo: BackupInfo, context: ModelContext) async throws {
         setSyncState(true)
         defer { setSyncState(false) }
@@ -204,7 +212,7 @@ class CloudKitManager {
     }
 }
 
-private struct BackupPayload: Codable {
+private struct BackupPayload: Codable, @unchecked Sendable {
     let workouts: [WorkoutExport]
     let categories: [WorkoutCategoryExport]
     let subcategories: [WorkoutSubcategoryExport]
@@ -264,6 +272,7 @@ private extension CloudKitManager {
         case withoutOptionalFields
     }
 
+    @MainActor
     func exportPayload(context: ModelContext) throws -> BackupPayload {
         // Ensure newly created/edited categories and subcategories are persisted
         // before reading a backup snapshot.
@@ -276,7 +285,10 @@ private extension CloudKitManager {
         let subcategories = try context.fetch(FetchDescriptor<WorkoutSubcategory>())
         let templates = try context.fetch(FetchDescriptor<SubcategoryExercise>())
         let strengthTemplates = try context.fetch(FetchDescriptor<StrengthWorkoutTemplate>())
-        let routes = try context.fetch(FetchDescriptor<WorkoutRoute>())
+        let routes = try context.fetch(FetchDescriptor<WorkoutRoute>()).filter { route in
+            guard let workout = route.workout else { return true }
+            return workout.hkUUID == nil
+        }
         return BackupPayload(
             workouts: workouts.map(WorkoutExport.init),
             categories: categories.map(WorkoutCategoryExport.init),
@@ -287,6 +299,7 @@ private extension CloudKitManager {
         )
     }
 
+    @MainActor
     func payloadPreservingNewerHealthKitWorkouts(
         _ backupPayload: BackupPayload,
         backupDate: Date,
@@ -380,7 +393,7 @@ private extension CloudKitManager {
         var lastError: Error?
 
         for format in formats {
-            let files = try temporaryBackupFiles(payload: payload, format: format)
+            let files = try await temporaryBackupFiles(payload: payload, format: format)
             defer {
                 for fileURL in files.values {
                     try? FileManager.default.removeItem(at: fileURL)
@@ -399,7 +412,12 @@ private extension CloudKitManager {
                 )
 
                 do {
+                    let uploadSize = files.values.reduce(0) { total, url in
+                        total + ((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+                    }
+                    updateDebug("Uploading \(formattedByteCount(uploadSize)) to iCloud...")
                     _ = try await privateDatabase.save(record)
+                    updateDebug("iCloud upload finished.")
                     return
                 } catch {
                     lastError = error
@@ -422,13 +440,26 @@ private extension CloudKitManager {
         )
     }
 
-    func temporaryBackupFiles(payload: BackupPayload, format: BackupStorageFormat) throws -> [String: URL] {
+    func temporaryBackupFiles(
+        payload: BackupPayload,
+        format: BackupStorageFormat
+    ) async throws -> [String: URL] {
         switch format {
         case .archive:
-            let jsonData = try JSONEncoder.iso8601.encode(payload)
-            let compressedData = try (jsonData as NSData).compressed(using: .lzfse) as Data
+            updateDebug("Encoding and compressing archive in the background...")
+            let startedAt = Date()
+            let archive = try await Task.detached(priority: .userInitiated) {
+                let jsonData = try JSONEncoder.iso8601.encode(payload)
+                let compressedData = try (jsonData as NSData).compressed(using: .lzfse) as Data
+                return (jsonSize: jsonData.count, compressedData: compressedData)
+            }.value
+            updateDebug(
+                "Encoded \(formattedByteCount(archive.jsonSize)) and compressed to " +
+                "\(formattedByteCount(archive.compressedData.count)) in " +
+                "\(String(format: "%.1f", Date().timeIntervalSince(startedAt)))s."
+            )
             var data = Self.compressedArchiveHeader
-            data.append(compressedData)
+            data.append(archive.compressedData)
             return ["archive": try writeTemporaryBackupFile(data: data, label: "archive")]
         case .legacyWithTemplates:
             return [
@@ -453,6 +484,10 @@ private extension CloudKitManager {
             .appendingPathComponent("ExercisePal-Backup-\(UUID().uuidString)-\(label).json")
         try data.write(to: fileURL, options: [.atomic])
         return fileURL
+    }
+
+    func formattedByteCount(_ count: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file)
     }
 
     func makeBackupRecord(
@@ -620,6 +655,7 @@ private extension CloudKitManager {
         )
     }
 
+    @MainActor
     func restorePayload(_ payload: BackupPayload, context: ModelContext) throws {
         let workouts = try context.fetch(FetchDescriptor<Workout>())
         let categories = try context.fetch(FetchDescriptor<WorkoutCategory>())

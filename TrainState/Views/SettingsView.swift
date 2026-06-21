@@ -521,19 +521,49 @@ struct SettingsView: View {
         guard !isBackingUp else { return }
         isBackingUp = true
         statusMessage = "Starting backup..."
+        CloudKitManager.shared.debugCallback = { message in
+            Task { @MainActor in
+                statusMessage = message
+            }
+        }
+        defer {
+            CloudKitManager.shared.debugCallback = nil
+            isBackingUp = false
+        }
+
         do {
             try await CloudKitManager.shared.backupToCloud(context: modelContext)
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastSuccessfulBackupTimeInterval")
             statusMessage = "Backup complete."
-            do {
-                backups = try await CloudKitManager.shared.fetchAvailableBackups()
-            } catch {
-                statusMessage = "Backup complete. Refresh backups later to verify it appears here."
+            Task { @MainActor in
+                isLoadingBackups = true
+                defer { isLoadingBackups = false }
+
+                let previousRecordNames = Set(backups.map(\.recordName))
+                for attempt in 0..<4 {
+                    if attempt > 0 {
+                        try? await Task.sleep(for: .seconds(2))
+                    }
+
+                    do {
+                        let refreshedBackups = try await CloudKitManager.shared.fetchAvailableBackups()
+                        backups = refreshedBackups
+
+                        if refreshedBackups.contains(where: {
+                            !previousRecordNames.contains($0.recordName)
+                        }) {
+                            return
+                        }
+                    } catch {
+                        if attempt == 3 {
+                            statusMessage = "Backup complete. Refresh the list manually if it does not appear yet."
+                        }
+                    }
+                }
             }
         } catch {
             handleError(error)
         }
-        isBackingUp = false
     }
 
     private func loadBackups() async {

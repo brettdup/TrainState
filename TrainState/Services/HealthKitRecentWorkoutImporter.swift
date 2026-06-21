@@ -286,6 +286,11 @@ final class HealthKitRecentWorkoutImporter {
 
             if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
                 guard let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) else {
+                    try await restoreMissingRouteIfNeeded(
+                        for: importedWorkout,
+                        using: item,
+                        in: context
+                    )
                     continue
                 }
                 try await mergeImportedWorkout(importedWorkout, into: manualWorkout, using: item, in: context)
@@ -587,6 +592,27 @@ final class HealthKitRecentWorkoutImporter {
         default:
             return false
         }
+    }
+
+    private func restoreMissingRouteIfNeeded(
+        for workout: Workout,
+        using item: HealthKitRecentWorkoutMenuItem,
+        in context: ModelContext
+    ) async throws {
+        guard workout.route == nil,
+              shouldFetchRoute(for: item),
+              let sourceWorkout = try await findWorkout(uuidString: item.hkUUID),
+              let importedRoute = try await fetchRouteLocations(for: sourceWorkout),
+              !importedRoute.isEmpty else {
+            return
+        }
+
+        let route = WorkoutRoute()
+        route.decodedRoute = downsampleLocations(importedRoute, maxPoints: 2000)
+        route.workout = workout
+        workout.route = route
+        context.insert(route)
+        try context.save()
     }
 
     private func isAuthorizationDenied(_ error: Error) -> Bool {

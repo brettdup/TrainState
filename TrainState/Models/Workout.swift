@@ -360,6 +360,8 @@ struct WorkoutExerciseExport: Codable {
 }
 
 struct WorkoutRouteExport: Codable {
+    private static let maximumBackupRoutePoints = 250
+
     let id: UUID
     let name: String?
     let createdAt: Date
@@ -373,9 +375,31 @@ struct WorkoutRouteExport: Codable {
         self.name = route.name
         self.createdAt = route.createdAt
         self.updatedAt = route.updatedAt
-        self.routeData = route.routeData
+        self.routeData = Self.backupRouteData(from: route)
         self.waypointData = route.waypointData
         self.workoutId = route.workout?.id
+    }
+
+    private static func backupRouteData(from route: WorkoutRoute) -> Data? {
+        guard let locations = route.decodedRoute, !locations.isEmpty else {
+            return route.routeData
+        }
+
+        let sampledLocations: [CLLocation]
+        if locations.count > maximumBackupRoutePoints {
+            let step = Double(locations.count - 1) / Double(maximumBackupRoutePoints - 1)
+            sampledLocations = (0..<maximumBackupRoutePoints).map { index in
+                let sourceIndex = Int((Double(index) * step).rounded())
+                return locations[min(sourceIndex, locations.count - 1)]
+            }
+        } else {
+            sampledLocations = locations
+        }
+
+        return try? NSKeyedArchiver.archivedData(
+            withRootObject: sampledLocations,
+            requiringSecureCoding: false
+        )
     }
 }
 
