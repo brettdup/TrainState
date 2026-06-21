@@ -249,6 +249,10 @@ private struct BackupPayload: Codable {
 }
 
 private extension CloudKitManager {
+    static var compressedArchiveHeader: Data {
+        Data("TrainState-LZFSE-1\n".utf8)
+    }
+
     enum BackupStorageFormat {
         case archive
         case legacyWithTemplates
@@ -421,7 +425,10 @@ private extension CloudKitManager {
     func temporaryBackupFiles(payload: BackupPayload, format: BackupStorageFormat) throws -> [String: URL] {
         switch format {
         case .archive:
-            let data = try JSONEncoder.iso8601.encode(payload)
+            let jsonData = try JSONEncoder.iso8601.encode(payload)
+            let compressedData = try (jsonData as NSData).compressed(using: .lzfse) as Data
+            var data = Self.compressedArchiveHeader
+            data.append(compressedData)
             return ["archive": try writeTemporaryBackupFile(data: data, label: "archive")]
         case .legacyWithTemplates:
             return [
@@ -549,7 +556,14 @@ private extension CloudKitManager {
     func payload(from record: CKRecord) throws -> BackupPayload {
         if let archiveAsset = record["archive"] as? CKAsset, let fileURL = archiveAsset.fileURL {
             let data = try Data(contentsOf: fileURL)
-            return try JSONDecoder.iso8601.decode(BackupPayload.self, from: data)
+            let archiveData: Data
+            if data.starts(with: Self.compressedArchiveHeader) {
+                let compressedData = data.dropFirst(Self.compressedArchiveHeader.count)
+                archiveData = try (Data(compressedData) as NSData).decompressed(using: .lzfse) as Data
+            } else {
+                archiveData = data
+            }
+            return try JSONDecoder.iso8601.decode(BackupPayload.self, from: archiveData)
         }
 
         guard
