@@ -69,6 +69,12 @@ struct MainTabView: View {
                 try? await Task.sleep(for: .seconds(1))
                 synchronizeWorkoutConsumers()
             }
+            if purchaseManager.hasActiveSubscription {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(4))
+                    loadedTabs.insert("analytics")
+                }
+            }
             guard !hasCheckedBackupReminder else { return }
             hasCheckedBackupReminder = true
             Task {

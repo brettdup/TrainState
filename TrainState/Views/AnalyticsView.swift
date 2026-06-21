@@ -65,7 +65,7 @@ struct AnalyticsView: View {
                 loadWorkoutTypeGoals()
                 validateSelectedFilter()
             }
-            .onChange(of: workouts.map(\.id)) { _, _ in
+            .onChange(of: workouts.count) { _, _ in
                 validateSelectedFilter()
             }
             .onChange(of: analyticsWorkoutTypeGoalsData) { _, _ in
