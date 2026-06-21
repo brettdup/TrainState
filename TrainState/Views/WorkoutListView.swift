@@ -212,7 +212,6 @@ struct WorkoutListView: View {
             attachPendingQuickExerciseLogs()
             lastKnownWorkoutCount = workouts.count
             syncReminderPermissionStatus()
-            Task { await loadRecentHealthKitWorkouts(showAlerts: false) }
         }
         .onChange(of: workouts.count) { _, newCount in
             if newCount > lastKnownWorkoutCount {

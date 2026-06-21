@@ -65,15 +65,24 @@ struct MainTabView: View {
                 .tag("settings")
         }
         .onAppear {
-            synchronizeWorkoutConsumers()
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                synchronizeWorkoutConsumers()
+            }
             guard !hasCheckedBackupReminder else { return }
             hasCheckedBackupReminder = true
-            Task { await evaluateBackupReminderIfNeeded() }
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                await evaluateBackupReminderIfNeeded()
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
-            synchronizeWorkoutConsumers()
-            Task { await evaluateBackupReminderIfNeeded() }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                synchronizeWorkoutConsumers()
+                await evaluateBackupReminderIfNeeded()
+            }
         }
         .onChange(of: selectedTab) { _, newTab in
             loadedTabs.insert(newTab)
@@ -122,14 +131,14 @@ struct MainTabView: View {
     }
 
     private func synchronizeWorkoutConsumers() {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? .distantPast
+        let cutoff = Calendar.current.date(byAdding: .day, value: -45, to: Date()) ?? .distantPast
         var descriptor = FetchDescriptor<Workout>(
             predicate: #Predicate { workout in
                 workout.startDate >= cutoff
             },
             sortBy: [SortDescriptor(\.startDate, order: .reverse)]
         )
-        descriptor.fetchLimit = 500
+        descriptor.fetchLimit = 200
         guard let workouts = try? modelContext.fetch(descriptor) else { return }
 
         QuickExerciseLogStore.attachPendingLogs(
