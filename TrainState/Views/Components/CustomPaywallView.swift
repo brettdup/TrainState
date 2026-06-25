@@ -44,6 +44,8 @@ struct CustomPaywallView: View {
 
                     purchaseButton
 
+                    subscriptionDisclosure
+
                     Button {
                         Task { await restorePurchases() }
                     } label: {
@@ -184,6 +186,35 @@ struct CustomPaywallView: View {
             return "Current plan"
         }
         return "Continue - \(selectedPackage.storeProduct.localizedPriceString)"
+    }
+
+    private var subscriptionDisclosure: some View {
+        VStack(spacing: 8) {
+            if let selectedPackage {
+                Text(disclosureText(for: selectedPackage))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Link("Terms of Use (EULA)", destination: LegalLinks.standardAppleEULA)
+                .font(.footnote.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func disclosureText(for package: Package) -> String {
+        switch package.storeProduct.productIdentifier {
+        case "premiumlifetime":
+            return "Premium Lifetime is a one-time purchase for \(package.storeProduct.localizedPriceString)."
+        case "premium1year":
+            return "Premium Yearly is an auto-renewable subscription billed yearly at \(package.storeProduct.localizedPriceString) unless canceled at least 24 hours before renewal."
+        case "Premium1Month":
+            return "Premium Monthly is an auto-renewable subscription billed monthly at \(package.storeProduct.localizedPriceString) unless canceled at least 24 hours before renewal."
+        default:
+            return "\(package.storeProduct.localizedTitle) is available for \(package.storeProduct.localizedPriceString). Subscriptions renew automatically unless canceled at least 24 hours before renewal."
+        }
     }
 
     @MainActor
