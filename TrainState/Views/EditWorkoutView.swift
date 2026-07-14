@@ -86,6 +86,11 @@ struct EditWorkoutView: View {
 
     init(workout: Workout) {
         self.workout = workout
+        var descriptor = FetchDescriptor<Workout>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 250
+        _allWorkouts = Query(descriptor)
         let snapshot = EditWorkoutSnapshot(workout: workout)
         _type = State(initialValue: workout.type)
         _selectedAppleWorkout = State(initialValue: AppleWorkoutSelection.normalized(
@@ -395,7 +400,7 @@ struct EditWorkoutView: View {
     private var strengthManagementSection: some View {
         WorkoutStructureSection(
             title: "Strength Setup",
-            primaryActionTitle: "Assign Categories",
+            primaryActionTitle: hasAssignedCategories ? "Edit Categories" : "Add Categories",
             primaryActionSubtitle: categoryAssignmentSummary,
             primaryAction: {
                 selectedCategoriesForAssignment = workout.categories ?? []
@@ -436,12 +441,27 @@ struct EditWorkoutView: View {
     }
 
     private var categoryAssignmentSummary: String {
-        let categoryCount = selectedCategoriesForAssignment.count
-        let subcategoryCount = selectedSubcategoriesForAssignment.count
-        if categoryCount == 0 && subcategoryCount == 0 {
+        let categoryNames = selectedCategoriesForAssignment.map(\.name)
+        let subcategoryNames = selectedSubcategoriesForAssignment.map(\.name)
+        let names = categoryNames + subcategoryNames
+        guard !names.isEmpty else {
             return "No categories assigned"
         }
-        return "\(categoryCount) categories • \(subcategoryCount) subcategories"
+        return compactCategorySummary(names)
+    }
+
+    private var hasAssignedCategories: Bool {
+        !selectedCategoriesForAssignment.isEmpty || !selectedSubcategoriesForAssignment.isEmpty
+    }
+
+    private func compactCategorySummary(_ names: [String]) -> String {
+        let cleaned = names
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let visibleNames = cleaned.prefix(4)
+        let remainingCount = cleaned.count - visibleNames.count
+        let summary = visibleNames.joined(separator: ", ")
+        return remainingCount > 0 ? "\(summary) +\(remainingCount) more" : summary
     }
 
     private var selectedCategorySummaryItems: [WorkoutStructureSummaryItem] {

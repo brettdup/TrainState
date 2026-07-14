@@ -54,12 +54,14 @@ struct WorkoutExerciseSectionView: View {
     var body: some View {
         Section {
             if entries.isEmpty {
-                ContentUnavailableView(
-                    "No Exercises",
-                    systemImage: "dumbbell",
-                    description: Text("Add an exercise to start logging sets.")
-                )
-                .listRowBackground(Color.clear)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Build your workout", systemImage: "dumbbell")
+                        .font(.headline)
+                    Text("Choose one or several exercises. Your previous sets are filled in automatically so you can start logging straight away.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
             } else {
                 ForEach($entries) { $entry in
                     let subcategoryName = availableSubcategories.first { $0.id == entry.subcategoryID }?.name
@@ -91,7 +93,8 @@ struct WorkoutExerciseSectionView: View {
             Button {
                 showingExercisePicker = true
             } label: {
-                Label("Add Exercises", systemImage: "plus.circle.fill")
+                Label(entries.isEmpty ? "Choose Exercises" : "Add Another Exercise", systemImage: "plus.circle.fill")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if quickAddOptions.isEmpty {
@@ -100,7 +103,16 @@ struct WorkoutExerciseSectionView: View {
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("Exercises")
+            HStack {
+                Text("Exercises")
+                Spacer()
+                if !entries.isEmpty {
+                    Text("\(completedSetCount)/\(totalSetCount) sets done")
+                        .textCase(nil)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         } footer: {
             if !entries.isEmpty {
                 Text("Expand an exercise to log sets. Swipe a set left or right to duplicate or delete.")
@@ -141,6 +153,14 @@ struct WorkoutExerciseSectionView: View {
             .presentationDetents([.fraction(0.58), .medium])
             .presentationDragIndicator(.visible)
         }
+    }
+
+    private var completedSetCount: Int {
+        entries.reduce(0) { $0 + $1.completedSetCount }
+    }
+
+    private var totalSetCount: Int {
+        entries.reduce(0) { $0 + $1.setEntries.count }
     }
 
     private func effortScoreBinding(for entryID: UUID) -> Binding<Int?> {

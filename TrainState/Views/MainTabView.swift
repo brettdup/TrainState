@@ -69,12 +69,6 @@ struct MainTabView: View {
                 try? await Task.sleep(for: .seconds(1))
                 synchronizeWorkoutConsumers()
             }
-            if purchaseManager.hasActiveSubscription {
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(4))
-                    loadedTabs.insert("analytics")
-                }
-            }
             guard !hasCheckedBackupReminder else { return }
             hasCheckedBackupReminder = true
             Task {
@@ -91,7 +85,9 @@ struct MainTabView: View {
             }
         }
         .onChange(of: selectedTab) { _, newTab in
-            loadedTabs.insert(newTab)
+            // Keep only the visible tab alive. Analytics and route screens can hold
+            // large SwiftData result sets after a full HealthKit history import.
+            loadedTabs = [newTab]
         }
         .onChange(of: purchaseManager.hasActiveSubscription) { _, hasActiveSubscription in
             if !hasActiveSubscription && selectedTab == "analytics" {

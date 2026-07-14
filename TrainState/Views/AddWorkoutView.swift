@@ -60,6 +60,15 @@ struct AddWorkoutView: View {
     ]
 
     private let quickDurations: [Double] = [15, 30, 45, 60, 90, 120]
+
+    init() {
+        var descriptor = FetchDescriptor<Workout>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 250
+        _workouts = Query(descriptor)
+    }
+
     private var durationBinding: Binding<Double> {
         Binding(
             get: { durationMinutes },

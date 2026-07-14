@@ -149,30 +149,7 @@ final class HealthKitRecentWorkoutImporter {
 
     func importWorkoutsBatch(_ items: [HealthKitRecentWorkoutMenuItem], into context: ModelContext) async throws {
         guard !items.isEmpty else { return }
-
-        let descriptor = FetchDescriptor<Workout>()
-        var existingWorkouts = try context.fetch(descriptor)
-
-        for item in uniqueWorkoutItems(items) {
-            if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
-                if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
-                    try await mergeImportedWorkout(importedWorkout, into: manualWorkout, using: item, in: context)
-                }
-                existingWorkouts = try context.fetch(descriptor)
-                continue
-            }
-
-            if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
-                try await attachWorkout(item, to: manualWorkout, in: context)
-                existingWorkouts = try context.fetch(descriptor)
-                continue
-            }
-
-            _ = try await createImportedWorkout(from: item, in: context)
-            existingWorkouts = try context.fetch(descriptor)
-        }
-
-        try context.save()
+        _ = try await importUniqueWorkoutItems(uniqueWorkoutItems(items), into: context)
     }
 
     @discardableResult
@@ -271,7 +248,12 @@ final class HealthKitRecentWorkoutImporter {
         guard !items.isEmpty else { return 0 }
 
         let descriptor = FetchDescriptor<Workout>()
-        var existingWorkouts = try context.fetch(descriptor)
+        let existingWorkouts = try context.fetch(descriptor)
+        var importedWorkoutsByUUID = existingWorkouts.reduce(into: [String: Workout]()) { result, workout in
+            guard let hkUUID = workout.hkUUID, !hkUUID.isEmpty else { return }
+            result[hkUUID] = workout
+        }
+        var manualWorkouts = existingWorkouts.filter { ($0.hkUUID ?? "").isEmpty }
         var mergedCount = 0
         var importedCount = 0
         var notificationDetails: [HealthKitWorkoutImportNotificationDetail] = []
@@ -284,8 +266,8 @@ final class HealthKitRecentWorkoutImporter {
                 progress?(completedCount, items.count)
             }
 
-            if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
-                guard let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) else {
+            if let importedWorkout = importedWorkoutsByUUID[item.hkUUID] {
+                guard let manualWorkout = matchingManualWorkout(for: item, in: manualWorkouts) else {
                     try await restoreMissingRouteIfNeeded(
                         for: importedWorkout,
                         using: item,
@@ -296,15 +278,17 @@ final class HealthKitRecentWorkoutImporter {
                 try await mergeImportedWorkout(importedWorkout, into: manualWorkout, using: item, in: context)
                 mergedCount += 1
                 notificationDetails.append(item.notificationDetail)
-                existingWorkouts = try context.fetch(descriptor)
-            } else if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
+                manualWorkouts.removeAll { $0.id == manualWorkout.id }
+                importedWorkoutsByUUID[item.hkUUID] = manualWorkout
+            } else if let manualWorkout = matchingManualWorkout(for: item, in: manualWorkouts) {
                 try await attachWorkout(item, to: manualWorkout, in: context)
                 mergedCount += 1
                 notificationDetails.append(item.notificationDetail)
-                existingWorkouts = try context.fetch(descriptor)
+                manualWorkouts.removeAll { $0.id == manualWorkout.id }
+                importedWorkoutsByUUID[item.hkUUID] = manualWorkout
             } else {
                 let workout = try await createImportedWorkout(from: item, in: context)
-                existingWorkouts.append(workout)
+                importedWorkoutsByUUID[item.hkUUID] = workout
                 importedCount += 1
                 pendingInsertCount += 1
                 notificationDetails.append(item.notificationDetail)

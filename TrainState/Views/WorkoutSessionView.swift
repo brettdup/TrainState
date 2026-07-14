@@ -49,6 +49,11 @@ struct WorkoutSessionView: View {
         self.configuration = configuration
         self.onFinish = onFinish
         self.onCancel = onCancel
+        var descriptor = FetchDescriptor<Workout>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 250
+        _workouts = Query(descriptor)
         _entries = State(initialValue: initialEntries)
         _sessionStart = State(initialValue: configuration.sessionStart)
         _isTimerRunning = State(initialValue: configuration.isTimerRunning)
@@ -176,7 +181,25 @@ struct WorkoutSessionView: View {
                 }
             }
 
-            Toggle("Track elapsed time", isOn: $isTimerRunning)
+            if totalSetCount > 0 {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Label("\(loggedExerciseCount) exercises", systemImage: "dumbbell")
+                        Spacer()
+                        Text("\(completedSetCount) of \(totalSetCount) sets")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline)
+
+                    ProgressView(value: Double(completedSetCount), total: Double(totalSetCount))
+                        .tint(typeTintColor)
+                }
+                .padding(.vertical, 4)
+            }
+
+            Toggle(isOn: $isTimerRunning) {
+                Label("Track elapsed time", systemImage: "stopwatch")
+            }
                 .onChange(of: isTimerRunning) { _, running in
                     if running {
                         sessionStart = Date()
@@ -203,15 +226,29 @@ struct WorkoutSessionView: View {
     }
 
     private func restTimerRow(seconds: Int) -> some View {
-        LabeledContent {
-            Button("Skip") {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Rest", systemImage: "timer")
+                    .font(.headline)
+                Spacer()
+                Text(formattedDuration(TimeInterval(seconds)))
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(typeTintColor)
+            }
+
+            ProgressView(
+                value: Double(seconds),
+                total: Double(max(restTimerDurationSeconds, 1))
+            )
+            .tint(typeTintColor)
+
+            Button("Skip Rest") {
                 restSecondsRemaining = nil
             }
-            .buttonStyle(.borderless)
-        } label: {
-            Label("Rest", systemImage: "timer")
+            .font(.subheadline.weight(.semibold))
         }
-        .badge(seconds)
+        .padding(.vertical, 4)
     }
 
     private var elapsedDuration: TimeInterval {
@@ -272,6 +309,14 @@ struct WorkoutSessionView: View {
 
     private var loggedExerciseCount: Int {
         entries.filter { !$0.trimmedName.isEmpty }.count
+    }
+
+    private var completedSetCount: Int {
+        entries.reduce(0) { $0 + $1.completedSetCount }
+    }
+
+    private var totalSetCount: Int {
+        entries.reduce(0) { $0 + $1.setEntries.count }
     }
 
     private var activeExerciseName: String {

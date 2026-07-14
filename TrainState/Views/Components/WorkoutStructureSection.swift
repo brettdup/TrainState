@@ -85,6 +85,8 @@ private struct WorkoutStructureSummaryGroup: View {
     let title: String
     let items: [WorkoutStructureSummaryItem]
 
+    private var isCategoryGroup: Bool { title == "Categories" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
@@ -92,13 +94,33 @@ private struct WorkoutStructureSummaryGroup: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
 
-            ForEach(items) { item in
-                Label {
-                    Text(item.title)
-                        .foregroundStyle(.primary)
-                } icon: {
-                    Image(systemName: item.symbol)
-                        .foregroundStyle(item.tint)
+            VStack(spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    HStack(spacing: 10) {
+                        if isCategoryGroup {
+                            Circle()
+                                .fill(item.tint)
+                                .frame(width: 8, height: 8)
+                                .frame(width: 18)
+                        } else {
+                            Image(systemName: "arrow.turn.down.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(item.tint)
+                                .frame(width: 18)
+                        }
+
+                        Text(item.title)
+                            .font(.subheadline.weight(isCategoryGroup ? .semibold : .regular))
+                            .foregroundStyle(isCategoryGroup ? .primary : .secondary)
+
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+
+                    if index < items.count - 1 {
+                        Divider()
+                            .padding(.leading, 28)
+                    }
                 }
             }
         }

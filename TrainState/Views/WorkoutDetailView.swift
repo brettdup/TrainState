@@ -35,6 +35,15 @@ struct WorkoutDetailView: View {
     @State private var showingCategoriesManagement = false
     @State private var activeRatingTarget: RatingPickerTarget?
 
+    init(workout: Workout) {
+        self.workout = workout
+        var descriptor = FetchDescriptor<Workout>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 250
+        _allWorkouts = Query(descriptor)
+    }
+
     var body: some View {
         List {
             Section {
@@ -50,11 +59,6 @@ struct WorkoutDetailView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
-                        if let headerClassificationSummary {
-                            Text(headerClassificationSummary)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
                     }
                 } icon: {
                     Image(systemName: workout.primaryWorkoutSystemImage)
@@ -65,14 +69,14 @@ struct WorkoutDetailView: View {
             WorkoutStructureSection(
                 title: "Categories",
                 primaryActionTitle: hasClassificationDetails ? "Edit Categories" : "Add Categories",
-                primaryActionSubtitle: hasClassificationDetails ? "Update linked categories and subcategories" : "Assign categories to this workout",
+                primaryActionSubtitle: categoryActionSubtitle,
                 primaryAction: prepareCategoryAssignment,
                 secondaryActionTitle: workout.type == .strength ? "Manage Exercise Library" : nil,
                 secondaryActionSubtitle: workout.type == .strength ? "Edit categories, subcategories, and exercise templates" : nil,
                 secondaryAction: workout.type == .strength ? { showingCategoriesManagement = true } : nil,
-                categoryItems: [],
-                subcategoryItems: [],
-                emptyStateText: ""
+                categoryItems: categoryDetails,
+                subcategoryItems: subcategoryDetails,
+                emptyStateText: "No categories assigned."
             )
 
             if !(workout.subcategories ?? []).isEmpty {
@@ -531,12 +535,13 @@ struct WorkoutDetailView: View {
         !categoryDetails.isEmpty || !subcategoryDetails.isEmpty
     }
 
-    private var headerClassificationSummary: String? {
-        let categoryText = categoryDetails.map(\.title).joined(separator: ", ")
-        let subcategoryText = subcategoryDetails.map(\.title).joined(separator: ", ")
-        let parts = [categoryText, subcategoryText].filter { !$0.isEmpty }
-        let summary = parts.joined(separator: " · ")
-        return summary.isEmpty ? nil : summary
+    private var categoryActionSubtitle: String {
+        let names = categoryDetails.map(\.title) + subcategoryDetails.map(\.title)
+        guard !names.isEmpty else { return "Assign categories to this workout" }
+        let visibleNames = names.prefix(4)
+        let remainingCount = names.count - visibleNames.count
+        let summary = visibleNames.joined(separator: ", ")
+        return remainingCount > 0 ? "\(summary) +\(remainingCount) more" : summary
     }
 
     private func uniqueClassificationItems(_ items: [WorkoutStructureSummaryItem]) -> [WorkoutStructureSummaryItem] {

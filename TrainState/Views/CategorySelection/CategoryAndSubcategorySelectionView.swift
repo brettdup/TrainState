@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import HealthKit
+import UIKit
 
 struct CategoryAndSubcategorySelectionView: View {
     @Environment(\.dismiss) private var dismiss
@@ -51,10 +52,23 @@ struct CategoryAndSubcategorySelectionView: View {
         NavigationStack {
             List {
                 Section {
-                    Text(activityDisplayName)
-                        .foregroundStyle(.secondary)
-                } header: {
-                    Text("Workout Type")
+                    HStack(spacing: 12) {
+                        Image(systemName: workoutType.systemImage)
+                            .font(.title3)
+                            .foregroundStyle(workoutType.tintColor)
+                            .frame(width: 32, height: 32)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(activityDisplayName)
+                                .font(.headline)
+                            Text(selectionSummary)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                } footer: {
+                    Text("Categories describe the focus of the workout. Subcategories add detail and help organize exercises.")
                 }
 
                 Section {
@@ -72,16 +86,29 @@ struct CategoryAndSubcategorySelectionView: View {
                             } label: {
                                 CategorySelectionRow(
                                     category: category,
+                                    subcategoryCount: subcategoriesFor(category).count,
                                     isSelected: isCategorySelected(category)
                                 )
                             }
                             .buttonStyle(.plain)
+                            .listRowBackground(
+                                isCategorySelected(category)
+                                    ? (Color(hex: category.color) ?? workoutType.tintColor).opacity(0.1)
+                                    : Color(uiColor: .secondarySystemGroupedBackground)
+                            )
                         }
                     }
                 } header: {
-                    Text("Categories")
+                    HStack {
+                        Text("Categories")
+                        Spacer()
+                        Text("\(filteredCategories.count) available")
+                            .textCase(nil)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 } footer: {
-                    Text("Choose one or more categories for this workout.")
+                    Text("Select a category to reveal its more specific options below.")
                 }
 
                 ForEach(selectedCategories.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { category in
@@ -99,10 +126,16 @@ struct CategoryAndSubcategorySelectionView: View {
                                     SubcategorySelectionRow(
                                         subcategory: subcategory,
                                         category: category,
-                                        isSelected: isSubcategorySelected(subcategory)
+                                        isSelected: isSubcategorySelected(subcategory),
+                                        isLocked: lockedSubcategoryIDs.contains(subcategory.id)
                                     )
                                 }
                                 .buttonStyle(.plain)
+                                .listRowBackground(
+                                    isSubcategorySelected(subcategory)
+                                        ? (Color(hex: category.color) ?? workoutType.tintColor).opacity(0.08)
+                                        : Color(uiColor: .secondarySystemGroupedBackground)
+                                )
                             }
                         }
 
@@ -247,6 +280,12 @@ struct CategoryAndSubcategorySelectionView: View {
         appleWorkoutActivityType?.displayName ?? workoutType.rawValue
     }
 
+    private var selectionSummary: String {
+        let categoryText = "\(selectedCategories.count) categor\(selectedCategories.count == 1 ? "y" : "ies")"
+        let subcategoryText = "\(selectedSubcategories.count) subcategor\(selectedSubcategories.count == 1 ? "y" : "ies")"
+        return "\(categoryText) · \(subcategoryText) selected"
+    }
+
     private var filteredCategories: [WorkoutCategory] {
         WorkoutCategory.categoriesForAppleWorkout(
             activityType: appleWorkoutActivityType,
@@ -288,6 +327,7 @@ struct CategoryAndSubcategorySelectionView: View {
         } else {
             selectedCategories.append(category)
         }
+        HapticManager.lightImpact()
     }
 
     private func toggleSubcategory(_ subcategory: WorkoutSubcategory) {
@@ -300,6 +340,7 @@ struct CategoryAndSubcategorySelectionView: View {
         } else {
             selectedSubcategories.append(subcategory)
         }
+        HapticManager.lightImpact()
     }
 
     private func addCategory() {
@@ -307,6 +348,7 @@ struct CategoryAndSubcategorySelectionView: View {
         guard !name.isEmpty else { return }
         let category = WorkoutCategory(
             name: name,
+            color: workoutType.tintColor.hexString() ?? "#FF9500",
             workoutType: workoutType,
             appleWorkoutActivityType: appleWorkoutActivityType
         )
@@ -315,6 +357,7 @@ struct CategoryAndSubcategorySelectionView: View {
         selectedCategories.append(category)
         newCategoryName = ""
         showingAddCategory = false
+        HapticManager.success()
     }
 
     private func addSubcategory() {
@@ -328,11 +371,13 @@ struct CategoryAndSubcategorySelectionView: View {
         newSubcategoryName = ""
         showingAddSubcategory = false
         subcategoryParentCategory = nil
+        HapticManager.success()
     }
 }
 
 private struct CategorySelectionRow: View {
     let category: WorkoutCategory
+    let subcategoryCount: Int
     let isSelected: Bool
 
     var body: some View {
@@ -341,8 +386,14 @@ private struct CategorySelectionRow: View {
                 .fill(Color(hex: category.color) ?? .gray)
                 .frame(width: 10, height: 10)
 
-            Text(category.name)
-                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(category.name)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text("\(subcategoryCount) subcategor\(subcategoryCount == 1 ? "y" : "ies")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 
@@ -352,7 +403,9 @@ private struct CategorySelectionRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -360,6 +413,7 @@ private struct SubcategorySelectionRow: View {
     let subcategory: WorkoutSubcategory
     let category: WorkoutCategory
     let isSelected: Bool
+    let isLocked: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -372,6 +426,12 @@ private struct SubcategorySelectionRow: View {
 
             Spacer()
 
+            if isLocked {
+                Image(systemName: "lock.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.accentColor)
@@ -379,6 +439,7 @@ private struct SubcategorySelectionRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

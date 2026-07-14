@@ -52,7 +52,7 @@ struct WorkoutListView: View {
     @State private var attachedQuickLogDismissTask: Task<Void, Never>?
     @State private var showingQuickLogSheet = false
     @State private var showingContinueSession = false
-    @State private var visibleWorkoutLimit = 200
+    @State private var visibleWorkoutLimit = 100
     @State private var draftSessionEntries: [ExerciseLogEntry] = []
     @State private var continueSessionConfiguration = WorkoutSessionConfiguration(
         isTimerRunning: true,
@@ -292,7 +292,7 @@ struct WorkoutListView: View {
             if hasOlderFilteredWorkouts {
                 Section {
                     Button("Load Older Workouts") {
-                        visibleWorkoutLimit = min(visibleWorkoutLimit + 200, 500)
+                        visibleWorkoutLimit = min(visibleWorkoutLimit + 100, 500)
                     }
                     .frame(maxWidth: .infinity)
                 } footer: {
@@ -630,7 +630,7 @@ struct WorkoutListView: View {
                     ForEach(availableFilters, id: \.self) { filter in
                         Button {
                             selectedFilter = filter
-                            visibleWorkoutLimit = 200
+                            visibleWorkoutLimit = 100
                         } label: {
                             if selectedFilter == filter {
                                 Label(filter.title, systemImage: "checkmark")
@@ -844,8 +844,7 @@ struct WorkoutListView: View {
     }
 
     private func hasRoute(_ workout: Workout) -> Bool {
-        guard let route = workout.route?.decodedRoute else { return false }
-        return !route.isEmpty
+        workout.route != nil
     }
 
     private func hasExercises(_ workout: Workout) -> Bool {
@@ -1087,7 +1086,7 @@ struct WorkoutListView: View {
         if !availableFilters.contains(selectedFilter) {
             selectedFilter = .all
         }
-        visibleWorkoutLimit = 200
+        visibleWorkoutLimit = 100
     }
 
     private var visibleFilteredWorkouts: ArraySlice<Workout> {

@@ -340,19 +340,41 @@ struct WorkoutRowView: View {
 
     @ViewBuilder
     private var classificationLines: some View {
-        if !categorySummaryText.isEmpty {
-            Text(categorySummaryText)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
+        if !categoryNames.isEmpty || !subcategoryNames.isEmpty {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(classificationTint)
+                    .frame(width: 6, height: 6)
 
-        if !subcategorySummaryText.isEmpty {
-            Text(subcategorySummaryText)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                if !categoryNames.isEmpty {
+                    Text(summarizedText(from: categoryNames, limit: 2))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+
+                if !categoryNames.isEmpty && !subcategoryNames.isEmpty {
+                    Text("·")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                if !subcategoryNames.isEmpty {
+                    Text(summarizedText(from: subcategoryNames, limit: 2))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .lineLimit(1)
         }
+    }
+
+    private var classificationTint: Color {
+        guard let firstCategory = workout.categories?.first else {
+            return workout.primaryWorkoutTintColor
+        }
+        return Color(hex: firstCategory.color) ?? workout.primaryWorkoutTintColor
     }
 
     private var dateLabel: some View {
@@ -487,7 +509,6 @@ struct WorkoutRowView: View {
         return "\(minutes)m"
     }
 }
-
 
 // MARK: - Preview
 #Preview("Workout Row") {

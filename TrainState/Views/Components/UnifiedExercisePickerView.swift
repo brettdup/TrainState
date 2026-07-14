@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 /// Unified exercise picker used across AddWorkout, EditWorkout, and LiveStrengthSession views.
 /// Features search-first design, category filter chips, recent exercises, and multi-select support.
@@ -26,6 +27,28 @@ struct UnifiedExercisePickerView: View {
     @State private var cachedLastUsedDates: [String: Date] = [:]
     @State private var hasLoadedCache = false
 
+    init(
+        subcategories: [WorkoutSubcategory],
+        exerciseOptions: [ExerciseQuickAddOption],
+        existingExerciseNames: Set<String>,
+        onSelect: @escaping ([ExerciseQuickAddOption]) -> Void,
+        onCreateCustom: ((String, UUID) -> Void)? = nil,
+        tintColor: Color = .accentColor
+    ) {
+        self.subcategories = subcategories
+        self.exerciseOptions = exerciseOptions
+        self.existingExerciseNames = existingExerciseNames
+        self.onSelect = onSelect
+        self.onCreateCustom = onCreateCustom
+        self.tintColor = tintColor
+
+        var descriptor = FetchDescriptor<Workout>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 250
+        _workouts = Query(descriptor)
+    }
+
     // MARK: - Computed Properties
 
     private var subcategoryNameByID: [UUID: String] {
@@ -38,10 +61,12 @@ struct UnifiedExercisePickerView: View {
 
     private var recentExercises: [ExerciseQuickAddOption] {
         // Filter cached recent exercises by current subcategory filter
+        let availableOptionIDs = Set(exerciseOptions.map(\.id))
+        let availableRecents = cachedRecentExercises.filter { availableOptionIDs.contains($0.id) }
         if let filterID = filterSubcategoryID {
-            return cachedRecentExercises.filter { $0.subcategoryID == filterID }
+            return availableRecents.filter { $0.subcategoryID == filterID }
         }
-        return cachedRecentExercises
+        return availableRecents
     }
 
     /// Deduplicated and filtered options based on search and category filters
@@ -110,6 +135,7 @@ struct UnifiedExercisePickerView: View {
 
     private var canCreateCustom: Bool {
         onCreateCustom != nil &&
+        !subcategories.isEmpty &&
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !hasExactSearchMatch
     }
@@ -118,36 +144,40 @@ struct UnifiedExercisePickerView: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            VStack(spacing: 0) {
                 if !subcategories.isEmpty {
-                    Section {
-                        filterRow
-                    }
+                    categoryFilterRow
+                        .padding(.top, 4)
+                        .padding(.bottom, 2)
                 }
 
-                if exerciseOptions.isEmpty {
-                    emptyStateSection
-                } else if filteredOptions.isEmpty && !canCreateCustom {
-                    noResultsSection
-                } else {
-                    if !recentExercises.isEmpty && searchText.isEmpty && filterSubcategoryID == nil {
-                        recentSection
-                    }
+                List {
+                    if exerciseOptions.isEmpty && !canCreateCustom {
+                        emptyStateSection
+                    } else if filteredOptions.isEmpty && !canCreateCustom {
+                        noResultsSection
+                    } else {
+                        if !recentExercises.isEmpty && searchText.isEmpty && filterSubcategoryID == nil {
+                            recentSection
+                        }
 
-                    if !remainingOptions.isEmpty {
-                        Section(header: Text("Exercises")) {
-                            ForEach(remainingOptions, id: \.id) { option in
-                                exerciseRow(for: option, showSubcategory: true)
+                        if !remainingOptions.isEmpty {
+                            Section(header: Text(exerciseSectionTitle)) {
+                                ForEach(remainingOptions, id: \.id) { option in
+                                    exerciseRow(for: option, showSubcategory: true)
+                                }
                             }
                         }
-                    }
 
-                    if canCreateCustom {
-                        createCustomSection
+                        if canCreateCustom {
+                            createCustomSection
+                        }
                     }
                 }
+                .listStyle(.insetGrouped)
+                .contentMargins(.top, 8, for: .scrollContent)
             }
-            .listStyle(.insetGrouped)
+            .background(Color(uiColor: .systemGroupedBackground))
             .animation(nil, value: selectedIDs)
             .searchable(
                 text: $searchText,
@@ -160,13 +190,10 @@ struct UnifiedExercisePickerView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(addButtonTitle) {
-                        onSelect(Array(selectedOptions))
-                        dismiss()
-                    }
-                    .fontWeight(.semibold)
-                    .disabled(selectedCount == 0)
+            }
+            .safeAreaInset(edge: .bottom) {
+                if selectedCount > 0 {
+                    selectionBar
                 }
             }
         }
@@ -220,9 +247,18 @@ struct UnifiedExercisePickerView: View {
     }
 
     private var recentSection: some View {
-        Section(header: Text("Recent")) {
+        Section {
             ForEach(recentExercises, id: \.id) { option in
                 exerciseRow(for: option, showSubcategory: true, showLastUsed: true)
+            }
+        } header: {
+            HStack {
+                Text("Recent")
+                Spacer()
+                Text("Quick pick")
+                    .textCase(nil)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -253,46 +289,68 @@ struct UnifiedExercisePickerView: View {
         }
     }
 
-    private var filterRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "line.3.horizontal.decrease.circle")
-                .foregroundStyle(.secondary)
-
-            Text("Subcategory")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            Spacer(minLength: 12)
-
-            Menu {
-                Button("All Subcategories") {
-                    filterSubcategoryID = nil
-                }
-
-                Divider()
+    private var categoryFilterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                categoryChip(title: "All", id: nil)
 
                 ForEach(subcategories) { subcategory in
-                    Button {
-                        filterSubcategoryID = subcategory.id
-                    } label: {
-                        if filterSubcategoryID == subcategory.id {
-                            Label(subcategory.name, systemImage: "checkmark")
-                        } else {
-                            Text(subcategory.name)
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(activeFilterTitle)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                    categoryChip(title: subcategory.name, id: subcategory.id)
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 2)
         }
+    }
+
+    private func categoryChip(title: String, id: UUID?) -> some View {
+        let isActive = filterSubcategoryID == id
+        return Button {
+            filterSubcategoryID = id
+            HapticManager.lightImpact()
+        } label: {
+            Text(title)
+                .font(.subheadline.weight(isActive ? .semibold : .regular))
+                .foregroundStyle(isActive ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(isActive ? tintColor : Color.secondary.opacity(0.12))
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+
+    private var selectionBar: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Text("\(selectedCount) selected")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button("Clear") {
+                    selectedIDs.removeAll()
+                }
+                .font(.subheadline)
+            }
+
+            Button {
+                onSelect(Array(selectedOptions))
+                dismiss()
+            } label: {
+                Text(addButtonTitle)
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(tintColor)
+        }
+        .padding(.horizontal)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(.bar)
     }
 
     // MARK: - Row Builder
@@ -321,6 +379,9 @@ struct UnifiedExercisePickerView: View {
             )
         }
         .buttonStyle(.plain)
+        .listRowBackground(
+            isSelected ? tintColor.opacity(0.08) : Color(uiColor: .secondarySystemGroupedBackground)
+        )
         .transaction { $0.animation = nil }
     }
 
@@ -374,16 +435,21 @@ struct UnifiedExercisePickerView: View {
     }
 
     private var addButtonTitle: String {
-        guard selectedCount > 0 else { return "Add" }
-        return "Add \(selectedCount)"
+        "Add \(selectedCount) Exercise\(selectedCount == 1 ? "" : "s")"
+    }
+
+    private var exerciseSectionTitle: String {
+        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Results"
+        }
+        if filterSubcategoryID != nil {
+            return activeFilterTitle
+        }
+        return "All Exercises"
     }
 
     private var activeFilterTitle: String {
-        guard let filterSubcategoryID,
-              let name = subcategoryNameByID[filterSubcategoryID] else {
-            return "All Subcategories"
-        }
-        return name
+        filterSubcategoryID.flatMap { subcategoryNameByID[$0] } ?? "All Exercises"
     }
 
     private func affectedSubcategoryNames(for option: ExerciseQuickAddOption) -> [String] {

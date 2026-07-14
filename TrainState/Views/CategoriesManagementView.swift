@@ -20,6 +20,9 @@ struct CategoriesManagementView: View {
     @State private var newExerciseTemplateName = ""
     @State private var templateParentSubcategory: WorkoutSubcategory?
     @State private var showingCategoryTools = false
+    @State private var showingAddCategory = false
+    @State private var newCategoryName = ""
+    @State private var newCategoryType: WorkoutType = .strength
     @State private var showingPaywall = false
     @State private var categoryPendingDelete: WorkoutCategory?
     @State private var subcategoryPendingDelete: WorkoutSubcategory?
@@ -37,6 +40,11 @@ struct CategoriesManagementView: View {
     ) {
         self.workoutType = workoutType
         self.appleWorkoutActivityType = appleWorkoutActivityType
+        var descriptor = FetchDescriptor<Workout>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 500
+        _workouts = Query(descriptor)
     }
 
     private var relevantCategories: [WorkoutCategory] {
@@ -242,8 +250,19 @@ struct CategoriesManagementView: View {
         return purchaseManager.hasActiveSubscription || subcategoriesFor(category).count < PremiumLimits.freeSubcategoryPerCategoryLimit
     }
 
+    private var canAddCategory: Bool {
+        guard purchaseManager.hasCompletedInitialPremiumCheck else { return true }
+        return purchaseManager.hasActiveSubscription || categories.count < PremiumLimits.freeCategoryLimit
+    }
+
     var body: some View {
         List {
+            Section {
+                Text(librarySummary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
             if relevantExerciseTemplates.isEmpty {
                 Section {
                     ContentUnavailableView(
@@ -300,7 +319,7 @@ struct CategoriesManagementView: View {
                 Button {
                     showingCategoryTools = true
                 } label: {
-                    Label("Categories", systemImage: "folder")
+                    Label("Organize", systemImage: "folder")
                 }
             }
         }
@@ -375,12 +394,18 @@ struct CategoriesManagementView: View {
     private var categoryToolsSheet: some View {
         NavigationStack {
             List {
+                Section {
+                    Text("Categories are broad workout areas. Subcategories sit inside them and hold the exercises shown in your picker.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
                 if groupedCategories.isEmpty {
                     Section {
                         ContentUnavailableView(
                             "No Categories Yet",
                             systemImage: "square.grid.2x2",
-                            description: Text("Create a category from the workout flow first.")
+                            description: Text("Create a category here, then add subcategories and exercises inside it.")
                         )
                         .frame(maxWidth: .infinity)
                         .listRowBackground(Color.clear)
@@ -394,6 +419,17 @@ struct CategoriesManagementView: View {
                         }
                     }
                 }
+
+                Section {
+                    Button {
+                        presentAddCategory()
+                    } label: {
+                        Label("Add Category", systemImage: "plus.circle.fill")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } footer: {
+                    Text("Add subcategories after creating the category, then place exercises inside them.")
+                }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Category Setup")
@@ -404,8 +440,22 @@ struct CategoriesManagementView: View {
                         showingCategoryTools = false
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        presentAddCategory()
+                    } label: {
+                        Label("Add Category", systemImage: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAddCategory) {
+                addCategorySheet
             }
         }
+    }
+
+    private var librarySummary: String {
+        "\(relevantExerciseTemplates.count) exercise\(relevantExerciseTemplates.count == 1 ? "" : "s") organized into \(relevantSubcategories.count) subcategor\(relevantSubcategories.count == 1 ? "y" : "ies") and \(relevantCategories.count) categor\(relevantCategories.count == 1 ? "y" : "ies")."
     }
 
     private func subcategoriesFor(_ category: WorkoutCategory) -> [WorkoutSubcategory] {
@@ -916,6 +966,87 @@ struct CategoriesManagementView: View {
         modelContext.delete(template)
         try? modelContext.save()
         exerciseTemplatePendingDelete = nil
+    }
+
+    private func presentAddCategory() {
+        guard canAddCategory else {
+            Task {
+                await purchaseManager.loadProducts()
+                await purchaseManager.updatePurchasedProducts()
+                showingPaywall = true
+            }
+            return
+        }
+
+        newCategoryName = ""
+        newCategoryType = workoutType ?? .strength
+        showingAddCategory = true
+    }
+
+    private var addCategorySheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Category name", text: $newCategoryName)
+                        .textInputAutocapitalization(.words)
+                        .disableAutocorrection(true)
+                } header: {
+                    Text("Category")
+                } footer: {
+                    Text("Use a broad focus such as Push, Pull, Mobility, or Endurance.")
+                }
+
+                Section("Workout Type") {
+                    if let workoutType {
+                        Label(workoutType.rawValue, systemImage: workoutType.systemImage)
+                            .foregroundStyle(workoutType.tintColor)
+                    } else {
+                        Picker("Workout Type", selection: $newCategoryType) {
+                            ForEach(WorkoutType.allCases) { type in
+                                Label(type.rawValue, systemImage: type.systemImage)
+                                    .tag(type)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("New Category")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showingAddCategory = false
+                        newCategoryName = ""
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        addCategory()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func addCategory() {
+        let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        let type = workoutType ?? newCategoryType
+        let category = WorkoutCategory(
+            name: name,
+            color: type.tintColor.hexString() ?? "#FF9500",
+            workoutType: type,
+            appleWorkoutActivityType: workoutType == nil ? nil : appleWorkoutActivityType
+        )
+        modelContext.insert(category)
+        try? modelContext.save()
+        expandedCategoryId = category.id
+        showingAddCategory = false
+        newCategoryName = ""
+        HapticManager.success()
     }
 
     private var addSubcategorySheet: some View {

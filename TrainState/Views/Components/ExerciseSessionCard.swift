@@ -104,6 +104,17 @@ struct ExerciseSessionCard: View {
 
     @ViewBuilder
     private var exerciseContent: some View {
+        Button {
+            completeNextSet()
+        } label: {
+            Label(primaryActionTitle, systemImage: "checkmark.circle.fill")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(tintColor)
+
         if entry.setEntries.isEmpty {
             Label {
                 Text("No sets logged yet")
@@ -133,13 +144,6 @@ struct ExerciseSessionCard: View {
                     .foregroundStyle(.secondary)
             }
         }
-
-        Button {
-            ExerciseSessionActions.logNextSet(entry: &entry, measurementSystem: measurementSystem)
-        } label: {
-            exerciseActionLabel(entry.setEntries.isEmpty ? "Log First Set" : "Log Set", systemImage: "plus.circle")
-        }
-        .buttonStyle(.plain)
 
         if !entry.setEntries.isEmpty {
             Button {
@@ -188,6 +192,25 @@ struct ExerciseSessionCard: View {
             return "\(entry.completedSetCount)/\(entry.setEntries.count) sets · \(last.reps) × \(weightLabel) \(unit)"
         }
         return "\(entry.completedSetCount)/\(entry.setEntries.count) sets"
+    }
+
+    private var primaryActionTitle: String {
+        if let nextIndex = entry.setEntries.firstIndex(where: { !$0.isCompleted }) {
+            return "Complete Set \(nextIndex + 1)"
+        }
+        return entry.setEntries.isEmpty ? "Log First Set" : "Log Another Set"
+    }
+
+    private func completeNextSet() {
+        if entry.setEntries.contains(where: { !$0.isCompleted }) {
+            ExerciseSessionActions.markNextSetDone(entry: &entry)
+        } else {
+            ExerciseSessionActions.logNextSet(entry: &entry, measurementSystem: measurementSystem)
+        }
+
+        if restTimerEnabled {
+            onStartRest()
+        }
     }
 
     private func duplicateSet(id: UUID) {

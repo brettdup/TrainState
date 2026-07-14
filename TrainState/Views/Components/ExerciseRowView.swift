@@ -29,7 +29,7 @@ struct ExerciseRowView: View {
 
                 HStack(spacing: 6) {
                     if let subcategoryName {
-                        Text("Main: \(subcategoryName)")
+                        Text(subcategoryName)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
