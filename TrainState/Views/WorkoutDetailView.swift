@@ -71,12 +71,13 @@ struct WorkoutDetailView: View {
                 primaryActionTitle: hasClassificationDetails ? "Edit Categories" : "Add Categories",
                 primaryActionSubtitle: categoryActionSubtitle,
                 primaryAction: prepareCategoryAssignment,
-                secondaryActionTitle: workout.type == .strength ? "Manage Exercise Library" : nil,
-                secondaryActionSubtitle: workout.type == .strength ? "Edit categories, subcategories, and exercise templates" : nil,
-                secondaryAction: workout.type == .strength ? { showingCategoriesManagement = true } : nil,
+                secondaryActionTitle: "Add Exercises",
+                secondaryActionSubtitle: "Search and select from your library",
+                secondaryAction: { showingExercisePicker = true },
                 categoryItems: categoryDetails,
                 subcategoryItems: subcategoryDetails,
-                emptyStateText: "No categories assigned."
+                emptyStateText: "No categories assigned.",
+                secondaryActionAfterSummaries: true
             )
 
             if !(workout.subcategories ?? []).isEmpty {
@@ -100,23 +101,17 @@ struct WorkoutDetailView: View {
                 )
             }
 
-            Section {
-                addExercisesButton
-
-                if let exercises = workout.exercises, !exercises.isEmpty {
-                    if hasUncategorizedExercises {
-                        Text("Categorize exercises for better insights. Tap Exercise on a card to assign a subcategory.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } header: {
-                Text("Exercises")
-            }
-
             if let exercises = workout.exercises, !exercises.isEmpty {
-                ForEach(exercises.sorted(by: { $0.orderIndex < $1.orderIndex }), id: \.id) { exercise in
+                let orderedExercises = exercises.sorted { $0.orderIndex < $1.orderIndex }
+
+                ForEach(Array(orderedExercises.enumerated()), id: \.element.id) { index, exercise in
                     Section {
+                        if index == 0 && hasUncategorizedExercises {
+                            Text("Categorize exercises for better insights. Tap Exercise on a card to assign a subcategory.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
                         ExerciseSessionCard(
                             entry: exerciseDraftBinding(for: exercise),
                             isExpanded: exerciseExpansionBinding(for: exercise.id),
@@ -149,6 +144,10 @@ struct WorkoutDetailView: View {
                                 )
                             }
                         )
+                    } header: {
+                        if index == 0 {
+                            Text("Exercises")
+                        }
                     }
                 }
             }
@@ -184,6 +183,12 @@ struct WorkoutDetailView: View {
                     EditWorkoutView(workout: workout)
                 } label: {
                     Text("Edit Workout")
+                }
+            }
+
+            if workout.type == .strength {
+                Section("Exercise Library") {
+                    manageExerciseLibraryButton
                 }
             }
         }
@@ -291,6 +296,9 @@ struct WorkoutDetailView: View {
                 appleWorkoutActivityType: workout.appleWorkoutActivityType,
                 lockedSubcategoryIDs: Set((workout.exercises ?? []).compactMap { $0.subcategory?.id })
             )
+            .presentationDetents([.large])
+            .presentationContentInteraction(.resizes)
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingCategoriesManagement) {
             NavigationStack {
@@ -299,6 +307,9 @@ struct WorkoutDetailView: View {
                     appleWorkoutActivityType: workout.appleWorkoutActivityType
                 )
             }
+            .presentationDetents([.large])
+            .presentationContentInteraction(.resizes)
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingExerciseReorder) {
             ExerciseReorderSheet(
@@ -363,18 +374,18 @@ struct WorkoutDetailView: View {
         }
     }
 
-    private var addExercisesButton: some View {
+    private var manageExerciseLibraryButton: some View {
         Button {
-            showingExercisePicker = true
+            showingCategoriesManagement = true
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: "plus.circle")
+                Image(systemName: "books.vertical")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(workout.primaryWorkoutTintColor)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Add Exercises")
+                    Text("Manage Exercise Library")
                         .font(.subheadline.weight(.semibold))
-                    Text("Search and select from your library")
+                    Text("Edit categories, subcategories, and exercise templates")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -384,6 +395,8 @@ struct WorkoutDetailView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

@@ -23,7 +23,10 @@ struct AppRootView: View {
                 if purchaseManager.hasCompletedInitialPremiumCheck {
                     MainTabView()
                 } else {
-                    premiumStatusLoadingView
+                    PremiumStatusLoadingView(
+                        accentColor: accentColor.color,
+                        appIconImageName: currentAppIcon.previewImageName
+                    )
                 }
             } else {
                 OnboardingView()
@@ -38,31 +41,68 @@ struct AppRootView: View {
         }
     }
 
-    private var premiumStatusLoadingView: some View {
-        ZStack {
-            Color(.systemBackground)
-                .ignoresSafeArea()
-
-            VStack(spacing: 20) {
-                Image(currentAppIcon.previewImageName)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 112, height: 112)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .shadow(color: .black.opacity(0.15), radius: 12, y: 6)
-
-                ProgressView("Loading Exercise Pal…")
-                    .tint(accentColor.color)
-            }
-        }
-    }
-
     private var currentAppIcon: AppIconOption {
         AppIconOption.option(for: AppIconManager.shared.getCurrentAppIcon())
+    }
+}
+
+private struct PremiumStatusLoadingView: View {
+    let accentColor: Color
+    let appIconImageName: String
+
+    var body: some View {
+        ZStack {
+            ThemeColor.primaryUi01()
+                .ignoresSafeArea()
+
+            VStack(spacing: 28) {
+                VStack(spacing: ViewConstants.spacingLarge) {
+                    appIcon
+
+                    Text("Exercise Pal")
+                        .font(.system(.title, design: .rounded, weight: .bold))
+                        .foregroundStyle(ThemeColor.primaryText01())
+                }
+
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.regular)
+                        .tint(accentColor)
+
+                    Text("Preparing your training…")
+                        .font(.footnote)
+                        .foregroundStyle(ThemeColor.primaryText02())
+                }
+            }
+            .offset(y: -24)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Exercise Pal is preparing your training")
+    }
+
+    private var appIcon: some View {
+        Image(appIconImageName)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 96, height: 96)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(.primary.opacity(0.06), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
+            .accessibilityHidden(true)
     }
 }
 
 #Preview {
     AppRootView()
         .modelContainer(for: [Workout.self, WorkoutCategory.self, WorkoutSubcategory.self, WorkoutSubcategoryRating.self, UserSettings.self, StrengthWorkoutTemplate.self, StrengthWorkoutTemplateExercise.self], inMemory: true)
+}
+
+#Preview("Loading") {
+    PremiumStatusLoadingView(
+        accentColor: AppAccentColor.blue.color,
+        appIconImageName: "AppIconOriginalPreview"
+    )
 }

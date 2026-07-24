@@ -21,6 +21,7 @@ struct WorkoutStructureSection: View {
     let categoryItems: [WorkoutStructureSummaryItem]
     let subcategoryItems: [WorkoutStructureSummaryItem]
     let emptyStateText: String
+    var secondaryActionAfterSummaries = false
 
     var body: some View {
         Section(title) {
@@ -30,12 +31,8 @@ struct WorkoutStructureSection: View {
                 action: primaryAction
             )
 
-            if let secondaryActionTitle, let secondaryActionSubtitle, let secondaryAction {
-                WorkoutStructureActionRow(
-                    title: secondaryActionTitle,
-                    subtitle: secondaryActionSubtitle,
-                    action: secondaryAction
-                )
+            if !secondaryActionAfterSummaries {
+                secondaryActionRow
             }
 
             if !categoryItems.isEmpty {
@@ -51,6 +48,21 @@ struct WorkoutStructureSection: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+
+            if secondaryActionAfterSummaries {
+                secondaryActionRow
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var secondaryActionRow: some View {
+        if let secondaryActionTitle, let secondaryActionSubtitle, let secondaryAction {
+            WorkoutStructureActionRow(
+                title: secondaryActionTitle,
+                subtitle: secondaryActionSubtitle,
+                action: secondaryAction
+            )
         }
     }
 }
