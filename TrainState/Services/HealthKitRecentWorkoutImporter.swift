@@ -26,7 +26,8 @@ struct HealthKitRecentWorkoutMenuItem: Identifiable, Hashable, Codable {
             startDate: startDate,
             duration: duration,
             distanceKilometers: distanceKilometers,
-            calories: calories
+            calories: calories,
+            systemImageName: activityType.systemImage
         )
     }
 

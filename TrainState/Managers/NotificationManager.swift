@@ -7,13 +7,41 @@ struct HealthKitWorkoutImportNotificationDetail {
     let duration: TimeInterval
     let distanceKilometers: Double?
     let calories: Double?
+    let systemImageName: String
+
+    init(
+        workoutName: String,
+        startDate: Date,
+        duration: TimeInterval,
+        distanceKilometers: Double?,
+        calories: Double?,
+        systemImageName: String = "figure.run"
+    ) {
+        self.workoutName = workoutName
+        self.startDate = startDate
+        self.duration = duration
+        self.distanceKilometers = distanceKilometers
+        self.calories = calories
+        self.systemImageName = systemImageName
+    }
 }
 
-class NotificationManager {
+class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
     static let healthKitImportNotificationsEnabledKey = "healthKitImportNotificationsEnabled"
     
-    private init() {}
+    private override init() {
+        super.init()
+        UNUserNotificationCenter.current().delegate = self
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound, .badge])
+    }
     
     func requestAuthorization() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
@@ -68,7 +96,88 @@ class NotificationManager {
         importedCount: Int,
         workoutDetails: [HealthKitWorkoutImportNotificationDetail] = []
     ) {
-        guard healthKitImportNotificationsEnabled else { return }
+        sendHealthKitWorkoutImportNotification(
+            mergedCount: mergedCount,
+            importedCount: importedCount,
+            workoutDetails: workoutDetails,
+            respectingUserPreference: true
+        )
+    }
+
+    #if DEBUG
+    /// Sends the real system notification with deterministic sample content from Developer Options.
+    /// This intentionally ignores the user-facing import toggle so the test control always works.
+    func sendTestHealthKitWorkoutImportNotification() {
+        requestNotificationAccessForTest { [weak self] authorized in
+            guard authorized else {
+                print("[NotificationTest] Notifications are not authorized. Enable them in iOS Settings.")
+                return
+            }
+
+            let sampleDate = Calendar.current.date(byAdding: .minute, value: -18, to: Date()) ?? Date()
+            let detail = HealthKitWorkoutImportNotificationDetail(
+                workoutName: "Outdoor Run",
+                startDate: sampleDate,
+                duration: 42 * 60,
+                distanceKilometers: 5.2,
+                calories: 388,
+                systemImageName: "figure.run"
+            )
+
+            self?.sendHealthKitWorkoutImportNotification(
+                mergedCount: 0,
+                importedCount: 1,
+                workoutDetails: [detail],
+                respectingUserPreference: false
+            )
+        }
+    }
+
+    private func requestNotificationAccessForTest(completion: @escaping (Bool) -> Void) {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            if Self.isNotificationAuthorizationUsable(settings.authorizationStatus) {
+                DispatchQueue.main.async {
+                    completion(true)
+                }
+                return
+            }
+
+            guard settings.authorizationStatus == .notDetermined else {
+                DispatchQueue.main.async {
+                    completion(false)
+                }
+                return
+            }
+
+            center.requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+                if let error {
+                    print("[NotificationTest] Permission request failed: \(error.localizedDescription)")
+                }
+                DispatchQueue.main.async {
+                    completion(granted)
+                }
+            }
+        }
+    }
+
+    #endif
+
+    private static func isNotificationAuthorizationUsable(
+        _ status: UNAuthorizationStatus
+    ) -> Bool {
+        status == .authorized || status == .provisional || status == .ephemeral
+    }
+
+    private func sendHealthKitWorkoutImportNotification(
+        mergedCount: Int,
+        importedCount: Int,
+        workoutDetails: [HealthKitWorkoutImportNotificationDetail],
+        respectingUserPreference: Bool
+    ) {
+        if respectingUserPreference {
+            guard healthKitImportNotificationsEnabled else { return }
+        }
 
         let totalCount = mergedCount + importedCount
         guard totalCount > 0 else { return }
@@ -79,7 +188,13 @@ class NotificationManager {
             let content = UNMutableNotificationContent()
             content.title = self.healthKitImportNotificationTitle(
                 mergedCount: mergedCount,
-                importedCount: importedCount
+                importedCount: importedCount,
+                workoutDetails: workoutDetails
+            )
+            content.subtitle = self.healthKitImportNotificationSubtitle(
+                mergedCount: mergedCount,
+                importedCount: importedCount,
+                workoutDetails: workoutDetails
             )
             content.body = self.healthKitImportNotificationBody(
                 mergedCount: mergedCount,
@@ -87,6 +202,17 @@ class NotificationManager {
                 workoutDetails: workoutDetails
             )
             content.sound = .default
+            content.threadIdentifier = "healthKitWorkoutImports"
+            content.summaryArgument = workoutDetails.first?.workoutName ?? "workouts"
+            content.summaryArgumentCount = totalCount
+            content.relevanceScore = totalCount == 1 ? 0.8 : 0.6
+
+            var attachmentFileURL: URL?
+            if let detail = workoutDetails.first,
+               let renderedAttachment = HealthKitWorkoutNotificationAttachmentBuilder.makeAttachment(for: detail) {
+                content.attachments = [renderedAttachment.attachment]
+                attachmentFileURL = renderedAttachment.fileURL
+            }
 
             let request = UNNotificationRequest(
                 identifier: "healthKitWorkoutImport-\(UUID().uuidString)",
@@ -95,8 +221,13 @@ class NotificationManager {
             )
 
             UNUserNotificationCenter.current().add(request) { error in
+                if let attachmentFileURL {
+                    try? FileManager.default.removeItem(at: attachmentFileURL)
+                }
                 if let error {
                     print("Error sending HealthKit import notification: \(error.localizedDescription)")
+                } else {
+                    print("[NotificationTest] HealthKit import notification scheduled: \(request.identifier)")
                 }
             }
         }
@@ -110,14 +241,45 @@ class NotificationManager {
         return defaults.bool(forKey: Self.healthKitImportNotificationsEnabledKey)
     }
 
-    private func healthKitImportNotificationTitle(mergedCount: Int, importedCount: Int) -> String {
+    private func healthKitImportNotificationTitle(
+        mergedCount: Int,
+        importedCount: Int,
+        workoutDetails: [HealthKitWorkoutImportNotificationDetail]
+    ) -> String {
+        let totalCount = mergedCount + importedCount
+        if totalCount == 1, let detail = workoutDetails.first {
+            return mergedCount == 1
+                ? "\(detail.workoutName) synced"
+                : "\(detail.workoutName) added"
+        }
         if mergedCount > 0 && importedCount > 0 {
-            return "Workouts updated"
+            return "Your workout log is up to date"
         }
         if mergedCount > 0 {
-            return mergedCount == 1 ? "Workout merged" : "Workouts merged"
+            return "Workout details synced"
         }
-        return importedCount == 1 ? "Workout imported" : "Workouts imported"
+        return importedCount == 1 ? "Workout added" : "Workouts added"
+    }
+
+    private func healthKitImportNotificationSubtitle(
+        mergedCount: Int,
+        importedCount: Int,
+        workoutDetails: [HealthKitWorkoutImportNotificationDetail]
+    ) -> String {
+        let totalCount = mergedCount + importedCount
+
+        if totalCount == 1, let detail = workoutDetails.first {
+            return "\(healthKitWorkoutDateLabel(for: detail.startDate)) · Apple Health"
+        }
+
+        var parts = ["Apple Health"]
+        if importedCount > 0 {
+            parts.append("\(importedCount) new")
+        }
+        if mergedCount > 0 {
+            parts.append("\(mergedCount) matched")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func healthKitImportNotificationBody(
@@ -129,14 +291,14 @@ class NotificationManager {
         if totalCount == 1, let detail = workoutDetails.first {
             let summary = healthKitWorkoutSummary(for: detail)
             if mergedCount == 1 {
-                return "Updated your manual \(detail.workoutName.lowercased()) with \(summary) from Apple Health."
+                return "Existing workout updated · \(summary)"
             }
-            return "\(detail.workoutName) imported from Apple Health: \(summary)."
+            return summary
         }
 
         if let detail = workoutDetails.first {
             let actionSummary = healthKitMultiWorkoutActionSummary(mergedCount: mergedCount, importedCount: importedCount)
-            return "\(actionSummary) Latest: \(detail.workoutName), \(healthKitWorkoutSummary(for: detail))."
+            return "\(actionSummary) Latest: \(detail.workoutName) · \(healthKitWorkoutSummary(for: detail))."
         }
 
         if mergedCount > 0 && importedCount > 0 {
@@ -154,16 +316,16 @@ class NotificationManager {
 
     private func healthKitMultiWorkoutActionSummary(mergedCount: Int, importedCount: Int) -> String {
         if mergedCount > 0 && importedCount > 0 {
-            return "\(mergedCount) merged and \(importedCount) imported from Apple Health."
+            return "\(importedCount) new and \(mergedCount) matched from Apple Health."
         }
         if mergedCount > 0 {
             return mergedCount == 1
-                ? "1 workout merged from Apple Health."
-                : "\(mergedCount) workouts merged from Apple Health."
+                ? "1 existing workout matched from Apple Health."
+                : "\(mergedCount) existing workouts matched from Apple Health."
         }
         return importedCount == 1
-            ? "1 workout imported from Apple Health."
-            : "\(importedCount) workouts imported from Apple Health."
+            ? "1 new workout added from Apple Health."
+            : "\(importedCount) new workouts added from Apple Health."
     }
 
     private func healthKitWorkoutSummary(for detail: HealthKitWorkoutImportNotificationDetail) -> String {
@@ -178,8 +340,20 @@ class NotificationManager {
             parts.append("\(Int(calories.rounded())) kcal")
         }
 
-        parts.append(detail.startDate.formatted(date: .abbreviated, time: .shortened))
         return parts.joined(separator: " · ")
+    }
+
+    private func healthKitWorkoutDateLabel(for date: Date) -> String {
+        let calendar = Calendar.current
+        let time = date.formatted(date: .omitted, time: .shortened)
+
+        if calendar.isDateInToday(date) {
+            return "Today at \(time)"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday at \(time)"
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -199,7 +373,7 @@ class NotificationManager {
     func checkNotificationStatus(completion: @escaping (Bool) -> Void) {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {
-                completion(settings.authorizationStatus == .authorized)
+                completion(Self.isNotificationAuthorizationUsable(settings.authorizationStatus))
             }
         }
     }

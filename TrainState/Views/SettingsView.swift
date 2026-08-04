@@ -440,6 +440,14 @@ struct SettingsView: View {
                 SettingsRow(icon: "square.stack.3d.up", title: "Manage Strength Templates")
             }
 
+            #if DEBUG
+            NavigationLink {
+                DeveloperOptionsView()
+            } label: {
+                SettingsRow(icon: "hammer", title: "Developer Options")
+            }
+            #endif
+
             Button(role: .destructive) {
                 Task { await resetWorkouts() }
             } label: {

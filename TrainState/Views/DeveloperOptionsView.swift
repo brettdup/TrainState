@@ -12,6 +12,7 @@ struct DeveloperOptionsView: View {
                 VStack(spacing: 16) {
                     #if DEBUG
                     premiumOverrideCard
+                    notificationTestCard
                     #endif
                     
                     dataCard
@@ -102,6 +103,47 @@ struct DeveloperOptionsView: View {
             }
 
             Text("Note: Premium Override and Force Premium Off are mutually exclusive debug modes.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard()
+    }
+
+    private var notificationTestCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Notifications")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Button {
+                NotificationManager.shared.sendTestHealthKitWorkoutImportNotification()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "bell.badge.fill")
+                        .foregroundStyle(Color.accentColor)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Send Test Workout Import")
+                            .font(.body)
+
+                        Text("Post the real iOS notification with sample workout data")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "arrow.up.forward")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Text("Notification permission must be enabled. This test ignores the Apple Health import toggle.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
