@@ -107,9 +107,44 @@ enum HealthKitImportError: LocalizedError {
 }
 
 @MainActor
+private final class HealthKitWorkoutImportGate {
+    static let shared = HealthKitWorkoutImportGate()
+
+    private var isRunning = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    private init() {}
+
+    func run<T>(_ operation: @MainActor () async throws -> T) async throws -> T {
+        await acquire()
+        defer { release() }
+        try Task.checkCancellation()
+        return try await operation()
+    }
+
+    private func acquire() async {
+        guard isRunning else {
+            isRunning = true
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    private func release() {
+        guard !waiters.isEmpty else {
+            isRunning = false
+            return
+        }
+
+        waiters.removeFirst().resume()
+    }
+}
+
+@MainActor
 final class HealthKitRecentWorkoutImporter {
-    private static var isImportingNewRecentWorkouts = false
-    private static var isImportingAnchoredWorkouts = false
     private static let anchoredWorkoutSyncAnchorKey = "healthKitWorkoutAutoImportAnchor"
     private static let hasCompletedFullHistoryImportKey = "healthKitHasCompletedFullHistoryImport"
 
@@ -129,18 +164,36 @@ final class HealthKitRecentWorkoutImporter {
     }
 
     func importWorkout(_ item: HealthKitRecentWorkoutMenuItem, into context: ModelContext) async throws {
+        try await HealthKitWorkoutImportGate.shared.run {
+            try await self.importWorkoutLocked(item, into: context)
+        }
+    }
+
+    private func importWorkoutLocked(_ item: HealthKitRecentWorkoutMenuItem, into context: ModelContext) async throws {
         let descriptor = FetchDescriptor<Workout>()
         let existingWorkouts = try context.fetch(descriptor)
 
-        if let importedWorkout = existingWorkouts.first(where: { $0.hkUUID == item.hkUUID }) {
-            if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
+        let cleanupResult = consolidateDuplicateImportedWorkouts(
+            existingWorkouts,
+            in: context
+        )
+        let consolidatedWorkouts = cleanupResult.workouts
+
+        if let importedWorkout = preferredImportedWorkout(for: item, in: consolidatedWorkouts) {
+            let didReconcileReplacement = importedWorkout.hkUUID != item.hkUUID
+            if didReconcileReplacement {
+                try await reconcileReplacementWorkout(importedWorkout, using: item, in: context)
+            }
+            if let manualWorkout = matchingManualWorkout(for: item, in: consolidatedWorkouts) {
                 try await mergeImportedWorkout(importedWorkout, into: manualWorkout, using: item, in: context)
+            } else if cleanupResult.didChange || didReconcileReplacement {
+                try context.save()
             }
             return
         }
 
-        if let manualWorkout = matchingManualWorkout(for: item, in: existingWorkouts) {
-            try await attachWorkout(item, to: manualWorkout, in: context)
+        if let manualWorkout = matchingManualWorkout(for: item, in: consolidatedWorkouts) {
+            try await attachWorkoutLocked(item, to: manualWorkout, in: context)
             return
         }
 
@@ -149,8 +202,9 @@ final class HealthKitRecentWorkoutImporter {
     }
 
     func importWorkoutsBatch(_ items: [HealthKitRecentWorkoutMenuItem], into context: ModelContext) async throws {
-        guard !items.isEmpty else { return }
-        _ = try await importUniqueWorkoutItems(uniqueWorkoutItems(items), into: context)
+        try await HealthKitWorkoutImportGate.shared.run {
+            _ = try await self.importUniqueWorkoutItems(self.uniqueWorkoutItems(items), into: context)
+        }
     }
 
     @discardableResult
@@ -189,77 +243,92 @@ final class HealthKitRecentWorkoutImporter {
     }
 
     func importNewRecentWorkouts(into context: ModelContext, limit: Int = 10) async throws -> Int {
-        guard !Self.isImportingNewRecentWorkouts else { return 0 }
-        Self.isImportingNewRecentWorkouts = true
-        defer { Self.isImportingNewRecentWorkouts = false }
-
-        let recentWorkouts = uniqueWorkoutItems(try await fetchRecentWorkouts(limit: limit))
-        return try await importUniqueWorkoutItems(recentWorkouts, into: context)
+        try await HealthKitWorkoutImportGate.shared.run {
+            let recentWorkouts = self.uniqueWorkoutItems(try await self.fetchRecentWorkouts(limit: limit))
+            return try await self.importUniqueWorkoutItems(recentWorkouts, into: context)
+        }
     }
 
     func importFullHistoryOnce(
         into context: ModelContext,
         progress: @escaping (_ completed: Int, _ total: Int) -> Void = { _, _ in }
     ) async throws -> Int {
-        guard !UserDefaults.standard.bool(forKey: Self.hasCompletedFullHistoryImportKey) else {
-            return 0
+        try await HealthKitWorkoutImportGate.shared.run {
+            guard !UserDefaults.standard.bool(forKey: Self.hasCompletedFullHistoryImportKey) else {
+                return 0
+            }
+
+            guard HKHealthStore.isHealthDataAvailable() else {
+                throw HealthKitImportError.unavailable
+            }
+
+            try await self.requestReadAuthorization()
+
+            let workouts = self.uniqueWorkoutItems(try await self.queryAllWorkouts(includeRatings: false))
+            progress(0, workouts.count)
+            defer { self.sourceWorkoutsByUUID.removeAll(keepingCapacity: false) }
+            let importedCount = try await self.importUniqueWorkoutItems(
+                workouts,
+                into: context,
+                progress: progress
+            )
+            UserDefaults.standard.set(true, forKey: Self.hasCompletedFullHistoryImportKey)
+            return importedCount
         }
-
-        guard HKHealthStore.isHealthDataAvailable() else {
-            throw HealthKitImportError.unavailable
-        }
-
-        try await requestReadAuthorization()
-
-        let workouts = uniqueWorkoutItems(try await queryAllWorkouts(includeRatings: false))
-        progress(0, workouts.count)
-        defer { sourceWorkoutsByUUID.removeAll(keepingCapacity: false) }
-        let importedCount = try await importUniqueWorkoutItems(
-            workouts,
-            into: context,
-            progress: progress
-        )
-        UserDefaults.standard.set(true, forKey: Self.hasCompletedFullHistoryImportKey)
-        return importedCount
     }
 
     func importNewAnchoredWorkouts(into context: ModelContext, initialLookbackDays: Int = 14) async throws -> Int {
-        guard !Self.isImportingAnchoredWorkouts else { return 0 }
-        Self.isImportingAnchoredWorkouts = true
-        defer { Self.isImportingAnchoredWorkouts = false }
+        try await HealthKitWorkoutImportGate.shared.run {
+            guard HKHealthStore.isHealthDataAvailable() else {
+                throw HealthKitImportError.unavailable
+            }
 
-        guard HKHealthStore.isHealthDataAvailable() else {
-            throw HealthKitImportError.unavailable
+            try await self.requestReadAuthorization()
+
+            let result = try await self.queryAnchoredWorkouts(initialLookbackDays: initialLookbackDays)
+            let workoutItems = self.uniqueWorkoutItems(result.items)
+            let importedCount = try await self.importUniqueWorkoutItems(
+                workoutItems,
+                deletedUUIDs: result.deletedUUIDs,
+                into: context
+            )
+            self.saveWorkoutAnchor(result.anchor)
+            return importedCount
         }
-
-        try await requestReadAuthorization()
-
-        let result = try await queryAnchoredWorkouts(initialLookbackDays: initialLookbackDays)
-        let workoutItems = uniqueWorkoutItems(result.items)
-        let importedCount = try await importUniqueWorkoutItems(workoutItems, into: context)
-        saveWorkoutAnchor(result.anchor)
-        return importedCount
     }
 
     private func importUniqueWorkoutItems(
         _ items: [HealthKitRecentWorkoutMenuItem],
+        deletedUUIDs: Set<String> = [],
         into context: ModelContext,
         progress: ((_ completed: Int, _ total: Int) -> Void)? = nil
     ) async throws -> Int {
-        guard !items.isEmpty else { return 0 }
-
         let descriptor = FetchDescriptor<Workout>()
         let existingWorkouts = try context.fetch(descriptor)
-        var importedWorkoutsByUUID = existingWorkouts.reduce(into: [String: Workout]()) { result, workout in
+        let cleanupResult = consolidateDuplicateImportedWorkouts(
+            existingWorkouts,
+            deletedUUIDs: deletedUUIDs,
+            in: context
+        )
+        let consolidatedWorkouts = cleanupResult.workouts
+        var importedWorkoutsByUUID = consolidatedWorkouts.reduce(into: [String: Workout]()) { result, workout in
             guard let hkUUID = workout.hkUUID, !hkUUID.isEmpty else { return }
             result[hkUUID] = workout
         }
-        var manualWorkouts = existingWorkouts.filter { ($0.hkUUID ?? "").isEmpty }
+        var manualWorkouts = consolidatedWorkouts.filter { ($0.hkUUID ?? "").isEmpty }
         var mergedCount = 0
         var importedCount = 0
         var notificationDetails: [HealthKitWorkoutImportNotificationDetail] = []
         var completedCount = 0
         var pendingInsertCount = 0
+        var didUpdateExistingWorkout = false
+
+        if items.isEmpty {
+            if cleanupResult.didChange {
+                try context.save()
+            }
+            return 0
+        }
 
         for item in items {
             defer {
@@ -267,7 +336,23 @@ final class HealthKitRecentWorkoutImporter {
                 progress?(completedCount, items.count)
             }
 
-            if let importedWorkout = importedWorkoutsByUUID[item.hkUUID] {
+            let importedWorkout = importedWorkoutsByUUID[item.hkUUID] ?? preferredImportedWorkout(
+                for: item,
+                in: Array(importedWorkoutsByUUID.values),
+                deletedUUIDs: deletedUUIDs
+            )
+
+            if let importedWorkout {
+                let previousUUID = importedWorkout.hkUUID
+                if previousUUID != item.hkUUID {
+                    try await reconcileReplacementWorkout(importedWorkout, using: item, in: context)
+                    didUpdateExistingWorkout = true
+                    if let previousUUID {
+                        importedWorkoutsByUUID.removeValue(forKey: previousUUID)
+                    }
+                    importedWorkoutsByUUID[item.hkUUID] = importedWorkout
+                }
+
                 guard let manualWorkout = matchingManualWorkout(for: item, in: manualWorkouts) else {
                     try await restoreMissingRouteIfNeeded(
                         for: importedWorkout,
@@ -282,7 +367,7 @@ final class HealthKitRecentWorkoutImporter {
                 manualWorkouts.removeAll { $0.id == manualWorkout.id }
                 importedWorkoutsByUUID[item.hkUUID] = manualWorkout
             } else if let manualWorkout = matchingManualWorkout(for: item, in: manualWorkouts) {
-                try await attachWorkout(item, to: manualWorkout, in: context)
+                try await attachWorkoutLocked(item, to: manualWorkout, in: context)
                 mergedCount += 1
                 notificationDetails.append(item.notificationDetail)
                 manualWorkouts.removeAll { $0.id == manualWorkout.id }
@@ -301,7 +386,7 @@ final class HealthKitRecentWorkoutImporter {
             }
         }
 
-        if pendingInsertCount > 0 {
+        if pendingInsertCount > 0 || cleanupResult.didChange || didUpdateExistingWorkout {
             try context.save()
         }
 
@@ -343,6 +428,7 @@ final class HealthKitRecentWorkoutImporter {
 
     private struct AnchoredWorkoutQueryResult {
         let items: [HealthKitRecentWorkoutMenuItem]
+        let deletedUUIDs: Set<String>
         let anchor: HKQueryAnchor
     }
 
@@ -350,13 +436,13 @@ final class HealthKitRecentWorkoutImporter {
         let savedAnchor = loadWorkoutAnchor()
         let initialCutoff = Calendar.current.date(byAdding: .day, value: -initialLookbackDays, to: Date()) ?? .distantPast
 
-        let result: ([HKWorkout], HKQueryAnchor) = try await withCheckedThrowingContinuation { continuation in
+        let result: ([HKWorkout], Set<String>, HKQueryAnchor) = try await withCheckedThrowingContinuation { continuation in
             let query = HKAnchoredObjectQuery(
                 type: workoutType,
                 predicate: nil,
                 anchor: savedAnchor,
                 limit: HKObjectQueryNoLimit
-            ) { _, samples, _, newAnchor, error in
+            ) { _, samples, deletedObjects, newAnchor, error in
                 if let error {
                     continuation.resume(throwing: error)
                     return
@@ -368,7 +454,8 @@ final class HealthKitRecentWorkoutImporter {
                 }
 
                 let workouts = (samples as? [HKWorkout]) ?? []
-                continuation.resume(returning: (workouts, newAnchor))
+                let deletedUUIDs = Set((deletedObjects ?? []).map { $0.uuid.uuidString })
+                continuation.resume(returning: (workouts, deletedUUIDs, newAnchor))
             }
             healthStore.execute(query)
         }
@@ -384,7 +471,7 @@ final class HealthKitRecentWorkoutImporter {
             items.append(HealthKitRecentWorkoutMenuItem(workout: workout, workoutRating: rating))
         }
 
-        return AnchoredWorkoutQueryResult(items: items, anchor: result.1)
+        return AnchoredWorkoutQueryResult(items: items, deletedUUIDs: result.1, anchor: result.2)
     }
 
     private func loadWorkoutAnchor() -> HKQueryAnchor? {
@@ -413,7 +500,7 @@ final class HealthKitRecentWorkoutImporter {
             importedWorkout.route = nil
         }
 
-        try await attachWorkout(item, to: manualWorkout, in: context)
+        try await attachWorkoutLocked(item, to: manualWorkout, in: context)
         context.delete(importedWorkout)
         try context.save()
     }
@@ -422,6 +509,22 @@ final class HealthKitRecentWorkoutImporter {
     /// This keeps manually-entered categories, subcategories, and exercises, while
     /// syncing timing from HealthKit and filling additional metrics.
     func attachWorkout(_ item: HealthKitRecentWorkoutMenuItem, to workout: Workout, in context: ModelContext) async throws {
+        try await HealthKitWorkoutImportGate.shared.run {
+            let linkedWorkouts = try context.fetch(FetchDescriptor<Workout>())
+                .filter { $0.id != workout.id && $0.hkUUID == item.hkUUID }
+            for linkedWorkout in linkedWorkouts {
+                self.mergeDuplicateWorkout(linkedWorkout, into: workout, in: context)
+                context.delete(linkedWorkout)
+            }
+            try await self.attachWorkoutLocked(item, to: workout, in: context)
+        }
+    }
+
+    private func attachWorkoutLocked(
+        _ item: HealthKitRecentWorkoutMenuItem,
+        to workout: Workout,
+        in context: ModelContext
+    ) async throws {
         // Link identity back to HealthKit so this workout won't be imported twice.
         workout.hkUUID = item.hkUUID
         workout.hkActivityTypeRaw = item.activityTypeRaw
@@ -455,6 +558,41 @@ final class HealthKitRecentWorkoutImporter {
         }
 
         try context.save()
+    }
+
+    private func reconcileReplacementWorkout(
+        _ workout: Workout,
+        using item: HealthKitRecentWorkoutMenuItem,
+        in context: ModelContext
+    ) async throws {
+        let isUnmodifiedImport = workout.notes == "Imported from HealthKit" &&
+            (workout.categories?.isEmpty ?? true) &&
+            (workout.subcategories?.isEmpty ?? true) &&
+            (workout.exercises?.isEmpty ?? true)
+
+        workout.hkUUID = item.hkUUID
+        workout.hkActivityTypeRaw = item.activityTypeRaw
+        workout.hkLocationTypeRaw = item.locationTypeRaw
+        workout.startDate = item.startDate
+        workout.duration = item.duration
+
+        if isUnmodifiedImport {
+            workout.distance = item.distanceKilometers
+            workout.calories = item.calories
+            workout.rating = item.workoutRating ?? workout.rating
+        } else {
+            if (workout.distance ?? 0) <= 0, let distance = item.distanceKilometers, distance > 0 {
+                workout.distance = distance
+            }
+            if workout.calories == nil {
+                workout.calories = item.calories
+            }
+            if workout.rating == nil {
+                workout.rating = item.workoutRating
+            }
+        }
+
+        try await restoreMissingRouteIfNeeded(for: workout, using: item, in: context)
     }
 
     private func queryRecentWorkouts(limit: Int) async throws -> [HealthKitRecentWorkoutMenuItem] {
@@ -526,6 +664,228 @@ final class HealthKitRecentWorkoutImporter {
             menuItems.append(HealthKitRecentWorkoutMenuItem(workout: workout, workoutRating: rating))
         }
         return menuItems
+    }
+
+    private struct DuplicateCleanupResult {
+        let workouts: [Workout]
+        let didChange: Bool
+    }
+
+    private func preferredImportedWorkout(
+        for item: HealthKitRecentWorkoutMenuItem,
+        in workouts: [Workout],
+        deletedUUIDs: Set<String> = []
+    ) -> Workout? {
+        workouts
+            .filter { workout in
+                guard let hkUUID = workout.hkUUID, !hkUUID.isEmpty else { return false }
+                return hkUUID == item.hkUUID ||
+                    isLikelySameHealthKitWorkout(workout, as: item) ||
+                    (deletedUUIDs.contains(hkUUID) && hasMatchingWorkoutTiming(workout, item))
+            }
+            .sorted { lhs, rhs in
+                let lhsIsExact = lhs.hkUUID == item.hkUUID
+                let rhsIsExact = rhs.hkUUID == item.hkUUID
+                if lhsIsExact != rhsIsExact {
+                    return lhsIsExact
+                }
+
+                let lhsWasDeleted = lhs.hkUUID.map(deletedUUIDs.contains) ?? false
+                let rhsWasDeleted = rhs.hkUUID.map(deletedUUIDs.contains) ?? false
+                if lhsWasDeleted != rhsWasDeleted {
+                    return lhsWasDeleted
+                }
+
+                return workoutPreservationScore(lhs) > workoutPreservationScore(rhs)
+            }
+            .first
+    }
+
+    private func isLikelySameHealthKitWorkout(
+        _ workout: Workout,
+        as item: HealthKitRecentWorkoutMenuItem
+    ) -> Bool {
+        let activityMatches: Bool
+        if let activityTypeRaw = workout.hkActivityTypeRaw {
+            activityMatches = activityTypeRaw == item.activityTypeRaw
+        } else {
+            activityMatches = workout.type == item.activityType.mappedWorkoutType
+        }
+
+        guard activityMatches else { return false }
+        return hasMatchingWorkoutTiming(workout, item)
+    }
+
+    private func isLikelySameHealthKitWorkout(_ lhs: Workout, _ rhs: Workout) -> Bool {
+        let activityMatches: Bool
+        if let lhsRaw = lhs.hkActivityTypeRaw, let rhsRaw = rhs.hkActivityTypeRaw {
+            activityMatches = lhsRaw == rhsRaw
+        } else {
+            activityMatches = lhs.type == rhs.type
+        }
+
+        guard activityMatches else { return false }
+        guard abs(lhs.startDate.timeIntervalSince(rhs.startDate)) <= 90 else { return false }
+        return durationsLikelyMatch(lhs.duration, rhs.duration)
+    }
+
+    private func hasMatchingWorkoutTiming(_ workout: Workout, _ item: HealthKitRecentWorkoutMenuItem) -> Bool {
+        guard abs(workout.startDate.timeIntervalSince(item.startDate)) <= 90 else { return false }
+        return durationsLikelyMatch(workout.duration, item.duration)
+    }
+
+    private func durationsLikelyMatch(_ lhs: TimeInterval, _ rhs: TimeInterval) -> Bool {
+        let tolerance = max(120, max(lhs, rhs) * 0.1)
+        return abs(lhs - rhs) <= tolerance
+    }
+
+    private func consolidateDuplicateImportedWorkouts(
+        _ workouts: [Workout],
+        deletedUUIDs: Set<String> = [],
+        in context: ModelContext
+    ) -> DuplicateCleanupResult {
+        let importedWorkouts = workouts
+            .filter { !($0.hkUUID ?? "").isEmpty }
+            .sorted { $0.startDate < $1.startDate }
+
+        var groups: [[Workout]] = []
+        var groupIndexByUUID: [String: Int] = [:]
+        for workout in importedWorkouts {
+            let hkUUID = workout.hkUUID ?? ""
+            var matchingGroupIndex = groupIndexByUUID[hkUUID]
+            if matchingGroupIndex == nil {
+                for index in groups.indices.reversed() {
+                    guard let reference = groups[index].first else { continue }
+                    if workout.startDate.timeIntervalSince(reference.startDate) > 90 {
+                        break
+                    }
+                    if isLikelySameHealthKitWorkout(reference, workout) {
+                        matchingGroupIndex = index
+                        break
+                    }
+                }
+            }
+
+            if let matchingGroupIndex {
+                groups[matchingGroupIndex].append(workout)
+                groupIndexByUUID[hkUUID] = matchingGroupIndex
+            } else {
+                groups.append([workout])
+                groupIndexByUUID[hkUUID] = groups.index(before: groups.endIndex)
+            }
+        }
+
+        var deletedWorkoutIDs = Set<UUID>()
+        for group in groups where group.count > 1 {
+            // If two copies were both independently edited, keep both rather than
+            // guessing which user-authored relationships should be discarded.
+            guard group.filter(hasUserAuthoredContent).count <= 1 else { continue }
+
+            let survivor = group.sorted { lhs, rhs in
+                let lhsScore = workoutPreservationScore(lhs)
+                let rhsScore = workoutPreservationScore(rhs)
+                if lhsScore != rhsScore {
+                    return lhsScore > rhsScore
+                }
+
+                let lhsIsCurrent = lhs.hkUUID.map { !deletedUUIDs.contains($0) } ?? false
+                let rhsIsCurrent = rhs.hkUUID.map { !deletedUUIDs.contains($0) } ?? false
+                if lhsIsCurrent != rhsIsCurrent {
+                    return lhsIsCurrent
+                }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }.first!
+
+            for duplicate in group where duplicate.id != survivor.id {
+                mergeDuplicateWorkout(duplicate, into: survivor, in: context)
+                deletedWorkoutIDs.insert(duplicate.id)
+                context.delete(duplicate)
+            }
+        }
+
+        return DuplicateCleanupResult(
+            workouts: workouts.filter { !deletedWorkoutIDs.contains($0.id) },
+            didChange: !deletedWorkoutIDs.isEmpty
+        )
+    }
+
+    private func workoutPreservationScore(_ workout: Workout) -> Int {
+        var score = 0
+        score += (workout.exercises?.count ?? 0) * 20
+        score += (workout.subcategoryRatings?.count ?? 0) * 10
+        score += (workout.categories?.count ?? 0) * 5
+        score += (workout.subcategories?.count ?? 0) * 5
+        if workout.route != nil { score += 4 }
+        if let notes = workout.notes,
+           !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           notes != "Imported from HealthKit" {
+            score += 8
+        }
+        if workout.rating != nil { score += 2 }
+        if workout.distance != nil { score += 1 }
+        if workout.calories != nil { score += 1 }
+        return score
+    }
+
+    private func hasUserAuthoredContent(_ workout: Workout) -> Bool {
+        if !(workout.exercises?.isEmpty ?? true) { return true }
+        if !(workout.subcategoryRatings?.isEmpty ?? true) { return true }
+        if !(workout.categories?.isEmpty ?? true) { return true }
+        if !(workout.subcategories?.isEmpty ?? true) { return true }
+        if let notes = workout.notes,
+           !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           notes != "Imported from HealthKit" {
+            return true
+        }
+        return false
+    }
+
+    private func mergeDuplicateWorkout(_ duplicate: Workout, into survivor: Workout, in context: ModelContext) {
+        for category in duplicate.categories ?? [] {
+            survivor.addCategory(category)
+        }
+        for subcategory in duplicate.subcategories ?? [] {
+            survivor.addSubcategory(subcategory)
+        }
+
+        if (survivor.exercises?.isEmpty ?? true), let exercises = duplicate.exercises, !exercises.isEmpty {
+            duplicate.exercises = []
+            survivor.exercises = exercises
+            for exercise in exercises {
+                exercise.workout = survivor
+            }
+        }
+
+        if (survivor.subcategoryRatings?.isEmpty ?? true),
+           let ratings = duplicate.subcategoryRatings,
+           !ratings.isEmpty {
+            duplicate.subcategoryRatings = []
+            survivor.subcategoryRatings = ratings
+            for rating in ratings {
+                rating.workout = survivor
+            }
+        }
+
+        if survivor.route == nil, let route = duplicate.route {
+            duplicate.route = nil
+            survivor.route = route
+            route.workout = survivor
+        } else if let duplicateRoute = duplicate.route {
+            duplicate.route = nil
+            context.delete(duplicateRoute)
+        }
+
+        if survivor.distance == nil { survivor.distance = duplicate.distance }
+        if survivor.calories == nil { survivor.calories = duplicate.calories }
+        if survivor.rating == nil { survivor.rating = duplicate.rating }
+        if survivor.notes == nil || survivor.notes == "Imported from HealthKit" {
+            if let duplicateNotes = duplicate.notes,
+               !duplicateNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                survivor.notes = duplicateNotes
+            }
+        }
+        if survivor.hkActivityTypeRaw == nil { survivor.hkActivityTypeRaw = duplicate.hkActivityTypeRaw }
+        if survivor.hkLocationTypeRaw == nil { survivor.hkLocationTypeRaw = duplicate.hkLocationTypeRaw }
     }
 
     private func matchingManualWorkout(
