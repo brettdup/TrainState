@@ -1,6 +1,10 @@
 # macOS
 .DS_Store
 
+# Xcode user-specific state
+*.xcuserstate
+xcuserdata/
+
 # App Store screenshot generator (Next.js)
 app-store-screenshots/
 app-store-screenshots/node_modules/
