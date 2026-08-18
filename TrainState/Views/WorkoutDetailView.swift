@@ -176,6 +176,23 @@ struct WorkoutDetailView: View {
                 } header: {
                     Text("Route")
                 }
+            } else if shouldShowRouteUnavailableState {
+                Section {
+                    Label {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("No route data available")
+                                .font(.subheadline.weight(.semibold))
+                            Text("HealthKit imported the workout details, but this source did not provide a GPS track. Garmin workouts commonly appear this way because Garmin does not send their GPS routes to Apple Health.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "map.slash")
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Route")
+                }
             }
 
             Section {
@@ -426,6 +443,36 @@ struct WorkoutDetailView: View {
             }
         }
         return options
+    }
+
+    private var shouldShowRouteUnavailableState: Bool {
+        guard workout.hkUUID != nil,
+              workout.appleWorkoutLocationType == .outdoor,
+              let distance = workout.distance,
+              distance > 0 else {
+            return false
+        }
+
+        switch workout.resolvedAppleWorkoutActivityType {
+        case .walking,
+             .running,
+             .cycling,
+             .hiking,
+             .wheelchairWalkPace,
+             .wheelchairRunPace,
+             .crossCountrySkiing,
+             .downhillSkiing,
+             .snowboarding,
+             .skatingSports,
+             .paddleSports,
+             .rowing,
+             .sailing,
+             .surfingSports,
+             .swimming:
+            return true
+        default:
+            return false
+        }
     }
 
     private var detailSummary: String? {
