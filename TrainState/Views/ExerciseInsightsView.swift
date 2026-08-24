@@ -148,17 +148,17 @@ struct ExerciseInsightsView: View {
 
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            exerciseInsightsHeader(
+            AppCardHeader(
                 title: "Overview",
                 subtitle: latestPoint.map { "Last trained \($0.date.formatted(date: .abbreviated, time: .omitted))" } ?? "No logged data yet",
-                icon: "dumbbell.fill"
+                systemImage: "dumbbell.fill"
             )
 
             if let latestPoint {
                 HStack(spacing: 12) {
-                    insightMetricTile(title: "Sessions", value: "\(historyPoints.count)", icon: "calendar")
-                    insightMetricTile(title: "Entries", value: "\(loggedEntries.count)", icon: "list.bullet")
-                    insightMetricTile(title: "Top Set", value: metricString(bestTopSet, suffix: "kg"), icon: "trophy")
+                    AppMetricTile(title: "Sessions", value: "\(historyPoints.count)", systemImage: "calendar")
+                    AppMetricTile(title: "Entries", value: "\(loggedEntries.count)", systemImage: "list.bullet")
+                    AppMetricTile(title: "Top Set", value: metricString(bestTopSet, suffix: "kg"), systemImage: "trophy")
                 }
 
                 statRow(label: "Last Trained", value: latestPoint.date.formatted(date: .abbreviated, time: .omitted))
@@ -176,7 +176,7 @@ struct ExerciseInsightsView: View {
 
     private var metricCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            exerciseInsightsHeader(title: "Metric", subtitle: "Choose the progression line to inspect.", icon: "slider.horizontal.3")
+            AppCardHeader(title: "Metric", subtitle: "Choose the progression line to inspect.", systemImage: "slider.horizontal.3")
 
             Picker("Metric", selection: $selectedMetric) {
                 ForEach(ExerciseInsightMetric.allCases, id: \.self) { metric in
@@ -198,7 +198,7 @@ struct ExerciseInsightsView: View {
 
     private var chartCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            exerciseInsightsHeader(title: "Progress", subtitle: selectedMetric.title, icon: "chart.xyaxis.line")
+            AppCardHeader(title: "Progress", subtitle: selectedMetric.title, systemImage: "chart.xyaxis.line")
 
             Chart(sortedHistoryPoints) { point in
                 LineMark(
@@ -225,7 +225,7 @@ struct ExerciseInsightsView: View {
 
     private var historyCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            exerciseInsightsHeader(title: "History", subtitle: "\(sortedHistoryPoints.count) session\(sortedHistoryPoints.count == 1 ? "" : "s")", icon: "clock.arrow.circlepath")
+            AppCardHeader(title: "History", subtitle: "\(sortedHistoryPoints.count) session\(sortedHistoryPoints.count == 1 ? "" : "s")", systemImage: "clock.arrow.circlepath")
 
             ForEach(sortedHistoryPoints.reversed()) { point in
                 VStack(alignment: .leading, spacing: 4) {
@@ -260,7 +260,7 @@ struct ExerciseInsightsView: View {
 
     private var individualEntriesCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            exerciseInsightsHeader(title: "Individual Entries", subtitle: "\(loggedEntries.count) logged set entr\(loggedEntries.count == 1 ? "y" : "ies")", icon: "list.bullet.rectangle")
+            AppCardHeader(title: "Individual Entries", subtitle: "\(loggedEntries.count) logged set entr\(loggedEntries.count == 1 ? "y" : "ies")", systemImage: "list.bullet.rectangle")
 
             ForEach(loggedEntries) { entry in
                 VStack(alignment: .leading, spacing: 6) {
@@ -294,54 +294,6 @@ struct ExerciseInsightsView: View {
             Text(value)
                 .font(.subheadline.weight(.semibold))
         }
-    }
-
-    private func exerciseInsightsHeader(title: String, subtitle: String, icon: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 34, height: 34)
-                .background(
-                    RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
-                        .fill(Color.accentColor.opacity(0.12))
-                )
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-    }
-
-    private func insightMetricTile(title: String, value: String, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-            Text(value)
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .monospacedDigit()
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
-                .fill(ThemeColor.primaryUi03())
-        )
     }
 
     private func metricString(_ value: Double, suffix: String) -> String {

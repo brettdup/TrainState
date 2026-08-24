@@ -35,15 +35,18 @@ struct GlassCardModifier: ViewModifier {
     var cornerRadius: CGFloat
     var isInteractive: Bool
     var prominence: GlassCardProminence
+    var showsShadow: Bool
 
     init(
         cornerRadius: CGFloat = ViewConstants.cardCornerRadius,
         isInteractive: Bool = false,
-        prominence: GlassCardProminence = .elevated
+        prominence: GlassCardProminence = .elevated,
+        showsShadow: Bool = true
     ) {
         self.cornerRadius = cornerRadius
         self.isInteractive = isInteractive
         self.prominence = prominence
+        self.showsShadow = showsShadow
     }
 
     func body(content: Content) -> some View {
@@ -56,7 +59,7 @@ struct GlassCardModifier: ViewModifier {
                             : Color.white.opacity(prominence == .elevated ? 0.94 : 0.66)
                     )
                     .shadow(
-                        color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08),
+                        color: .black.opacity(showsShadow ? (colorScheme == .dark ? 0.20 : 0.08) : 0),
                         radius: colorScheme == .dark ? (prominence == .elevated ? 9 : 7) : (prominence == .elevated ? 6 : 4),
                         x: 0,
                         y: colorScheme == .dark ? 3 : (prominence == .elevated ? 3 : 2)
@@ -79,9 +82,17 @@ extension View {
     func glassCard(
         cornerRadius: CGFloat = ViewConstants.cardCornerRadius,
         isInteractive: Bool = false,
-        prominence: GlassCardProminence = .elevated
+        prominence: GlassCardProminence = .elevated,
+        showsShadow: Bool = true
     ) -> some View {
-        modifier(GlassCardModifier(cornerRadius: cornerRadius, isInteractive: isInteractive, prominence: prominence))
+        modifier(
+            GlassCardModifier(
+                cornerRadius: cornerRadius,
+                isInteractive: isInteractive,
+                prominence: prominence,
+                showsShadow: showsShadow
+            )
+        )
     }
 
     /// Wraps content in GlassEffectContainer on iOS 26+ to improve glass rendering performance

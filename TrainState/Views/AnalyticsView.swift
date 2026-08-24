@@ -41,6 +41,7 @@ struct AnalyticsView: View {
                         strengthHistoryCard
                         personalBestsCard
                     }
+                .glassEffectContainer(spacing: 16)
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 24)
@@ -128,31 +129,16 @@ struct AnalyticsView: View {
 
     private var weeklySummaryCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("This Week")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    Text(weeklyRecapHeadline)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer()
-
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 40, height: 40)
-                    .background(Circle().fill(Color.accentColor.opacity(0.12)))
-            }
+            AppCardHeader(
+                title: "This Week",
+                subtitle: weeklyRecapHeadline,
+                systemImage: "chart.line.uptrend.xyaxis"
+            )
 
             HStack(spacing: 12) {
-                analyticsMetricTile(title: "Workouts", value: "\(workoutsThisWeek.count)", icon: "figure.run")
-                analyticsMetricTile(title: "Minutes", value: "\(weeklyMinutes)", icon: "clock")
-                analyticsMetricTile(title: "Streak", value: "\(currentDailyStreak)d", icon: "flame")
+                AppMetricTile(title: "Workouts", value: "\(workoutsThisWeek.count)", systemImage: "figure.run")
+                AppMetricTile(title: "Minutes", value: "\(weeklyMinutes)", systemImage: "clock")
+                AppMetricTile(title: "Streak", value: "\(currentDailyStreak)d", systemImage: "flame")
             }
 
             shareWeeklyRecapButton
@@ -201,10 +187,10 @@ struct AnalyticsView: View {
 
     private var goalsCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            cardHeader(
+            AppCardHeader(
                 title: selectedFilter == .all ? "Goals" : "\(selectedFilter.title) Goals",
                 subtitle: activeGoal == nil ? addGoalsPromptText : "Adjust weekly targets for the selected workout scope.",
-                icon: "target"
+                systemImage: "target"
             )
 
             if let activeGoal {
@@ -330,11 +316,11 @@ struct AnalyticsView: View {
 
     private var streakCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            cardHeader(title: "Streaks", subtitle: "Consistency across your logged history.", icon: "flame")
+            AppCardHeader(title: "Streaks", subtitle: "Consistency across your logged history.", systemImage: "flame")
             HStack(spacing: 12) {
-                analyticsMetricTile(title: "Current", value: "\(currentDailyStreak)d", icon: "flame")
-                analyticsMetricTile(title: "Best", value: "\(bestDailyStreak)d", icon: "trophy")
-                analyticsMetricTile(title: "Weekly", value: "\(weeklyGoalStreak)", icon: "calendar")
+                AppMetricTile(title: "Current", value: "\(currentDailyStreak)d", systemImage: "flame")
+                AppMetricTile(title: "Best", value: "\(bestDailyStreak)d", systemImage: "trophy")
+                AppMetricTile(title: "Weekly", value: "\(weeklyGoalStreak)", systemImage: "calendar")
             }
         }
         .padding(16)
@@ -375,7 +361,7 @@ struct AnalyticsView: View {
 
     private var personalBestsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            cardHeader(title: "Personal Bests", subtitle: "\(exercisePRs.count) tracked lift\(exercisePRs.count == 1 ? "" : "s")", icon: "medal")
+            AppCardHeader(title: "Personal Bests", subtitle: "\(exercisePRs.count) tracked lift\(exercisePRs.count == 1 ? "" : "s")", systemImage: "medal")
 
             if exercisePRs.isEmpty {
                 Text("Log weighted lifts to track top sets and estimated 1RM.")
@@ -819,57 +805,6 @@ struct AnalyticsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private func cardHeader(title: String, subtitle: String, icon: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 34, height: 34)
-                .background(
-                    RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
-                        .fill(Color.accentColor.opacity(0.12))
-                )
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer()
-        }
-    }
-
-    private func analyticsMetricTile(title: String, value: String, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-
-            Text(value)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-                .monospacedDigit()
-
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
-                .fill(ThemeColor.primaryUi03())
-        )
     }
 
     private func progressCardRow(title: String, value: String, progress: Double) -> some View {

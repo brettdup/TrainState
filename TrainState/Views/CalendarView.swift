@@ -13,12 +13,11 @@ struct CalendarView: View {
         NavigationStack {
             List {
                 Section {
-                    VStack(spacing: 12) {
-                        weekNavigatorCard
-                        displayModePicker
-                        weekStripCard
+                    VStack(spacing: 16) {
+                        calendarControlsCard
                         weekSummaryCard
                     }
+                    .glassEffectContainer(spacing: 16)
                     .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                     .listRowBackground(Color.clear)
                 }
@@ -193,8 +192,6 @@ struct CalendarView: View {
             .opacity(displayMode == .week && isShowingCurrentWeek ? 0.5 : 1)
             .disabled(displayMode == .week && isShowingCurrentWeek)
         }
-        .padding(12)
-        .glassCard()
     }
 
     private var displayModePicker: some View {
@@ -204,8 +201,17 @@ struct CalendarView: View {
             }
         }
         .pickerStyle(.segmented)
+    }
+
+    private var calendarControlsCard: some View {
+        VStack(spacing: 12) {
+            displayModePicker
+            weekNavigatorCard
+            Divider()
+            weekStripCard
+        }
         .padding(16)
-        .glassCard()
+        .glassCard(showsShadow: false)
     }
 
     private var weekPickerSheet: some View {
@@ -251,15 +257,15 @@ struct CalendarView: View {
                 let isToday = Calendar.current.isDateInToday(day)
                 let dayWorkouts = workoutsForDay(day)
 
-                VStack(spacing: 7) {
+                VStack(spacing: 6) {
                     Text(shortWeekdayText(for: day))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(isToday ? Color.accentColor : Color.secondary)
 
                     Text(dayNumberText(for: day))
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.subheadline.weight(.bold))
                         .foregroundStyle(isToday ? Color.white : Color.primary)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 30, height: 30)
                         .background(
                             Circle()
                                 .fill(isToday ? Color.accentColor : Color.clear)
@@ -269,49 +275,59 @@ struct CalendarView: View {
                         ForEach(Array(dayWorkoutTypes(for: dayWorkouts).prefix(3)), id: \.self) { type in
                             Circle()
                                 .fill(type.tintColor)
-                                .frame(width: 5, height: 5)
+                                .frame(width: 4, height: 4)
                         }
 
                         if dayWorkouts.isEmpty {
                             Circle()
                                 .fill(Color.clear)
-                                .frame(width: 5, height: 5)
+                                .frame(width: 4, height: 4)
                         }
                     }
-                    .frame(height: 6)
+                    .frame(height: 5)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
-                        .fill(isToday ? Color.accentColor.opacity(0.12) : Color.clear)
-                )
             }
         }
-        .padding(10)
-        .glassCard(prominence: .regular)
     }
 
     private var weekSummaryCard: some View {
         let summary = weekSummary(for: workoutsInDisplayedPeriod)
 
         return VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 24) {
-                SummaryStat(value: "\(summary.count)", label: "Workouts")
-                Divider()
-                    .frame(height: 32)
-                SummaryStat(value: summary.duration, label: "Duration")
+            AppCardHeader(
+                title: "Training Summary",
+                subtitle: displayedRangeText,
+                systemImage: "chart.bar.fill"
+            )
+
+            HStack(spacing: 12) {
+                AppMetricTile(
+                    title: "Workouts",
+                    value: "\(summary.count)",
+                    systemImage: "figure.run",
+                    showsBackground: false
+                )
+                AppMetricTile(
+                    title: "Duration",
+                    value: summary.duration,
+                    systemImage: "clock",
+                    showsBackground: false
+                )
                 if summary.distance > 0 {
-                    Divider()
-                        .frame(height: 32)
-                    SummaryStat(value: String(format: "%.1f km", summary.distance), label: "Distance")
+                    AppMetricTile(
+                        title: "Distance",
+                        value: String(format: "%.1f km", summary.distance),
+                        systemImage: "arrow.left.and.right",
+                        showsBackground: false
+                    )
                 }
             }
 
             categorySummaryChips
         }
         .padding(16)
-        .glassCard()
+        .glassCard(showsShadow: false)
     }
 
     private var categorySummaryChips: some View {
@@ -447,10 +463,10 @@ struct CalendarView: View {
     private func weekSummary(for workouts: [Workout]) -> (count: Int, duration: String, distance: Double) {
         let totalDuration = workouts.reduce(0) { $0 + $1.duration }
         let totalDistance = workouts.compactMap(\.distance).reduce(0, +)
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute]
-        formatter.unitsStyle = .short
-        let durationText = formatter.string(from: totalDuration) ?? "0m"
+        let totalMinutes = max(Int(totalDuration / 60), 0)
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        let durationText = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
         return (workouts.count, durationText, totalDistance)
     }
 
@@ -606,25 +622,6 @@ private struct TrainedCategorySummary {
 
     var id: String {
         "\(kind.rawValue)-\(name)"
-    }
-}
-
-private struct SummaryStat: View {
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-                .allowsTightening(true)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
     }
 }
 
