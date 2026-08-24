@@ -25,6 +25,7 @@ struct AnalyticsView: View {
     @State private var workoutTypeGoals: [String: AnalyticsWorkoutGoal] = [:]
     @State private var goalSetupFilterID: String?
     @State private var goalSetupDraft = AnalyticsWorkoutGoal(workouts: 1, minutes: 30, distance: 1)
+    @State private var goalEditorFilter: AnalyticsWorkoutFilter?
     @State private var showAllPersonalBests = false
     @State private var weeklyRecapSharePayload: WeeklyRecapShareImage?
     @State private var weeklyRecapSharePreview: Image?
@@ -71,6 +72,9 @@ struct AnalyticsView: View {
             }
             .onChange(of: analyticsWorkoutTypeGoalsData) { _, _ in
                 loadWorkoutTypeGoals()
+            }
+            .sheet(item: $goalEditorFilter) { filter in
+                goalEditorSheet(for: filter)
             }
         }
     }
@@ -188,128 +192,121 @@ struct AnalyticsView: View {
     private var goalsCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             AppCardHeader(
-                title: selectedFilter == .all ? "Goals" : "\(selectedFilter.title) Goals",
-                subtitle: activeGoal == nil ? addGoalsPromptText : "Adjust weekly targets for the selected workout scope.",
+                title: "Weekly Goals",
+                subtitle: "Set and manage every workout target here. Your Analytics filter will not change.",
                 systemImage: "target"
             )
 
-            if let activeGoal {
-                progressCardRow(
-                    title: "Workouts",
-                    value: "\(weeklySummary.count) of \(activeGoal.workouts)",
-                    progress: workoutGoalProgress
-                )
-                progressCardRow(
-                    title: "Minutes",
-                    value: "\(weeklyMinutes) of \(activeGoal.minutes)",
-                    progress: minuteGoalProgress
-                )
-                if showsDistanceGoal {
-                    progressCardRow(
-                        title: "Distance",
-                        value: String(format: "%.1f of %.1f km", weeklyDistance, activeGoal.distance),
-                        progress: distanceGoalProgress
-                    )
-                }
-
-                Divider()
-
-                goalSliderControl(
-                    title: "Workout Goal",
-                    valueText: "\(activeGoal.workouts)",
-                    systemImage: "figure.run",
-                    value: workoutGoalBinding,
-                    range: workoutGoalRange,
-                    step: 1
-                )
-                goalSliderControl(
-                    title: "Minutes Goal",
-                    valueText: "\(activeGoal.minutes) min",
-                    systemImage: "clock",
-                    value: minuteGoalBinding,
-                    range: minuteGoalRange,
-                    step: 15
-                )
-                if showsDistanceGoal {
-                    goalSliderControl(
-                        title: "Distance Goal",
-                        valueText: String(format: "%.1f km", activeGoal.distance),
-                        systemImage: "arrow.left.and.right",
-                        value: distanceGoalBinding,
-                        range: distanceGoalRange,
-                        step: 1
-                    )
-                }
-
-                goalRangeSettings
-            } else if goalSetupFilterID == selectedFilter.goalStorageKey {
-                goalSetupCardRows
-            } else {
-                Button {
-                    beginGoalSetup()
-                } label: {
-                    Label("Add Goals", systemImage: "plus.circle")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(
-                            RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
-                                .fill(Color.accentColor.opacity(0.12))
-                        )
-                }
-                .buttonStyle(.plain)
+            ForEach(goalManagementFilters) { filter in
+                goalManagementRow(for: filter)
             }
         }
         .padding(16)
         .glassCard()
     }
 
-    private var goalSetupCardRows: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            goalSliderControl(
-                title: "Workout Goal",
-                valueText: "\(goalSetupDraft.workouts)",
-                systemImage: "figure.run",
-                value: $goalSetupDraft.workouts,
-                range: workoutGoalRange,
-                step: 1
-            )
-            goalSliderControl(
-                title: "Minutes Goal",
-                valueText: "\(goalSetupDraft.minutes) min",
-                systemImage: "clock",
-                value: $goalSetupDraft.minutes,
-                range: minuteGoalRange,
-                step: 15
-            )
-            if showsDistanceGoal {
-                goalSliderControl(
-                    title: "Distance Goal",
-                    valueText: String(format: "%.1f km", goalSetupDraft.distance),
-                    systemImage: "arrow.left.and.right",
-                    value: $goalSetupDraft.distance,
-                    range: distanceGoalRange,
-                    step: 1
-                )
-            }
-            goalRangeSettings
-            HStack(spacing: 10) {
-                Button {
-                    save(goal: goalSetupDraft)
-                    goalSetupFilterID = nil
-                } label: {
-                    Label("Save", systemImage: "checkmark.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
+    private var goalManagementFilters: [AnalyticsWorkoutFilter] {
+        availableWorkoutFilters
+    }
 
-                Button(role: .cancel) {
-                    goalSetupFilterID = nil
-                } label: {
-                    Text("Cancel")
-                        .frame(maxWidth: .infinity)
+    private func goalManagementRow(for filter: AnalyticsWorkoutFilter) -> some View {
+        let goal = goal(for: filter)
+
+        return HStack(spacing: 12) {
+            Image(systemName: filter.systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(Color.accentColor.opacity(0.12)))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(filter.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(goalSummaryText(for: filter, goal: goal))
+                    .font(.caption)
+                    .foregroundStyle(goal == nil ? .secondary : .primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(goal == nil ? "Set" : "Edit") {
+                beginGoalEditing(filter)
+            }
+            .font(.subheadline.weight(.semibold))
+            .buttonStyle(.bordered)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func goalEditorSheet(for filter: AnalyticsWorkoutFilter) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    AppCardHeader(
+                        title: "\(filter.title) Goal",
+                        subtitle: "Set a weekly target without changing your Analytics scope.",
+                        systemImage: filter.systemImage
+                    )
+
+                    goalSliderControl(
+                        title: "Workouts",
+                        valueText: "\(goalSetupDraft.workouts)",
+                        systemImage: "figure.run",
+                        value: $goalSetupDraft.workouts,
+                        range: workoutGoalRange,
+                        step: 1
+                    )
+                    goalSliderControl(
+                        title: "Minutes",
+                        valueText: "\(goalSetupDraft.minutes) min",
+                        systemImage: "clock",
+                        value: $goalSetupDraft.minutes,
+                        range: minuteGoalRange,
+                        step: 15
+                    )
+                    if showsDistanceGoal(for: filter) {
+                        goalSliderControl(
+                            title: "Distance",
+                            valueText: String(format: "%.1f km", goalSetupDraft.distance),
+                            systemImage: "arrow.left.and.right",
+                            value: $goalSetupDraft.distance,
+                            range: distanceGoalRange,
+                            step: 1
+                        )
+                    }
+
+                    if case .apple = filter, goal(for: filter) != nil {
+                        Button(role: .destructive) {
+                            removeGoal(for: filter)
+                            goalEditorFilter = nil
+                        } label: {
+                            Label("Remove Workout-Type Goal", systemImage: "trash")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
-                .buttonStyle(.bordered)
+                .padding(16)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Weekly Goal")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        goalEditorFilter = nil
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        save(goal: goalSetupDraft, for: filter)
+                        goalEditorFilter = nil
+                    }
+                    .fontWeight(.semibold)
+                }
             }
         }
     }
@@ -1495,7 +1492,11 @@ struct AnalyticsView: View {
     }
 
     private var activeGoal: AnalyticsWorkoutGoal? {
-        switch selectedFilter {
+        goal(for: selectedFilter)
+    }
+
+    private func goal(for filter: AnalyticsWorkoutFilter) -> AnalyticsWorkoutGoal? {
+        switch filter {
         case .all:
             return AnalyticsWorkoutGoal(
                 workouts: weeklyGoalWorkouts,
@@ -1503,13 +1504,48 @@ struct AnalyticsView: View {
                 distance: weeklyGoalDistance
             )
         case .apple:
-            return workoutTypeGoals[selectedFilter.goalStorageKey]
+            return workoutTypeGoals[filter.goalStorageKey]
         }
     }
 
     private var showsDistanceGoal: Bool {
-        guard case .apple(let activityType) = selectedFilter else { return weeklyDistance > 0 }
-        return activityType.prefersDistanceGoal || filteredWorkouts.contains { ($0.distance ?? 0) > 0 }
+        showsDistanceGoal(for: selectedFilter)
+    }
+
+    private func showsDistanceGoal(for filter: AnalyticsWorkoutFilter) -> Bool {
+        switch filter {
+        case .all:
+            return workouts.contains { ($0.distance ?? 0) > 0 }
+        case .apple(let activityType):
+            return activityType.prefersDistanceGoal || workouts.contains {
+                $0.resolvedAppleWorkoutActivityType == activityType && ($0.distance ?? 0) > 0
+            }
+        }
+    }
+
+    private func goalSummaryText(for filter: AnalyticsWorkoutFilter, goal: AnalyticsWorkoutGoal?) -> String {
+        guard let goal else { return "No goal set" }
+
+        var parts = ["\(goal.workouts) workout\(goal.workouts == 1 ? "" : "s")", "\(goal.minutes) min"]
+        if showsDistanceGoal(for: filter) {
+            parts.append(String(format: "%.1f km", goal.distance))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func beginGoalEditing(_ filter: AnalyticsWorkoutFilter) {
+        goalSetupDraft = goal(for: filter) ?? AnalyticsWorkoutGoal(
+            workouts: workoutGoalRange.lowerBound,
+            minutes: minuteGoalRange.lowerBound,
+            distance: distanceGoalRange.lowerBound
+        )
+        goalEditorFilter = filter
+    }
+
+    private func removeGoal(for filter: AnalyticsWorkoutFilter) {
+        guard case .apple = filter else { return }
+        workoutTypeGoals.removeValue(forKey: filter.goalStorageKey)
+        persistWorkoutTypeGoals()
     }
 
     private var addGoalsPromptText: String {
@@ -1663,13 +1699,17 @@ struct AnalyticsView: View {
     }
 
     private func save(goal: AnalyticsWorkoutGoal) {
-        switch selectedFilter {
+        save(goal: goal, for: selectedFilter)
+    }
+
+    private func save(goal: AnalyticsWorkoutGoal, for filter: AnalyticsWorkoutFilter) {
+        switch filter {
         case .all:
             weeklyGoalWorkouts = goal.workouts
             weeklyGoalMinutes = goal.minutes
             weeklyGoalDistance = goal.distance
         case .apple:
-            workoutTypeGoals[selectedFilter.goalStorageKey] = goal
+            workoutTypeGoals[filter.goalStorageKey] = goal
             persistWorkoutTypeGoals()
         }
     }
