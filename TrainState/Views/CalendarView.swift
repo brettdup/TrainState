@@ -8,27 +8,47 @@ struct CalendarView: View {
     @State private var weekPickerDate: Date = Date()
     @State private var showingWeekPicker = false
     @State private var displayMode: CalendarDisplayMode = .week
+    @State private var selectedDay: Date? = Calendar.current.startOfDay(for: Date())
+    @State private var loadError: String?
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    VStack(spacing: 16) {
-                        calendarControlsCard
-                        weekSummaryCard
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    calendarControlsCard
+                    if loadError == nil { weekSummaryCard }
+                    agendaHeader
+                    if let loadError {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label(loadError, systemImage: "exclamationmark.triangle")
+                                .font(.subheadline)
+                            Button("Try again") { loadDisplayedWorkouts() }
+                                .buttonStyle(.bordered)
+                        }
+                        .padding(16)
+                        .glassCard(showsShadow: false)
+                    } else {
+                        ForEach(agendaDays, id: \.self) { day in
+                            daySection(for: day)
+                        }
                     }
-                    .glassEffectContainer(spacing: 16)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-                    .listRowBackground(Color.clear)
                 }
-
-                ForEach(displayedDays, id: \.self) { day in
-                    daySection(for: day)
-                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
             }
-            .listStyle(.insetGrouped)
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Calendar")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Today", systemImage: "calendar.badge.clock") {
+                        selectedWeekStart = Calendar.current.startOfWeek(for: Date())
+                        displayMode = .week
+                        selectedDay = Calendar.current.startOfDay(for: Date())
+                    }
+                }
+            }
+            .refreshable { loadDisplayedWorkouts() }
             .sheet(isPresented: $showingWeekPicker) {
                 weekPickerSheet
                     .presentationDetents([.medium, .large])
@@ -38,33 +58,71 @@ struct CalendarView: View {
             loadDisplayedWorkouts()
         }
         .onChange(of: selectedWeekStart) { _, _ in
+            reconcileSelectedDay()
             loadDisplayedWorkouts()
         }
         .onChange(of: displayMode) { _, _ in
+            reconcileSelectedDay()
             loadDisplayedWorkouts()
+        }
+    }
+
+    private var agendaDays: [Date] {
+        selectedDay.map { [$0] } ?? displayedDays
+    }
+
+    private func reconcileSelectedDay() {
+        guard let selectedDay else { return }
+        if !displayedDays.contains(where: { Calendar.current.isDate($0, inSameDayAs: selectedDay) }) {
+            self.selectedDay = displayedDays.first
+        }
+    }
+
+    private var agendaHeader: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(selectedDay == nil ? "Weekly agenda" : "Daily agenda")
+                    .font(.title3.bold())
+                Text("Tap a day above to explore your training")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if selectedDay != nil {
+                Button("Show all") { selectedDay = nil }
+                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.borderless)
+            }
         }
     }
 
     private func daySection(for day: Date) -> some View {
         let dayWorkouts = workoutsForDay(day)
-
-        return Section {
+        return VStack(alignment: .leading, spacing: 14) {
+            daySectionHeader(for: day, workouts: dayWorkouts)
             if dayWorkouts.isEmpty {
-                restDayRow
+                emptyDayRow(for: day)
             } else {
                 ForEach(dayWorkouts, id: \.id) { workout in
                     NavigationLink {
                         WorkoutDetailView(workout: workout)
                     } label: {
-                        WorkoutRowView(workout: workout, showsChevron: false)
-                            .contentShape(Rectangle())
+                        HStack(alignment: .top, spacing: 8) {
+                            WorkoutRowView(workout: workout, showsChevron: false)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                                .padding(.top, 8)
+                        }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    if workout.id != dayWorkouts.last?.id { Divider() }
                 }
             }
-        } header: {
-            daySectionHeader(for: day, workouts: dayWorkouts)
         }
+        .padding(18)
+        .glassCard(showsShadow: false)
     }
 
     private func daySectionHeader(for day: Date, workouts: [Workout]) -> some View {
@@ -89,29 +147,24 @@ struct CalendarView: View {
         .textCase(nil)
     }
 
-    private var restDayRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "moon.zzz.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .frame(width: 36, height: 36)
-                .background(
-                    RoundedRectangle(cornerRadius: ViewConstants.cardCornerRadius)
-                        .fill(ThemeColor.primaryUi03())
-                )
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Rest day")
+    private func emptyDayRow(for day: Date) -> some View {
+        let isFuture = Calendar.current.startOfDay(for: day) > Calendar.current.startOfDay(for: Date())
+        return HStack(spacing: 14) {
+            Image(systemName: isFuture ? "calendar" : "leaf.fill")
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 44, height: 44)
+                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(isFuture ? "Training ahead" : "No workouts logged")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text("No workouts logged")
+                Text(isFuture ? "Your logged workouts will appear here." : "No activity logged for this day.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
             Spacer()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
     }
 
     private var weekNavigatorCard: some View {
@@ -121,13 +174,14 @@ struct CalendarView: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(ThemeColor.primaryUi03())
                     )
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Previous week")
             .disabled(displayMode == .last7Days)
             .opacity(displayMode == .last7Days ? 0.45 : 1)
 
@@ -159,6 +213,7 @@ struct CalendarView: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity)
+            .accessibilityHint("Choose a different week")
             .disabled(displayMode == .last7Days)
 
             Button {
@@ -166,31 +221,16 @@ struct CalendarView: View {
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 16, weight: .semibold))
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(ThemeColor.primaryUi03())
                     )
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Next week")
             .disabled(displayMode == .last7Days || selectedWeekStart >= Calendar.current.startOfWeek(for: Date()))
             .opacity(displayMode == .last7Days ? 0.45 : 1)
-
-            Button {
-                selectedWeekStart = Calendar.current.startOfWeek(for: Date())
-                displayMode = .week
-            } label: {
-                Image(systemName: "calendar.badge.clock")
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 36, height: 36)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(ThemeColor.primaryUi03())
-                    )
-            }
-            .buttonStyle(.plain)
-            .opacity(displayMode == .week && isShowingCurrentWeek ? 0.5 : 1)
-            .disabled(displayMode == .week && isShowingCurrentWeek)
         }
     }
 
@@ -207,7 +247,6 @@ struct CalendarView: View {
         VStack(spacing: 12) {
             displayModePicker
             weekNavigatorCard
-            Divider()
             weekStripCard
         }
         .padding(16)
@@ -252,82 +291,137 @@ struct CalendarView: View {
     }
 
     private var weekStripCard: some View {
-        HStack(spacing: 8) {
-            ForEach(displayedDays, id: \.self) { day in
-                let isToday = Calendar.current.isDateInToday(day)
-                let dayWorkouts = workoutsForDay(day)
-
-                VStack(spacing: 6) {
-                    Text(shortWeekdayText(for: day))
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(isToday ? Color.accentColor : Color.secondary)
-
-                    Text(dayNumberText(for: day))
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(isToday ? Color.white : Color.primary)
-                        .frame(width: 30, height: 30)
-                        .background(
-                            Circle()
-                                .fill(isToday ? Color.accentColor : Color.clear)
-                        )
-
-                    HStack(spacing: 2) {
-                        ForEach(Array(dayWorkoutTypes(for: dayWorkouts).prefix(3)), id: \.self) { type in
-                            Circle()
-                                .fill(type.tintColor)
-                                .frame(width: 4, height: 4)
-                        }
-
-                        if dayWorkouts.isEmpty {
-                            Circle()
-                                .fill(Color.clear)
-                                .frame(width: 4, height: 4)
-                        }
-                    }
-                    .frame(height: 5)
-                }
-                .frame(maxWidth: .infinity)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 5) { dayTiles }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) { dayTiles }
             }
         }
     }
 
+    @ViewBuilder private var dayTiles: some View {
+        ForEach(displayedDays, id: \.self) { day in
+            calendarDayTile(day)
+        }
+    }
+
+    private func calendarDayTile(_ day: Date) -> some View {
+        let isToday = Calendar.current.isDateInToday(day)
+        let isSelected = selectedDay.map { Calendar.current.isDate($0, inSameDayAs: day) } ?? false
+        let dayWorkouts = workoutsForDay(day)
+        return Button {
+            selectedDay = day
+        } label: {
+            VStack(spacing: 8) {
+                Text(day.formatted(.dateTime.weekday(.narrow)))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                Text(dayNumberText(for: day))
+                    .font(.title3.bold())
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                HStack(spacing: 3) {
+                    ForEach(Array(dayWorkoutTypes(for: dayWorkouts).prefix(3)), id: \.self) { type in
+                        Circle().fill(type.tintColor).frame(width: 5, height: 5)
+                    }
+                    if dayWorkouts.isEmpty {
+                        Circle().fill(Color.secondary.opacity(0.2)).frame(width: 5, height: 5)
+                    }
+                }
+                .frame(height: 6)
+                Circle()
+                    .fill(isToday ? Color.accentColor : Color.clear)
+                    .frame(width: 4, height: 4)
+            }
+            .frame(minWidth: 30, maxWidth: .infinity)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 12)
+            .background(isSelected ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(day.formatted(date: .complete, time: .omitted)), \(dayWorkouts.count) workouts\(isToday ? ", today" : "")")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
     private var weekSummaryCard: some View {
         let summary = weekSummary(for: workoutsInDisplayedPeriod)
-
-        return VStack(alignment: .leading, spacing: 14) {
-            AppCardHeader(
-                title: "Training Summary",
-                subtitle: displayedRangeText,
-                systemImage: "chart.bar.fill"
-            )
-
-            HStack(spacing: 12) {
-                AppMetricTile(
-                    title: "Workouts",
-                    value: "\(summary.count)",
-                    systemImage: "figure.run",
-                    showsBackground: false
-                )
-                AppMetricTile(
-                    title: "Duration",
-                    value: summary.duration,
-                    systemImage: "clock",
-                    showsBackground: false
-                )
-                if summary.distance > 0 {
-                    AppMetricTile(
-                        title: "Distance",
-                        value: String(format: "%.1f km", summary.distance),
-                        systemImage: "arrow.left.and.right",
-                        showsBackground: false
-                    )
+        let activeDays = Set(workoutsInDisplayedPeriod.map { Calendar.current.startOfDay(for: $0.startDate) }).count
+        return VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("TRAINING TIME")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(.secondary)
+                    Text(summary.duration)
+                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                        .monospacedDigit()
+                    Text(displayedRangeSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+                Spacer()
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.title2.weight(.medium))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 48, height: 48)
+                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 16))
             }
-
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 20) { summaryMetrics(count: summary.count, days: activeDays, distance: summary.distance) }
+                VStack(alignment: .leading, spacing: 12) { summaryMetrics(count: summary.count, days: activeDays, distance: summary.distance) }
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            trainingDistribution
             categorySummaryChips
         }
-        .padding(16)
+        .padding(20)
         .glassCard(showsShadow: false)
+    }
+
+    @ViewBuilder private func summaryMetrics(count: Int, days: Int, distance: Double) -> some View {
+        Label("\(count) workouts", systemImage: "figure.run")
+        Label("\(days) active days", systemImage: "calendar")
+        if distance > 0 {
+            Label(String(format: "%.1f km", distance), systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+        }
+    }
+
+    private var trainingDistribution: some View {
+        let types = dayWorkoutTypes(for: workoutsInDisplayedPeriod)
+        let total = workoutsInDisplayedPeriod.reduce(0) { $0 + max($1.duration, 0) }
+        return Group {
+            if total > 0 {
+                VStack(alignment: .leading, spacing: 10) {
+                    GeometryReader { geometry in
+                        HStack(spacing: 0) {
+                            ForEach(types, id: \.self) { type in
+                                let duration = workoutsInDisplayedPeriod.filter { $0.type == type }.reduce(0) { $0 + max($1.duration, 0) }
+                                Rectangle().fill(type.tintColor)
+                                    .frame(width: geometry.size.width * CGFloat(duration / total))
+                            }
+                        }
+                        .clipShape(Capsule())
+                    }
+                    .frame(height: 7)
+                    .accessibilityHidden(true)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(types, id: \.self) { type in
+                                let typeWorkouts = workoutsInDisplayedPeriod.filter { $0.type == type }
+                                Label("\(type.rawValue) · \(weekSummary(for: typeWorkouts).duration)", systemImage: type.systemImage)
+                                    .font(.caption)
+                                    .foregroundStyle(type.tintColor)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private var categorySummaryChips: some View {
@@ -399,7 +493,13 @@ struct CalendarView: View {
             },
             sortBy: [SortDescriptor(\.startDate, order: .reverse)]
         )
-        workouts = (try? modelContext.fetch(descriptor)) ?? []
+        do {
+            workouts = try modelContext.fetch(descriptor)
+            loadError = nil
+        } catch {
+            workouts = []
+            loadError = "Couldn't load your workouts. Please try again."
+        }
     }
 
     private var displayedDateInterval: DateInterval? {
@@ -488,7 +588,7 @@ struct CalendarView: View {
     }
 
     private func daySubtitle(for workouts: [Workout]) -> String {
-        guard !workouts.isEmpty else { return "Rest day" }
+        guard !workouts.isEmpty else { return "No logged activity" }
 
         let classification = trainedClassificationNames(for: workouts)
         if classification.isEmpty {
@@ -627,8 +727,9 @@ private struct TrainedCategorySummary {
 
 private extension Calendar {
     func startOfWeek(for date: Date) -> Date {
-        let components = dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-        return self.date(from: components) ?? startOfDay(for: date)
+        var calendar = self
+        calendar.firstWeekday = 2
+        return calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? startOfDay(for: date)
     }
 }
 
@@ -679,8 +780,6 @@ private extension Calendar {
     addWorkout(type: .yoga, daysAgo: 3, minutes: 25)
     addWorkout(type: .cycling, daysAgo: 4, minutes: 50, distance: 18.4)
 
-    return NavigationStack {
-        CalendarView()
-    }
-    .modelContainer(container)
+    return CalendarView()
+        .modelContainer(container)
 }

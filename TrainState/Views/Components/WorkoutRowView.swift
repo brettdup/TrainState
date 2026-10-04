@@ -41,11 +41,24 @@ struct WorkoutRowView: View {
 
                 classificationLines
 
-                if shouldShowDateLabel {
-                    dateLabel
-                }
+                Text(formattedDate)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 metadataWrap
+
+                if let exerciseSummary {
+                    Text(exerciseSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                if let notes = workout.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(notes)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -303,9 +316,32 @@ struct WorkoutRowView: View {
             if let distance = workout.distance, distance > 0 {
                 statChip(icon: distanceIconName, value: String(format: "%.1f km", distance), tinted: true)
             }
+            if let pace = paceSummary {
+                statChip(icon: "speedometer", value: pace)
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var exerciseSummary: String? {
+        let exercises = (workout.exercises ?? []).sorted { $0.orderIndex < $1.orderIndex }
+        guard !exercises.isEmpty else { return nil }
+        let names = exercises.prefix(2).map(\.name).joined(separator: " · ")
+        return names + (exercises.count > 2 ? " · +\(exercises.count - 2) exercises" : "")
+    }
+
+    private var paceSummary: String? {
+        guard let distance = workout.distance, distance > 0, workout.duration > 0 else { return nil }
+        switch workout.type {
+        case .running:
+            let seconds = Int(workout.duration / distance)
+            return String(format: "%d:%02d /km", seconds / 60, seconds % 60)
+        case .cycling:
+            return String(format: "%.1f km/h", distance / workout.duration * 3600)
+        default:
+            return nil
+        }
     }
 
     private var categoryNames: [String] {

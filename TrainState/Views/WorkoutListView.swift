@@ -18,6 +18,8 @@ struct WorkoutListView: View {
     @State private var showingAddWorkout = false
     @State private var showingPaywall = false
     @State private var selectedFilter: WorkoutFilter = .all
+    @State private var historySearch = ""
+    @State private var collapsedWeeks: Set<Date> = []
     @AppStorage("hasSetWeeklyGoal") private var hasSetWeeklyGoal = false
     @AppStorage("hasEnabledWorkoutReminders") private var hasEnabledWorkoutReminders = false
     @AppStorage("hasDismissedFirstSessionChecklist") private var hasDismissedFirstSessionChecklist = false
@@ -84,6 +86,10 @@ struct WorkoutListView: View {
             workoutListContent
             .listStyle(.insetGrouped)
             .navigationTitle("Workouts")
+            .searchable(text: $historySearch, prompt: "Search exercises, categories or notes")
+            .onChange(of: historySearch) { _, _ in
+                visibleWorkoutLimit = 100
+            }
             .navigationBarTitleDisplayMode(.large)
             .overlay(alignment: .top) {
                 if let successBanner {
@@ -248,6 +254,34 @@ struct WorkoutListView: View {
 
     private var workoutListContent: some View {
         List {
+            Section {
+                HistoryWeeklySummary(filter: selectedFilter)
+                if !historySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Weekly totals include all activities matching the activity filter. Search narrows the feed below.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(availableFilters, id: \.self) { filter in
+                            Button {
+                                selectedFilter = filter
+                                visibleWorkoutLimit = 100
+                            } label: {
+                                Text(filter.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(selectedFilter == filter ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08), in: Capsule())
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityAddTraits(selectedFilter == filter ? .isSelected : [])
+                        }
+                    }
+                }
+            }
             if selectedFilter != .all {
                 Section {
                     HStack(spacing: 8) {
@@ -420,10 +454,29 @@ struct WorkoutListView: View {
     }
 
     private func workoutSection(for entry: (date: Date, items: [Workout])) -> some View {
-        Section(sectionHeaderTitle(for: entry.date)) {
-            ForEach(entry.items, id: \.id) { workout in
-                workoutRow(for: workout)
+        Section {
+            if !collapsedWeeks.contains(entry.date) {
+                ForEach(entry.items, id: \.id) { workout in
+                    workoutRow(for: workout)
+                }
             }
+        } header: {
+            Button {
+                if collapsedWeeks.contains(entry.date) {
+                    collapsedWeeks.remove(entry.date)
+                } else {
+                    collapsedWeeks.insert(entry.date)
+                }
+            } label: {
+                HStack {
+                    HistoryWeekHeading(start: entry.date, filter: selectedFilter)
+                    Spacer()
+                    Image(systemName: collapsedWeeks.contains(entry.date) ? "chevron.down" : "chevron.up")
+                }
+            }
+            .buttonStyle(.plain)
+            .textCase(nil)
+            .accessibilityHint("Expand or collapse this week's workouts")
         }
     }
 
@@ -1075,11 +1128,15 @@ struct WorkoutListView: View {
     }
 
     private var filteredWorkouts: [Workout] {
-        if selectedFilter == .all {
-            return workouts
+        let query = historySearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        return workouts.filter { workout in
+            let matchesType = selectedFilter == .all || workout.resolvedAppleWorkoutActivityType == selectedFilter.activityType
+            let terms = [workout.primaryWorkoutDisplayName, workout.notes ?? ""]
+                + (workout.categories ?? []).map(\.name)
+                + (workout.subcategories ?? []).map(\.name)
+                + (workout.exercises ?? []).map(\.name)
+            return matchesType && (query.isEmpty || terms.contains { $0.localizedCaseInsensitiveContains(query) })
         }
-        guard let filterActivityType = selectedFilter.activityType else { return workouts }
-        return workouts.filter { $0.resolvedAppleWorkoutActivityType == filterActivityType }
     }
 
     private func normalizeSelectedFilter() {
@@ -1099,7 +1156,7 @@ struct WorkoutListView: View {
 
     private var groupedVisibleWorkouts: [(date: Date, items: [Workout])] {
         let grouped = Dictionary(grouping: visibleFilteredWorkouts) {
-            Calendar.current.startOfDay(for: $0.startDate)
+            historyWeekStart($0.startDate)
         }
         return grouped.keys.sorted(by: >).map { (date: $0, items: grouped[$0] ?? []) }
     }
@@ -1665,5 +1722,186 @@ struct WorkoutListView_Previews: PreviewProvider {
             WorkoutListView()
         }
         .modelContainer(container)
+    }
+}
+
+// Use Monday boundaries consistently for the diary, independent of locale defaults.
+private func historyWeekStart(_ date: Date) -> Date {
+    var calendar = Calendar.current
+    calendar.firstWeekday = 2
+    return calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? calendar.startOfDay(for: date)
+}
+
+private func historyDuration(_ seconds: TimeInterval) -> String {
+    let minutes = max(Int(seconds / 60), 0)
+    return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+}
+
+private struct HistoryWeekHeading: View {
+    @Query private var workouts: [Workout]
+    let start: Date
+    let filter: WorkoutFilter
+
+    init(start: Date, filter: WorkoutFilter) {
+        self.start = start
+        self.filter = filter
+        let end = Calendar.current.date(byAdding: .day, value: 7, to: start) ?? start
+        _workouts = Query(filter: #Predicate<Workout> { $0.startDate >= start && $0.startDate < end })
+    }
+
+    private var matching: [Workout] {
+        workouts.filter { filter == .all || $0.resolvedAppleWorkoutActivityType == filter.activityType }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(start == historyWeekStart(Date()) ? "This week" : start.formatted(.dateTime.day().month().year()))
+                .font(.headline)
+                .foregroundStyle(.primary)
+            Text("\(historyDuration(matching.reduce(0) { $0 + $1.duration })) · \(matching.count) workouts")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct HistoryWeeklySummary: View {
+    let filter: WorkoutFilter
+    @State private var weekStart = historyWeekStart(Date())
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Button {
+                    weekStart = Calendar.current.date(byAdding: .day, value: -7, to: weekStart) ?? weekStart
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .accessibilityLabel("Previous week")
+                Spacer()
+                VStack(spacing: 2) {
+                    Text(weekStart == historyWeekStart(Date()) ? "This week" : "Weekly summary")
+                        .font(.headline)
+                    let end = Calendar.current.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
+                    Text("\(weekStart.formatted(.dateTime.day().month())) – \(end.formatted(.dateTime.day().month().year()))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    weekStart = Calendar.current.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .disabled(weekStart >= historyWeekStart(Date()))
+                .accessibilityLabel("Next week")
+            }
+            .buttonStyle(.borderless)
+            HistoryWeekStats(start: weekStart, filter: filter)
+                .id(weekStart)
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+private struct HistoryWeekStats: View {
+    @Query private var workouts: [Workout]
+    let start: Date
+    let filter: WorkoutFilter
+
+    init(start: Date, filter: WorkoutFilter) {
+        self.start = start
+        self.filter = filter
+        let previous = Calendar.current.date(byAdding: .day, value: -7, to: start) ?? start
+        let end = Calendar.current.date(byAdding: .day, value: 7, to: start) ?? start
+        _workouts = Query(filter: #Predicate<Workout> { $0.startDate >= previous && $0.startDate < end })
+    }
+
+    private var matching: [Workout] {
+        workouts.filter { filter == .all || $0.resolvedAppleWorkoutActivityType == filter.activityType }
+    }
+    private var current: [Workout] { matching.filter { $0.startDate >= start && $0.startDate <= Date() } }
+    private var days: [Date] {
+        (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: start) }
+    }
+    private var duration: TimeInterval { current.reduce(0) { $0 + max($1.duration, 0) } }
+    private var comparison: String {
+        let isCurrent = start == historyWeekStart(Date())
+        let cutoff = isCurrent ? (Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? start) : start
+        let previous = matching.filter { $0.startDate < start && $0.startDate < cutoff }
+        guard !previous.isEmpty else { return "No training recorded in the previous comparison period" }
+        let difference = Int((duration - previous.reduce(0) { $0 + max($1.duration, 0) }) / 60)
+        let period = isCurrent ? "this point last week" : "last week"
+        if difference == 0 { return "Same training time as \(period)" }
+        return "\(abs(difference))m \(difference > 0 ? "more" : "less") than \(period)"
+    }
+    private func sessions(on date: Date) -> [Workout] {
+        current.filter { Calendar.current.isDate($0.startDate, inSameDayAs: date) }
+    }
+    private func minutes(on date: Date) -> Double {
+        sessions(on: date).reduce(0) { $0 + max($1.duration, 0) } / 60
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 24) { metrics }
+                VStack(alignment: .leading, spacing: 12) { metrics }
+            }
+            Text(comparison)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(alignment: .bottom, spacing: 10) {
+                ForEach(days, id: \.self) { day in
+                    let daySessions = sessions(on: day)
+                    let maximum = max(days.map { minutes(on: $0) }.max() ?? 0, 1)
+                    VStack(spacing: 6) {
+                        Text(minutes(on: day) > 0 ? "\(Int(minutes(on: day)))m" : "")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        VStack(spacing: 1) {
+                            ForEach(daySessions, id: \.id) { workout in
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(workout.primaryWorkoutTintColor)
+                                    .frame(height: max(CGFloat(max(workout.duration, 0) / 60 / maximum) * 64, 2))
+                            }
+                            if daySessions.isEmpty {
+                                Capsule().fill(Color.secondary.opacity(0.15)).frame(height: 3)
+                            }
+                        }
+                        .frame(height: 70, alignment: .bottom)
+                        Text(day.formatted(.dateTime.weekday(.narrow)))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(day.formatted(.dateTime.weekday(.wide).day().month())), \(Int(minutes(on: day))) minutes, \(daySessions.count) workouts")
+                }
+            }
+            Text("Daily training time · colours show activity type")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if filter != .all {
+                Text("Summary for \(filter.title)")
+                    .font(.caption)
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+    }
+
+    @ViewBuilder private var metrics: some View {
+        metric("Time", historyDuration(duration))
+        metric("Workouts", "\(current.count)")
+        metric("Active days", "\(Set(current.map { Calendar.current.startOfDay(for: $0.startDate) }).count)")
+        let distance = current.compactMap(\.distance).reduce(0, +)
+        if distance > 0 { metric("Distance", String(format: "%.1f km", distance)) }
+    }
+    private func metric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(value).font(.title3.bold()).monospacedDigit()
+            Text(title).font(.caption).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
